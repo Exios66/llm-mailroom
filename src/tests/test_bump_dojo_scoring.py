@@ -367,20 +367,139 @@ def test_release_commit_resolves_tag_to_commit(monkeypatch):
 
 
 def test_main_keeps_sha_pin_that_is_the_release_commit(monkeypatch, capsys):
-    """An immutable SHA pin at the release commit is already up to date."""
+    """An immutable SHA pin at the release commit is already up to date.
+
+    The pin is never rewritten to the tag name: ``apply_pin`` is only ever called with
+    the current SHA as the pin and the tag as the release label, read-only
+    (``dry_run=True``) for ``--check``. With no stale release metadata, ``--check``
+    exits 0.
+    """
+    calls: list[dict] = []
+
+    def fake_apply_pin(*args, **kwargs):
+        assert args == (SHA,), "the pin must stay the current commit, never the tag"
+        assert kwargs["release"] == "v0.24.2"
+        calls.append(kwargs)
+        return []
+
     monkeypatch.setattr(B, "current_pin", lambda root=B.REPO_ROOT: SHA)
     monkeypatch.setattr(B, "release_exists", lambda tag, repo=B.DOJO_REPO: True)
     monkeypatch.setattr(B, "release_commit", lambda tag, repo=B.DOJO_REPO: SHA)
     monkeypatch.setattr(B, "tag_contains_commit", lambda sha, tag, repo=B.DOJO_REPO: True)
-    monkeypatch.setattr(
-        B,
-        "apply_pin",
-        lambda *a, **k: pytest.fail("must not rewrite an immutable release-commit pin"),
-    )
+    monkeypatch.setattr(B, "apply_pin", fake_apply_pin)
 
     assert B.main(["--check", "--tag", "v0.24.2"]) == 0
+    assert [c["dry_run"] for c in calls] == [True], "--check must stay read-only"
     assert B.main(["--apply", "--tag", "v0.24.2"]) == 0
-    assert "immutable_pin=true" in capsys.readouterr().out
+    assert [c["dry_run"] for c in calls] == [True, False]
+    out = capsys.readouterr().out
+    assert out.count("immutable_pin=true") == 2
+    assert out.count("up_to_date=true") == 2
+    assert "up_to_date=false" not in out
+
+
+STAGED_ROWS = {
+    "docs/sister-repos.md": (
+        "| Latest | v0.29.0 as of 2026-11-15, 0.30.0 staged and untagged "
+        f"(llm-mailroom pins {SHA}) |\n"
+    ),
+    "docs/wiki/Home.md": (
+        "| llm-dojo-scoring | v0.29.0 latest as of 2026-11-15, 0.30.0 staged and untagged; "
+        f"llm-mailroom pins {SHA} |\n"
+    ),
+    "README.md": f"Dojo pin, **{SHA[:7]}** (the Dojo v0.29.0 release commit).\n",
+}
+
+
+@pytest.fixture
+def staged_release_cli(interim_pin_cli):
+    """A SHA pin whose commit the not-yet-tagged v0.30.0 release lands on."""
+    for rel, text in STAGED_ROWS.items():
+        path = interim_pin_cli / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    B.release_commit.return_value = SHA
+    B.latest_release_tag.return_value = "v0.30.0"
+    return interim_pin_cli
+
+
+def _staged_snapshot(root: Path) -> dict[str, str]:
+    return {rel: (root / rel).read_text(encoding="utf-8") for rel in ("pyproject.toml", *STAGED_ROWS)}
+
+
+def test_main_apply_advances_release_rows_when_the_tag_lands_on_the_pinned_commit(
+    staged_release_cli, capsys
+):
+    """The release tag names the commit already pinned: the pin stays, the rows catch up.
+
+    Regression: the immutable-pin branch returned before ``apply_pin`` ran, so the
+    "Latest" rows kept the old version and the "staged and untagged" note forever.
+    """
+    pyproject_before = (staged_release_cli / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert B.main(["--apply", "--tag", "v0.30.0"]) == 0
+
+    out = capsys.readouterr().out
+    assert "immutable_pin=true" in out and "up_to_date=true" in out
+    assert "changed=3 dry_run=False" in out
+    assert (staged_release_cli / "pyproject.toml").read_text(encoding="utf-8") == pyproject_before
+    assert current_pin(staged_release_cli) == SHA
+    for call in B.apply_pin.call_args_list:
+        assert call.args == (SHA,) and call.kwargs["release"] == "v0.30.0"
+    sister = (staged_release_cli / "docs/sister-repos.md").read_text(encoding="utf-8")
+    home = (staged_release_cli / "docs/wiki/Home.md").read_text(encoding="utf-8")
+    for text in (sister, home):
+        assert "v0.30.0" in text and "v0.29.0" not in text
+        assert "staged" not in text
+        assert SHA in text
+    assert (staged_release_cli / "README.md").read_text(encoding="utf-8") == (
+        f"Dojo pin, **{SHA[:7]}** (the Dojo v0.30.0 release commit).\n"
+    )
+
+    # Idempotent: a second run finds nothing left to rewrite.
+    assert B.main(["--apply", "--tag", "v0.30.0"]) == 0
+    assert "changed=0" in capsys.readouterr().out
+
+
+def test_main_apply_dry_run_on_the_pinned_release_commit_writes_nothing(staged_release_cli, capsys):
+    before = _staged_snapshot(staged_release_cli)
+    assert B.main(["--apply", "--dry-run", "--tag", "v0.30.0"]) == 0
+    assert _staged_snapshot(staged_release_cli) == before
+    out = capsys.readouterr().out
+    assert "changed=3 dry_run=True" in out
+    # A dry run writes nothing, so it must not claim the metadata is current.
+    assert "release_metadata_stale=true" in out
+    assert "up_to_date=false" in out and "up_to_date=true" not in out
+
+
+def test_main_check_reports_stale_release_metadata_without_writing(staged_release_cli, capsys):
+    """The daily workflow runs --apply only when --check is non-zero, so stale rows must say so."""
+    before = _staged_snapshot(staged_release_cli)
+
+    assert B.main(["--check", "--tag", "v0.30.0"]) == 2
+
+    assert _staged_snapshot(staged_release_cli) == before
+    assert B.apply_pin.call_args_list
+    for call in B.apply_pin.call_args_list:
+        assert call.args == (SHA,) and call.kwargs == {"dry_run": True, "release": "v0.30.0"}
+    out = capsys.readouterr().out
+    assert "immutable_pin=true" in out
+    assert "release_metadata_stale=true" in out
+    assert "up_to_date=false" in out and "up_to_date=true" not in out
+    stale = sorted(line.split("=", 1)[1] for line in out.splitlines() if line.startswith("stale="))
+    assert stale == ["README.md", "docs/sister-repos.md", "docs/wiki/Home.md"]
+
+
+def test_main_check_is_up_to_date_once_apply_has_rewritten_the_release_metadata(
+    staged_release_cli, capsys
+):
+    assert B.main(["--check", "--tag", "v0.30.0"]) == 2
+    assert B.main(["--apply", "--tag", "v0.30.0"]) == 0
+    capsys.readouterr()
+    assert B.main(["--check", "--tag", "v0.30.0"]) == 0
+    out = capsys.readouterr().out
+    assert "up_to_date=true" in out
+    assert "release_metadata_stale" not in out and "stale=" not in out
 
 
 def test_allow_missing_release_cannot_replace_immutable_sha_with_tag(monkeypatch, capsys):
@@ -711,4 +830,56 @@ def test_release_label_names_the_version_for_a_commit_pin():
     row = "| Latest | v0.27.2 as of 2026-11-04 (llm-mailroom pins 1cd4aba76d82eea20c6e8dfcc0d760881bf84924) |"
     assert _rewrite_text(row, sha, release="v0.28.0", today="2026-11-06") == (
         f"| Latest | v0.28.0 as of 2026-11-06 (llm-mailroom pins {sha}) |"
+    )
+
+
+STAGED_SHA = "93eedd8c3270ce95af56f1e17ce40bae3d03b330"
+NEXT_SHA = "cab976807854129d1cfea4897dbff5b6e337a62b"
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "| Latest | v0.29.0 as of 2026-11-15, 0.30.0 staged and untagged (llm-mailroom pins {ref}) |",
+        "| llm-dojo-scoring | v0.29.0 latest as of 2026-11-15, 0.30.0 staged and untagged; llm-mailroom pins {ref} |",
+    ],
+)
+def test_latest_rows_with_a_staged_note_are_rewritten_by_the_release_that_lands_it(template):
+    """The rows the 0.30.0 re-pin wrote must be rewritable by the bump that follows it.
+
+    A commit pin of the staged release advances the row to the release and drops the
+    "staged and untagged" note, which is no longer true once it is tagged.
+    """
+    before = template.format(ref=STAGED_SHA)
+    after = _rewrite_text(before, NEXT_SHA, release="v0.30.0", today="2026-11-20")
+    assert "v0.30.0" in after and "2026-11-20" in after
+    assert "staged" not in after
+    assert "v0.29.0" not in after
+    assert NEXT_SHA in after and STAGED_SHA not in after
+
+
+def test_staged_note_is_kept_while_the_release_is_still_untagged():
+    """A pin to an older release moves the pin only; the staged note stays true."""
+    row = "| Latest | v0.28.0 as of 2026-11-06, 0.30.0 staged and untagged (llm-mailroom pins v0.28.0) |"
+    after = _rewrite_text(row, "v0.29.0", today="2026-11-15")
+    assert after == (
+        "| Latest | v0.29.0 as of 2026-11-15, 0.30.0 staged and untagged (llm-mailroom pins v0.29.0) |"
+    )
+    # An interim commit pin (no release label) leaves the version, date and note alone.
+    assert _rewrite_text(row, STAGED_SHA, today="2026-11-15") == row.replace(
+        "pins v0.28.0", f"pins {STAGED_SHA}"
+    )
+
+
+def test_documented_apply_command_with_missing_release_flag_is_rewritten():
+    """docs/pipeline-reference-llm-mailroom/sister-repos.md documents the flag before --tag."""
+    cmd = (
+        "PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply "
+        "--allow-missing-release --tag {ref}"
+    )
+    assert _rewrite_text(cmd.format(ref=STAGED_SHA), NEXT_SHA) == cmd.format(ref=NEXT_SHA)
+    # --allow-missing-release rejects a tag target on --apply (see main()), so a tag
+    # target must not leave the documented command with the flag.
+    assert _rewrite_text(cmd.format(ref=STAGED_SHA), "v0.30.0") == (
+        "PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.30.0"
     )

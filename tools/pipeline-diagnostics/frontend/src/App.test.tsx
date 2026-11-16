@@ -68,7 +68,7 @@ const report: CheckReport = {
 
 const runSummary: RunSummary = {
   execution_id: "run-1",
-  document: { filename: "real-doc.txt", manifest_id: "DOC-1", source: "live-manifest" },
+  document: { doc_id: "DOC-1", filename: "real-doc.txt", manifest_id: "DOC-1", source: "live-manifest" },
   outcome: { stage: "archived", doc_type: "contract", review: false, failed: false },
   started_at: "2026-11-09T05:00:00+00:00",
   finished_at: "2026-11-09T05:00:01+00:00",
@@ -78,7 +78,7 @@ const runSummary: RunSummary = {
 const runJournal: RunJournal = {
   schema_version: "1.0.0",
   execution_id: "run-1",
-  document: { filename: "real-doc.txt", manifest_id: "DOC-1", source: "live-manifest" },
+  document: { doc_id: "DOC-1", filename: "real-doc.txt", manifest_id: "DOC-1", source: "live-manifest" },
   ground_truth: { expected_doc_class: "contract", expected_stage: "archived" },
   started_at: "2026-11-09T05:00:00+00:00",
   finished_at: "2026-11-09T05:00:01+00:00",
@@ -130,12 +130,33 @@ function errorResponse(status: number): Response {
   return { ok: false, status, json: async () => ({}) } as Response;
 }
 
+function auditPayload(docId: string, status = "verified", truncated = false) {
+  return {
+    schema_version: "1.0.0", read_only: true, doc_id: docId,
+    store: { state: "available", schema: "unified-row", engine: "sqlite" },
+    record: { state: "unified-row", entry_id: `row-${docId}`, event: "archived", actor: "archivist", timestamp: "2026-11-09T05:00:01Z", seq: 3, prev_hash: "sha256:previous", entry_hash: `sha256:${docId}`, terminal: true, attempts: [{ attempt_id: `attempt-${docId}`, stage: "extraction", attempt_no: 1, outcome: "ok", started_at: "2026-11-09T05:00:00Z", entry_hash: "sha256:attempt" }], attempts_total: 1, addenda: [{ addendum_id: `addendum-${docId}`, kind: "rescore", actor: "reviewer", timestamp: "2026-11-09T05:00:02Z", entry_hash: "sha256:addendum", attempts: [{ attempt_id: `addendum-attempt-${docId}`, stage: "review", attempt_no: 1, outcome: "ok", started_at: "2026-11-09T05:00:02Z", entry_hash: "sha256:addendum-attempt" }] }] },
+    legacy: { state: "absent", count: 0, truncated: false, entries: [] },
+    verification: { status, method: "audit.writer", checked: { main: 1, attempts: 1, addenda: 1, legacy: 0 }, failures: status === "failed" ? [{ scope: "attempts", reason: "hash-mismatch" }] : [], truncated, notes: [] },
+    limits: { events: 2000, attempts: 500, addenda: 200, decision_fields: 40 }, notes: [],
+  };
+}
+
 function mockApi(override?: Override) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     void init;
     const url = String(input);
     const overridden = override?.(url);
     if (overridden) return overridden;
+    if (url.includes("/v1/diagnostics/audit/documents?")) return jsonResponse({
+      schema_version: "1.0.0", read_only: true,
+      store: { state: "available", schema: "event-chain", engine: "sqlite" },
+      pagination: { limit: 25, offset: 0, returned: 1, more: false },
+      documents: [{ doc_id: "DOC-1", matter_id: "matter-1", event: "archived", actor: "archivist", timestamp: "2026-11-09T05:00:01Z", seq: null, entries: 3, source: "event-chain" }], notes: [],
+    });
+    if (url.includes("/v1/diagnostics/audit/documents/")) {
+      const docId = decodeURIComponent(url.split("/v1/diagnostics/audit/documents/")[1]);
+      return jsonResponse(auditPayload(docId));
+    }
     if (url.includes("/snapshot")) return jsonResponse(snapshot);
     if (url.includes("/findings")) return jsonResponse(report);
     if (url.endsWith("/v1/diagnostics/runs")) return jsonResponse({ runs: [runSummary] });
@@ -218,6 +239,118 @@ describe("App", () => {
     await user.click(within(path).getByRole("button", { name: /classify/ }));
     expect(screen.getByRole("heading", { name: "classify" })).toBeInTheDocument();
     expect(window.location.search).toContain("node=classify");
+  });
+
+  it("follows the selected run document into its verified audit record", async () => {
+    const fetchMock = mockApi();
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    await user.selectOptions(screen.getByLabelText("Load a run journal"), "run-1");
+    expect(await screen.findByText("Verification verified")).toBeInTheDocument();
+    expect(screen.getByText("row-DOC-1")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Row attempts (1)" })).toBeInTheDocument();
+    expect(screen.getAllByText("ID: attempt-DOC-1")).toHaveLength(1);
+    expect(screen.getAllByText("ID: addendum-attempt-DOC-1")).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/audit/documents/DOC-1"))).toBe(true);
+  });
+
+  it("refreshes the active audit on global refresh and audit-list refresh without changing its document id", async () => {
+    const currentEvent = { value: "archived" };
+    const fetchMock = mockApi((url) => {
+      if (!url.endsWith("/audit/documents/DOC-1")) return undefined;
+      const base = auditPayload("DOC-1");
+      return jsonResponse({ ...base, record: { ...base.record, event: currentEvent.value } });
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    await user.selectOptions(screen.getByLabelText("Load a run journal"), "run-1");
+    const panel = screen.getByRole("region", { name: "Audit record" });
+    expect(await within(panel).findByText("archived")).toBeInTheDocument();
+    currentEvent.value = "review_requeued";
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await within(panel).findByText("review_requeued")).toBeInTheDocument();
+    currentEvent.value = "triage_archived";
+    await user.click(screen.getByRole("button", { name: "Refresh audit and list" }));
+    expect(await within(panel).findByText("triage_archived")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/audit/documents/DOC-1"))).toHaveLength(3);
+  });
+
+  it("coalesces repeated refresh ticks while a slow audit read is in flight so it can still land", async () => {
+    // The 15s poll and the Refresh button both bump refreshKey. A read slower
+    // than the poll interval must not be aborted forever by the next tick.
+    let resolveSlow!: (response: Response) => void;
+    const slow = new Promise<Response>((done) => { resolveSlow = done; });
+    let auditCalls = 0;
+    mockApi((url) => {
+      if (!url.endsWith("/audit/documents/DOC-1")) return undefined;
+      auditCalls += 1;
+      if (auditCalls === 1) return slow;
+      return new Promise<Response>(() => {});
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    await user.selectOptions(screen.getByLabelText("Load a run journal"), "run-1");
+    await screen.findByText(/Loading audit for DOC-1/);
+    expect(auditCalls).toBe(1);
+
+    // Two more refresh ticks while the first read is still pending: they are
+    // coalesced onto it instead of aborting it and starting fresh requests.
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(auditCalls).toBe(1);
+    // The coalesced ticks still report the read as in flight rather than
+    // blanking the panel until the response arrives.
+    expect(screen.getByText(/Loading audit for DOC-1/)).toBeInTheDocument();
+
+    await act(async () => resolveSlow(jsonResponse(auditPayload("DOC-1"))));
+    expect(await screen.findByText("row-DOC-1")).toBeInTheDocument();
+    expect(auditCalls).toBe(1);
+  });
+
+  it("keeps manual document lookup independent from the followed run", async () => {
+    const fetchMock = mockApi();
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    await user.click(screen.getByLabelText("Follow selected run document"));
+    await user.selectOptions(screen.getByLabelText("Choose a listed document"), "DOC-1");
+    expect(await screen.findByText("row-DOC-1")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Look up document id"), "MANUAL-7");
+    await user.click(screen.getByRole("button", { name: "Look up" }));
+    expect(await screen.findByText("row-MANUAL-7")).toBeInTheDocument();
+    expect(screen.getByLabelText("Follow selected run document")).not.toBeChecked();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/audit/documents/MANUAL-7"))).toBe(true);
+  });
+
+  it("pages the audit document selector and preserves a manual lookup across pages", async () => {
+    const fetchMock = mockApi((url) => {
+      if (!url.includes("/v1/diagnostics/audit/documents?")) return undefined;
+      const offset = Number(new URL(url, window.location.origin).searchParams.get("offset") ?? 0);
+      const documents = offset === 0
+        ? Array.from({ length: 25 }, (_, index) => ({ doc_id: `DOC-${index + 1}`, event: "archived" }))
+        : [{ doc_id: "DOC-26", event: "archived" }];
+      return jsonResponse({
+        schema_version: "1.0.0", read_only: true, store: { state: "available", schema: "event-chain" },
+        pagination: { limit: 25, offset, returned: documents.length, more: offset === 0 }, documents, notes: [],
+      });
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    await user.click(screen.getByLabelText("Follow selected run document"));
+    const select = screen.getByLabelText("Choose a listed document");
+    await waitFor(() => expect(within(select).getByRole("option", { name: "DOC-1 — archived" })).toBeInTheDocument());
+    await user.selectOptions(select, "DOC-1");
+    expect(await screen.findByText("row-DOC-1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() => expect(within(select).getByRole("option", { name: "DOC-26 — archived" })).toBeInTheDocument());
+    expect(select).toHaveValue("DOC-1");
+    await user.click(screen.getByRole("button", { name: "Previous page" }));
+    await waitFor(() => expect(within(select).getByRole("option", { name: "DOC-1 — archived" })).toBeInTheDocument());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("offset=25"))).toBe(true);
   });
 
   it("loads an experiment log and jumps to one of its runs", async () => {
@@ -341,12 +474,12 @@ describe("detail requests and partial failures", () => {
   const secondRun: RunSummary = {
     ...runSummary,
     execution_id: "run-2",
-    document: { filename: "other.txt", manifest_id: "DOC-2", source: "live-manifest" },
+    document: { doc_id: "DOC-2", filename: "other.txt", manifest_id: "DOC-2", source: "live-manifest" },
   };
   const secondJournal: RunJournal = {
     ...runJournal,
     execution_id: "run-2",
-    document: { filename: "other.txt", manifest_id: "DOC-2", source: "live-manifest" },
+    document: { doc_id: "DOC-2", filename: "other.txt", manifest_id: "DOC-2", source: "live-manifest" },
     node_sequence: ["intake", "classify"],
   };
 
@@ -461,6 +594,98 @@ describe("detail requests and partial failures", () => {
     expect(screen.queryByRole("list", { name: "Recorded node path" })).not.toBeInTheDocument();
     await act(async () => pending.resolve(errorResponse(500)));
     expect(screen.queryByRole("list", { name: "Recorded node path" })).not.toBeInTheDocument();
+  });
+
+  it("clears the old audit while switching runs and ignores out-of-order audit replies", async () => {
+    const auditOne = deferred();
+    const auditTwo = deferred();
+    mockApi((url) => {
+      if (url.endsWith("/v1/diagnostics/runs")) return jsonResponse({ runs: [runSummary, secondRun] });
+      if (url.endsWith("/v1/diagnostics/runs/run-2")) return jsonResponse(secondJournal);
+      if (url.endsWith("/audit/documents/DOC-1")) return auditOne.promise;
+      if (url.endsWith("/audit/documents/DOC-2")) return auditTwo.promise;
+      return undefined;
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    const select = screen.getByLabelText("Load a run journal");
+    await user.selectOptions(select, "run-1");
+    await screen.findByText(/Loading audit for DOC-1/);
+    await user.selectOptions(select, "run-2");
+    expect(screen.queryByText(/Loading audit for DOC-1/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Loading audit for DOC-2/)).toBeInTheDocument();
+    await act(async () => auditTwo.resolve(jsonResponse(auditPayload("DOC-2"))));
+    expect(await screen.findByText("row-DOC-2")).toBeInTheDocument();
+    await act(async () => auditOne.resolve(jsonResponse(auditPayload("DOC-1"))));
+    expect(screen.getByText("row-DOC-2")).toBeInTheDocument();
+    expect(screen.queryByText("row-DOC-1")).not.toBeInTheDocument();
+  });
+
+  it("immediately clears a loaded audit record while the next document is pending", async () => {
+    const nextAudit = deferred();
+    mockApi((url) => {
+      if (url.endsWith("/v1/diagnostics/runs")) return jsonResponse({ runs: [runSummary, secondRun] });
+      if (url.endsWith("/v1/diagnostics/runs/run-2")) return jsonResponse(secondJournal);
+      if (url.endsWith("/audit/documents/DOC-2")) return nextAudit.promise;
+      return undefined;
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    const select = screen.getByLabelText("Load a run journal");
+    await user.selectOptions(select, "run-1");
+    expect(await screen.findByText("row-DOC-1")).toBeInTheDocument();
+    await user.selectOptions(select, "run-2");
+    expect(screen.queryByText("row-DOC-1")).not.toBeInTheDocument();
+    expect(screen.getByText(/Loading audit for DOC-2/)).toBeInTheDocument();
+    await act(async () => nextAudit.resolve(jsonResponse(auditPayload("DOC-2"))));
+    expect(await screen.findByText("row-DOC-2")).toBeInTheDocument();
+  });
+
+  it("shows failed, unverified, and truncated verification states explicitly", async () => {
+    let payload: unknown = auditPayload("DOC-1", "failed");
+    mockApi((url) => url.endsWith("/audit/documents/DOC-1") ? jsonResponse(payload) : undefined);
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    await user.selectOptions(screen.getByLabelText("Load a run journal"), "run-1");
+    expect(await screen.findByText("Verification failed")).toBeInTheDocument();
+    expect(screen.getByText(/attempts: hash-mismatch/)).toBeInTheDocument();
+    payload = { ...auditPayload("DOC-1", "unverified", true), record: { state: "event-chain", entries: 1, events: [] } };
+    await user.click(screen.getByLabelText("Follow selected run document"));
+    // Manual mode starts empty; direct lookup demonstrates a truncated read.
+    await user.type(screen.getByLabelText("Look up document id"), "DOC-1");
+    await user.click(screen.getByRole("button", { name: "Look up" }));
+    expect(await screen.findByText("Verification unverified")).toBeInTheDocument();
+    expect(screen.getByText(/bounded audit read was truncated/)).toBeInTheDocument();
+  });
+
+  it("distinguishes an unavailable store from a missing audit record", async () => {
+    mockApi((url) => {
+      if (!url.includes("/audit/documents/")) return undefined;
+      const docId = decodeURIComponent(url.split("/audit/documents/")[1]);
+      if (docId === "DOC-MISSING") return jsonResponse({
+        doc_id: docId, store: { state: "available", schema: "event-chain" }, record: { state: "not-recorded" }, legacy: { state: "absent", count: 0, truncated: false, entries: [] },
+        verification: { status: "not-recorded", checked: { main: 0, attempts: 0, addenda: 0, legacy: 0 }, failures: [], truncated: false, notes: [] },
+      });
+      return jsonResponse({
+        doc_id: docId, store: { state: "unavailable", reason: "database-missing" }, record: { state: "unavailable", reason: "database-missing" },
+        verification: { status: "unavailable", checked: { main: 0, attempts: 0, addenda: 0, legacy: 0 }, failures: [], truncated: false, notes: [] },
+      });
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    await user.click(screen.getByLabelText("Follow selected run document"));
+    await user.type(screen.getByLabelText("Look up document id"), "DOC-MISSING");
+    await user.click(screen.getByRole("button", { name: "Look up" }));
+    expect(await screen.findByText("No audit record")).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Look up document id"));
+    await user.type(screen.getByLabelText("Look up document id"), "DOC-UNAVAILABLE");
+    await user.click(screen.getByRole("button", { name: "Look up" }));
+    expect(await screen.findByText("Audit store unavailable")).toBeInTheDocument();
+    expect(screen.getByText("database-missing")).toBeInTheDocument();
   });
 
   it("does not crash on a run journal without node_sequence", async () => {

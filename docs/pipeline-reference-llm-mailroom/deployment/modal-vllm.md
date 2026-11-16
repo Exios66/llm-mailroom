@@ -6,7 +6,7 @@ Do not use Modal for pytest or `--mock`.
 
 ## Single-tier serve (Mode M)
 
-One vLLM OpenAI-compatible `/v1` server behind a Modal `web_server`. SDK pin `modal==1.5.5`, image `vllm/vllm-openai:v0.28.0` (matches the local compose pin).
+One vLLM OpenAI-compatible `/v1` server behind a Modal `web_server`. SDK pin `modal==1.6.2`, image `vllm/vllm-openai:v0.28.0` (matches the local compose pin).
 
 ```bash
 pip install -e ".[deploy]"

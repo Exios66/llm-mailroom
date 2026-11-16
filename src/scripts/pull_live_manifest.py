@@ -59,6 +59,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fixture", action="store_true", help="write the committed 15-row smoke fixture")
     parser.add_argument("--check", type=Path, help="validate an existing manifest offline")
     parser.add_argument("--json", action="store_true", help="one JSON summary on stdout")
+    parser.add_argument(
+        "--allow-missing-text",
+        action="store_true",
+        help="proceed when corpus rows with no document text were dropped (refused by default)",
+    )
     args = parser.parse_args(argv)
 
     if args.check:
@@ -86,6 +91,16 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
+    missing = int(stats["integrity"].get("missing_text") or 0)
+    if missing:
+        message = (
+            f"{missing} corpus rows have no document text and were dropped from the manifest "
+            "(integrity.missing_text)"
+        )
+        if not args.allow_missing_text:
+            print(f"refusing: {message}; pass --allow-missing-text to keep the rest", file=sys.stderr)
+            return 1
+        print(f"warning: {message}", file=sys.stderr)
 
     selected = rows
     if args.per_class or args.fixture:

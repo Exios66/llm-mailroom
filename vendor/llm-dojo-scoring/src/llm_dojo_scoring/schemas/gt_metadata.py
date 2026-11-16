@@ -19,8 +19,11 @@ stringified ``gt_presence`` map::
 * ``pending_annotation`` — the label backfill has not run yet (the current
   corpus has 91 contract rows with ``cuad_clause_labels`` in this state).
 
-Scoring must treat every absence status as **empty**: a model that correctly
-emits nothing for them is not penalized, and stringified ``"[]"`` / ``"{}"``
+Scoring must treat every absence status as **no expected value**: a model that
+correctly emits nothing for them is not penalized. ``not_applicable`` and
+``schema_documented_absence`` are labelled empty (a stated value is a false
+positive); ``pending_annotation`` is unlabelled (the field is dropped and a stated
+value is not a false positive). Stringified ``"[]"`` / ``"{}"``
 values are empty containers, not required events. Annotation stats
 (``gt_presence``, ``intent_status``, ``token_estimate``, …) are never
 extraction targets.
@@ -65,6 +68,10 @@ CUAD_PRESENCE_KEY = "cuad_clause_labels"
 ABSENT_PRESENCE_STATUSES: frozenset[str] = frozenset(
     {"not_applicable", "schema_documented_absence", "pending_annotation"}
 )
+
+#: The one absent status that means "not labelled", not "labelled empty":
+#: :func:`scoring_gt_fields` drops such a field instead of blanking it.
+_PENDING_ANNOTATION = "pending_annotation"
 
 #: Metadata fields that are annotation / provenance / presence inputs — never
 #: extraction targets, on either side of a comparison.
@@ -224,9 +231,15 @@ def scoring_gt_fields(
     * when ``drop_unmapped`` is true and the union of ``field_types`` keys
       and ``extra_keys`` is nonempty, keeps only those keys; an empty union
       leaves unmapped keys intact;
-    * replaces fields whose ``gt_presence`` status is
-      ``not_applicable`` / ``schema_documented_absence`` /
-      ``pending_annotation`` with ``""`` so they are never expected events;
+    * replaces fields whose ``gt_presence`` status is ``not_applicable`` or
+      ``schema_documented_absence`` with ``""``: labelled empty, never an
+      expected event, and a value stated there stays a false positive;
+    * drops fields whose status is ``pending_annotation`` (the label backfill
+      has not run): they are unlabelled, so field-micro excludes them on both
+      sides and a value stated there is not a false positive. Blanking them
+      would make them look labelled empty. (A CMS insurance row's
+      ``adjuster`` / ``denial_reasons`` are still labelled empty by the scorer:
+      the CMS source schema documents them absent, whatever their status);
     * for an ``insurance_claim`` row whose ``subclass`` (``expected_subclass``)
       is a CMS source table, adds the derived ``cms_source_table`` (#93): the
       published ``gt_fields`` never carry it. Non-CMS rows never get it, and a
@@ -248,7 +261,10 @@ def scoring_gt_fields(
             continue
         if drop_unmapped and allowed and key not in allowed:
             continue
-        if presence.get(key) in ABSENT_PRESENCE_STATUSES:
+        status = presence.get(key)
+        if status == _PENDING_ANNOTATION:
+            continue
+        if status in ABSENT_PRESENCE_STATUSES:
             out[key] = ""
             continue
         out[key] = value

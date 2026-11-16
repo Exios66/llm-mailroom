@@ -14,6 +14,7 @@ from statistics import fmean
 from typing import Any, Mapping, Sequence
 
 from .. import __version__
+from ..schemas.doc_classes import LIVE_DOC_TYPES
 from ..schemas.gt_metadata import is_empty_value
 from ..schemas.maud import is_maud_class
 
@@ -120,6 +121,31 @@ _METRIC_ID_BY_NAME: dict[str, str] = {
     "reviewer_confidence_ece": "review.lane.confidence_ece",
     "reviewer_confidence_brier": "review.lane.confidence_brier",
     "reviewer_cost_per_accepted_usd": "review.lane.cost_per_accepted_usd",
+    # Intake classifier (ml/metrics.py).
+    "ml_intake_doc_type_accuracy": "ml.intake.doc_type_accuracy",
+    "ml_intake_doc_type_macro_f1": "ml.intake.doc_type_macro_f1",
+    "ml_intake_doc_type_ece": "ml.intake.doc_type_ece",
+    "ml_intake_subclass_accuracy": "ml.intake.subclass_accuracy",
+    "ml_intake_subclass_macro_f1": "ml.intake.subclass_macro_f1",
+    "ml_intake_subclass_ece": "ml.intake.subclass_ece",
+    "ml_intake_fast_path_coverage": "ml.intake.fast_path_coverage",
+    "ml_intake_selective_risk": "ml.intake.selective_risk",
+    "ml_intake_selective_risk_upper": "ml.intake.selective_risk_upper",
+    # Decision lanes (scoring/decision_lanes.py): judge, arbiter, boss, review tray.
+    "judge_verdict_accuracy": "decision.judge.verdict_accuracy",
+    "judge_verdict_macro_f1": "decision.judge.macro_f1",
+    "judge_escalation_recall": "decision.judge.escalation_recall",
+    "judge_false_escalation_rate": "decision.judge.false_escalation_rate",
+    "judge_error_rate": "decision.judge.error_rate",
+    "arbiter_decision_accuracy": "decision.arbiter.decision_accuracy",
+    "arbiter_retry_usefulness": "decision.arbiter.retry_usefulness",
+    "arbiter_wrongful_accept_rate": "decision.arbiter.wrongful_accept_rate",
+    "arbiter_unnecessary_escalation_rate": "decision.arbiter.unnecessary_escalation_rate",
+    "boss_wrongful_approve_rate": "decision.boss.wrongful_approve_rate",
+    "boss_needless_review_rate": "decision.boss.needless_review_rate",
+    "review_tray_wasted_review_rate": "decision.review_tray.wasted_review_rate",
+    "review_tray_correction_rate": "decision.review_tray.correction_rate",
+    "review_tray_reject_rate": "decision.review_tray.reject_rate",
 }
 
 # Doc class / suite → allowed metric_ids for comparisons (documented in docs/contracts/METRIC_IDS.md).
@@ -184,13 +210,7 @@ DEFAULT_INSURANCE_SCHEMA_GATE = DEFAULT_SCHEMA_GATE
 
 #: Per-class promotion thresholds — every live extract class is gated (#18).
 #: Override a class here (or pass ``threshold=``) rather than skipping it.
-SCHEMA_PROMOTION_GATES: dict[str, float] = {
-    "contract": DEFAULT_SCHEMA_GATE,
-    "merger_agreement": DEFAULT_SCHEMA_GATE,
-    "corporate_record": DEFAULT_SCHEMA_GATE,
-    "correspondence": DEFAULT_SCHEMA_GATE,
-    "insurance_claim": DEFAULT_SCHEMA_GATE,
-}
+SCHEMA_PROMOTION_GATES: dict[str, float] = {key: DEFAULT_SCHEMA_GATE for key in LIVE_DOC_TYPES}
 
 _TRIAGE_GT_KEYS: frozenset[str] = frozenset(
     {

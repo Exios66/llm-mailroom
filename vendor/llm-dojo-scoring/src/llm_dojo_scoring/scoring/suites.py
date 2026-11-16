@@ -34,6 +34,7 @@ from collections.abc import Mapping
 from typing import Any, Iterable
 
 from ..metrics.bundles import Bundle, bundle_metric_names
+from ..schemas import doc_classes
 from .field_scoring import ExtractionScoreResult, score_extraction, score_field
 from ..metrics.profiles import AgentProfile, DEFAULT_PROFILES, get_profile
 from ..metrics.registry import load_registry
@@ -43,7 +44,6 @@ __all__ = [
     "ScoringSuite",
     "DEFAULT_SUITES",
     "DEFAULT_FIELD_TYPES",
-    "LEGACY_FULL_EXTRACTION_FIELD_TYPES",
     "SPECIALIST_DOC_TYPES",
     "DOC_TYPE_ALIASES",
     "get_suite",
@@ -53,16 +53,10 @@ __all__ = [
 ]
 
 
-#: Specialist profile name → native mailroom document class.
+#: Specialist profile name → native mailroom document class (derived from
+#: ``schemas/doc_classes.py``; edit the registry, not this table).
 SPECIALIST_DOC_TYPES: dict[str, str] = {
-    "contracts_specialist": "contract",
-    "merger_agreement_specialist": "merger_agreement",
-    "corporate_records_specialist": "corporate_record",
-    "due_diligence_specialist": "due_diligence",
-    "correspondence_specialist": "correspondence",
-    "compliance_specialist": "compliance_filing",
-    "court_opinions_specialist": "court_opinion",
-    "insurance_claims_specialist": "insurance_claim",
+    doc_classes.DOC_CLASSES[key].specialist: key for key in doc_classes.ROSTER_DOC_TYPES
 }
 
 #: Doc-type lookup aliases (mailroom ``doc_type`` → specialist suite).
@@ -73,192 +67,16 @@ DOC_TYPE_ALIASES: dict[str, str] = {
 }
 
 #: Default field→scoring-type maps, mirrored from llm-mailroom
-#: ``config/taxonomy.yaml`` / ``EXTRACTION_SCHEMAS`` (v0.6.0 pared product).
-#: Open-ended ``key_obligations`` / ``termination_clauses`` / ``key_provisions``
-#: / long ``key_points`` are retired from the live board — score CUAD/MAUD/
-#: insurance checklists + the semantic trio instead. Override with
-#: ``field_types=`` on ``score()``, or use
-#: :data:`LEGACY_FULL_EXTRACTION_FIELD_TYPES` for historical free-text dumps.
+#: ``config/taxonomy.yaml`` / ``EXTRACTION_SCHEMAS`` (v0.6.0 pared product) and
+#: derived from the document-class registry (``schemas/doc_classes.py``: edit the
+#: field there, not here). Open-ended ``key_obligations`` / ``termination_clauses``
+#: / ``key_provisions`` / long ``key_points`` are retired from the live board — score
+#: CUAD/MAUD/insurance checklists + the semantic trio instead. Override with
+#: ``field_types=`` on ``score()``.
 DEFAULT_FIELD_TYPES: dict[str, dict[str, str]] = {
-    # ContractExtraction v2 (0.28.0, mailroom-dataset v10): the parse-compat
-    # ``merger_consideration`` / ``maud_clauses`` left the live map
-    # (``cuad_schema.CONTRACT_PARSE_COMPAT_FIELDS``) and the entity fields joined.
-    "contract": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "party_roles": "entity_list:free_text",
-        "signatories": "entity_list:name",
-        "agreement_date": "date",
-        "effective_date": "date",
-        "expiration_date": "date",
-        "term_length": "free_text",
-        "renewal_terms": "free_text",
-        "termination_notice_period": "free_text",
-        "governing_law": "name",
-        "dispute_forum": "name",
-        "contract_value": "money",
-        "payment_terms": "free_text",
-        "territory": "free_text",
-        "cuad_family": "label",
-        "cuad_clauses": "entity_list:free_text",
-    },
-    "corporate_record": {
-        "entity_name": "name",
-        "record_type": "name",
-        "effective_date": "date",
-        "signatories": "entity_list:name",
-        "jurisdiction": "name",
-        "filing_number": "id",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-    },
-    "due_diligence": {
-        "target_entity": "name",
-        "diligence_type": "name",
-        "material_findings": "entity_list:free_text",
-        "risk_flags": "entity_list:free_text",
-        "outstanding_items": "entity_list:free_text",
-        "document_date": "date",
-        "prepared_by": "name",
-    },
-    "correspondence": {
-        "sender": "name",
-        "recipient": "name",
-        "additional_recipients": "entity_list",
-        "communication_type": "label",
-        "communication_date": "date",
-        "demand_amount": "money",
-        "action_items": "entity_list",
-        "urgency": "label",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-    },
-    "compliance_filing": {
-        "filing_type": "name",
-        "regulatory_body": "name",
-        "filing_date": "date",
-        "due_date": "date",
-        "entity_name": "name",
-        "key_requirements": "entity_list:free_text",
-        "status": "name",
-        "reference_number": "id",
-    },
-    "court_opinion": {
-        "case_name": "name",
-        "court": "name",
-        "date_decided": "date",
-        "docket_number": "id",
-        "opinion_type": "name",
-        "parties": "entity_list:name",
-        "holding": "free_text",
-        "legal_issues": "entity_list:free_text",
-        "outcome": "free_text",
-        "citations": "entity_list:id",
-        "authored_by": "name",
-    },
-    "insurance_claim": {
-        "claim_number": "id",
-        "policy_number": "id",
-        "insurer": "name",
-        "insured_party": "name",
-        "claim_type": "label",
-        "date_of_loss": "date",
-        "date_filed": "date",
-        "claimed_amount": "money",
-        "adjuster": "name",
-        "damages_description": "free_text",
-        "coverage_determination": "label",
-        "denial_reasons": "entity_list:free_text",
-        "supporting_documents": "entity_list",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-        "claim_checklist": "entity_list:free_text",
-    },
-    # MergerAgreementExtraction v2 (0.28.0, mailroom-dataset v10).
-    "merger_agreement": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "acquirer": "name",
-        "target": "name",
-        "merger_sub": "entity_list:name",
-        "signatories": "entity_list:name",
-        "effective_date": "date",
-        "effective_time": "free_text",
-        "governing_law": "name",
-        "per_share_cash_amount": "money",
-        "exchange_ratio": "free_text",
-        "target_termination_fee": "money",
-        "parent_termination_fee": "money",
-        "outside_date": "date",
-        "financial_advisors": "entity_list:name",
-        "legal_counsel": "entity_list:name",
-        "merger_consideration": "label",
-        "maud_clauses": "entity_list:free_text",
-        "intent": "label",
-        "subject_matter": "free_text",
-        "keywords": "entity_list:name",
-    },
+    key: doc_classes.field_types(key) for key in doc_classes.DOC_CLASSES
 }
 
-#: Pre-v0.6.0 mailroom field maps that still score open-ended free-text
-#: obligation dumps. Use only for historical rescoring — live board numbers
-#: should use :data:`DEFAULT_FIELD_TYPES`.
-LEGACY_FULL_EXTRACTION_FIELD_TYPES: dict[str, dict[str, str]] = {
-    "contract": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "effective_date": "date",
-        "term_length": "free_text",
-        "termination_clauses": "entity_list:free_text",
-        "governing_law": "name",
-        "key_obligations": "entity_list:free_text",
-        "contract_value": "money",
-        "renewal_terms": "free_text",
-        "cuad_family": "name",
-        "merger_consideration": "name",
-        "cuad_clauses": "entity_list:free_text",
-        "maud_clauses": "entity_list:free_text",
-    },
-    "merger_agreement": {
-        "document_name": "name",
-        "parties": "entity_list:name",
-        "effective_date": "date",
-        "term_length": "free_text",
-        "termination_clauses": "entity_list:free_text",
-        "governing_law": "name",
-        "key_obligations": "entity_list:free_text",
-        "contract_value": "money",
-        "renewal_terms": "free_text",
-        "cuad_family": "name",
-        "merger_consideration": "name",
-        "cuad_clauses": "entity_list:free_text",
-        "maud_clauses": "entity_list:free_text",
-    },
-    "corporate_record": {
-        "entity_name": "name",
-        "record_type": "name",
-        "effective_date": "date",
-        "key_provisions": "entity_list:free_text",
-        "signatories": "entity_list:name",
-        "jurisdiction": "name",
-        "filing_number": "id",
-    },
-    "correspondence": {
-        "sender": "name",
-        "recipient": "name",
-        "additional_recipients": "entity_list",
-        "communication_type": "name",
-        "communication_date": "date",
-        "key_points": "entity_list",
-        "demand_amount": "money",
-        "action_items": "entity_list",
-        "urgency": "name",
-        "referenced_communications": "entity_list",
-    },
-}
 
 #: Per-agent extras on top of the task-bundle surface. Only names that
 #: already resolve in the registry (no invented KPIs).
@@ -513,6 +331,190 @@ def _task_key_for(profile: AgentProfile, kind: str) -> str | None:
         return "multiclass"
     return None
 
+
+
+def _labelled_label_pairs(expected: Any, predicted: Any) -> tuple[Any, Any]:
+    """Keep only label pairs whose expected label is present.
+
+    A blank expected label (``None``, ``""``, ``"nan"``, ``"none"``…) is not
+    ground truth, so its pair is dropped. Returns ``(None, None)`` when no
+    labelled pair is left; a missing prediction for a labelled pair becomes
+    ``""`` (a miss). Lists of unequal length, and a scalar prediction for
+    several expected labels, pass through unchanged so the content scorer raises
+    its usual length error.
+    """
+    from ..schemas import gt_metadata as _gtm
+
+    if expected is None:
+        return None, None
+    if isinstance(expected, (list, tuple)):
+        if not expected:
+            return None, None
+        if isinstance(predicted, (list, tuple)):
+            preds = list(predicted)
+        elif predicted is None or len(expected) == 1:
+            preds = [predicted] * len(expected)
+        else:
+            # One scalar for several labels is not an answer to each of them:
+            # leave it for the content scorer's length error.
+            return expected, predicted
+        if len(preds) != len(expected):
+            return expected, predicted
+        kept = [
+            (exp, pred)
+            for exp, pred in zip(expected, preds)
+            if not _gtm.is_empty_value(exp)
+        ]
+        if not kept:
+            return None, None
+        return [exp for exp, _ in kept], ["" if p is None else p for _, p in kept]
+    if _gtm.is_empty_value(expected):
+        return None, None
+    return expected, "" if predicted is None else predicted
+
+
+def _merger_gold_from_labels(
+    row: dict[str, Any],
+    scoped: dict[str, Any],
+    subclass: Any,
+    field_map: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Extraction gold a Hub merger row's MAUD labels give, for the keys it lacks.
+
+    Converts ``maud_clause_labels`` (and the subclass) with
+    :func:`~llm_dojo_scoring.schemas.maud_schema.hub_merger_expected_fields`, the
+    way ``cuad_clause_labels`` feed a contract. Only a row that actually answers
+    MAUD questions gets gold: a pending / absent / empty label map, or a bare
+    subclass, stays unlabelled (unscorable) rather than scoring a lone
+    ``merger_consideration``. A key the row already carries (non-empty) or whose
+    ``gt_presence`` status is absent is never overwritten or invented. With a
+    non-empty *field_map* (the caller's or the suite's active field map) only keys
+    inside it are returned, so a caller who scopes ``field_types`` is not charged
+    for derived fields outside that scope.
+    """
+    from ..schemas import gt_metadata as gtm
+    from ..schemas.maud_schema import hub_merger_expected_fields
+
+    derived = hub_merger_expected_fields(
+        row, subclass if isinstance(subclass, str) else None
+    )
+    if not derived.get("maud_clauses"):
+        return {}
+    presence = gtm.gt_presence_map(row)
+    return {
+        key: value
+        for key, value in derived.items()
+        if gtm.is_empty_value(scoped.get(key))
+        and presence.get(key) not in gtm.ABSENT_PRESENCE_STATUSES
+        and (not field_map or key in field_map)
+    }
+
+
+def _canonical_maud_line(line: Any) -> Any:
+    """A predicted clause line in canonical ``'<Question>: <Hub class>'`` form.
+
+    Bullets, numbering, quotes / backticks, case, smart quotes and stray spacing
+    are removed when the line names a catalog question with a catalog answer
+    (:func:`~llm_dojo_scoring.schemas.maud_schema.parse_maud_clause`); any other
+    line is returned unchanged for the MAUD scorer to read as written.
+    """
+    from ..schemas.maud_schema import parse_maud_clause
+
+    parsed = parse_maud_clause(line) if isinstance(line, str) else None
+    return f"{parsed[0]}: {parsed[1]}" if parsed else line
+
+
+def _maud_lines_all_ambiguous(lines: Any) -> bool:
+    """True when the MAUD scorer calls every question in these gold lines ambiguous.
+
+    Such a ``maud_clauses`` field is unscorable: the generic fuzzy matcher must not
+    score the same lines in its place. Gold that names no question at all is not
+    ambiguous (it stays with the generic matcher).
+    """
+    from .content_scoring import parse_maud_labels, score_maud_extraction
+
+    if not isinstance(lines, (list, tuple)) or not lines:
+        return False
+    return bool(score_maud_extraction(parse_maud_labels(list(lines)), {}).get("gt_ambiguous"))
+
+
+def _n_unparsed_maud_entries(lines: Any) -> int:
+    """Nonempty predicted clause entries that :func:`parse_maud_labels` cannot read."""
+    from .content_scoring import _span_lines, parse_maud_labels
+
+    if not isinstance(lines, list):
+        return 0
+    count = 0
+    for entry in lines:
+        for item in _span_lines(entry):
+            if item is None or (isinstance(item, str) and not item.strip()):
+                continue
+            if not parse_maud_labels([item]):
+                count += 1
+    return count
+
+
+def _score_maud_clauses_by_question(
+    result: ExtractionScoreResult, expected: Any, predicted: Any
+) -> None:
+    """Rescore a merger ``maud_clauses`` field question by question, in place.
+
+    The generic ``entity_list:free_text`` matcher compares clause lines as
+    fuzzy text, so a line with the wrong answer still matches its gold line
+    (0.67 to 0.83 similarity against a 0.6 threshold). A MAUD line is a
+    ``question -> class`` answer, so the field is scored as the MAUD scorer scores
+    it (lines or a ``{question: class}`` object): the share of labelled questions answered with the same class
+    (``maud_question_accuracy``), tolerant of bullets, case, quotes and spacing.
+    Precision counts predicted questions that are wrong or unlabelled. The
+    overall score is recomputed. Gold whose lines name no question is left to the
+    generic matcher.
+    """
+    from .content_scoring import parse_maud_labels, score_maud_extraction
+    from .field_scoring import EntityListScore
+
+    if "maud_clauses" not in result.field_scores or not isinstance(expected, dict):
+        return
+    exp_lines = expected.get("maud_clauses")
+    if not isinstance(exp_lines, (list, tuple)):
+        return
+    pred_lines = predicted.get("maud_clauses") if isinstance(predicted, dict) else None
+    if isinstance(pred_lines, str):
+        pred_lines = [pred_lines]
+    if isinstance(pred_lines, (list, tuple)):
+        pred_lines = list(pred_lines)
+    elif not isinstance(pred_lines, Mapping):  # the ``{question: class}`` object grammar parses too
+        pred_lines = []
+    if isinstance(pred_lines, list):
+        pred_lines = [_canonical_maud_line(line) for line in pred_lines]
+    # Both sides are one document each: a list of clause objects must not be read
+    # as a batch of documents and paired with the gold lines by position.
+    pred_labels = parse_maud_labels(pred_lines)
+    scored = score_maud_extraction(parse_maud_labels(list(exp_lines)), pred_labels)
+    n_expected = scored.get("n_questions") or 0
+    if not n_expected:
+        return
+    exact = round((scored.get("maud_question_accuracy") or 0.0) * n_expected)
+    # A nonempty entry the parser rejects (free text, no question) is a prediction
+    # that matched nothing, the same as a wrong answer.
+    n_predicted = len(pred_labels) + _n_unparsed_maud_entries(pred_lines)
+    precision = exact / n_predicted if n_predicted else 0.0
+    recall = exact / n_expected
+    f1 = 2 * precision * recall / (precision + recall) if exact else 0.0
+    result.entity_list_scores["maud_clauses"] = EntityListScore(
+        field_name="maud_clauses",
+        precision=precision,
+        recall=recall,
+        f1=f1,
+        matched=exact,
+        unmatched_predicted=n_predicted - exact,
+        unmatched_expected=n_expected - exact,
+        partial_gt=True,
+    )
+    result.field_scores["maud_clauses"] = round(recall, 4)
+    if "maud_clauses" in result.ambiguous_fields:
+        result.ambiguous_fields.remove("maud_clauses")
+    values = list(result.field_scores.values())
+    result.overall_score = round(sum(values) / len(values), 4)
 
 
 def _subclass_kwarg(kwargs: Mapping[str, Any]) -> Any:
@@ -898,7 +900,8 @@ class ScoringSuite:
         # plus annotation stats and a stringified gt_presence map. Scope the
         # GT to THIS suite's class surface so fields that do not apply to the
         # document type (empty / not_applicable / schema_documented_absence /
-        # pending_annotation) are never required events, and parse the
+        # pending_annotation) are never required events (pending fields are
+        # dropped as unlabelled, the others blanked), and parse the
         # stringified JSON values ("[]", "{}", '["a", "b"]'). See
         # llm_dojo_scoring.schemas.gt_metadata.
         from ..schemas import gt_metadata as _gtm
@@ -931,7 +934,7 @@ class ScoringSuite:
             return row_subclass_kw if index is None else None
 
         def _scope_expected_one(value: Any, index: int | None = None) -> Any:
-            """Remove annotation keys and blank absent fields in a GT dictionary.
+            """Remove annotation keys and pending fields, and blank absent fields, in a GT dictionary.
 
             Apply :func:`scoring_gt_fields` to Hub metadata; preserve unmapped
             keys in plain dictionaries and return non-dict inputs unchanged.
@@ -945,7 +948,7 @@ class ScoringSuite:
             is_hub_metadata = bool(_gtm.gt_presence_map(value)) or (
                 _gtm.GT_PRESENCE_KEY in value
             )
-            return _gtm.scoring_gt_fields(
+            scoped = _gtm.scoring_gt_fields(
                 value,
                 field_types=ftypes,
                 extra_keys=scorable_gt_keys,
@@ -953,6 +956,13 @@ class ScoringSuite:
                 doc_type=doc_class,
                 subclass=_subclass_for(index),
             )
+            if doc_class == "merger_agreement":
+                scoped.update(
+                    _merger_gold_from_labels(value, scoped, _subclass_for(index), ftypes)
+                )
+                if _maud_lines_all_ambiguous(scoped.get("maud_clauses")):
+                    del scoped["maud_clauses"]  # unscorable gold is no gold
+            return scoped
 
         scoped_to_empty = False
         scoped_empty_rows: list[bool] = []
@@ -1097,9 +1107,12 @@ class ScoringSuite:
 
         def _run(exp: Any, pred: Any, text: str | None, audit_pred: Any = None):
             """Score one extraction using this suite's document class and field types."""
-            return score_extraction(
+            result = score_extraction(
                 doc_class, ftypes, pred, exp, doc_text=text, audit_predicted=audit_pred,
             )
+            if doc_class == "merger_agreement":
+                _score_maud_clauses_by_question(result, exp, pred)
+            return result
 
         def _prf_one(exp: Any, pred: Any, result: ExtractionScoreResult) -> dict[str, Any]:
             """Compute field-presence metrics, treating non-mapping predictions as misses."""
@@ -1266,14 +1279,19 @@ class ScoringSuite:
         else:
             extraction = _run(expected, predicted, doc_text, audit_predictions)
 
-        if topic_e is not None or topic_p is not None:
+        # A label the dataset leaves blank (``""``, ``None``, the literal
+        # ``"nan"``) is not ground truth: drop those pairs instead of scoring
+        # the prediction against an empty label.
+        topic_e, topic_p = _labelled_label_pairs(topic_e, topic_p)
+        sent_e, sent_p = _labelled_label_pairs(sent_e, sent_p)
+        if topic_e is not None:
             extras.update(
                 score_correspondence_content(
                     expected_topic=topic_e if topic_e is not None else "",
                     predicted_topic=topic_p if topic_p is not None else "",
                 )
             )
-        if sent_e is not None or sent_p is not None:
+        if sent_e is not None:
             extras.update(
                 score_correspondence_content(
                     expected_sentiment=sent_e if sent_e is not None else "",
@@ -1328,18 +1346,27 @@ class ScoringSuite:
         # explicitly null rather than reporting a misleading 0.0.
         has_extraction_events = any(
             not _gtm.is_empty_value(value)
-            for exp in peeled_exp
-            if isinstance(exp, dict)
+            for idx, exp in enumerate(peeled_exp)
+            if idx not in unscorable_rows and isinstance(exp, dict)
             for value in exp.values()
         )
-        if presence and not has_extraction_events:
+        if not has_extraction_events:
+            # No labelled extraction field (presence-only CUAD rows, MAUD-only
+            # merger rows): field-micro P/R/F1/F2 are undefined, so they stay
+            # null rather than reporting a misleading 0.0.
             prf_payload = prf_bundle_keys({})
         elif is_batch and peeled_exp:
             rows = []
             for idx, (exp, pred, result) in enumerate(
                 zip(peeled_exp, peeled_pred, extraction)
             ):
-                if not isinstance(result, ExtractionScoreResult):
+                if (
+                    idx in unscorable_rows
+                    or not isinstance(result, ExtractionScoreResult)
+                    or (isinstance(exp, dict) and not exp)
+                ):
+                    # A row with no expected fields has no events: its
+                    # predicted keys must not count as false positives.
                     continue
                 row_presence = (
                     presence[idx]
@@ -1474,6 +1501,17 @@ class ScoringSuite:
             # Single-document payload: flatten the document's own overall
             # score so consumers do not have to dig into the dataclass.
             payload["overall_score"] = extraction.overall_score
+        rows = extraction if is_batch else [extraction]
+        if (
+            not presence
+            and filtered.get("maud_question_accuracy") is not None
+            and all(getattr(row, "overall_score", None) is None for row in rows)
+        ):
+            # MAUD-only merger GT (one document or a whole batch): no
+            # extraction field is scored, so the headline is the MAUD question
+            # accuracy, not a null overall.
+            mid = metric_id_for("maud_question_accuracy", doc_class=doc_class)
+            payload["metric_id"] = mid
         return _stamp(payload, mid)
 
     def _score_audit(

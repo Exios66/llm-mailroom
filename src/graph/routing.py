@@ -260,8 +260,12 @@ def _judge_can_review(state: dict) -> bool:
 
 
 def judge_should_run(state: dict) -> bool:
-    """The ambiguous band, or an unsure extraction whose retries are spent."""
-    return judge_gate(state) or (_judge_can_review(state) and _extraction_still_unsure(state))
+    """The ambiguous band, a retry owed a re-judge, or an unsure extraction whose retries are spent."""
+    return (
+        judge_gate(state)
+        or retry_rejudge_due(state)
+        or (_judge_can_review(state) and _extraction_still_unsure(state))
+    )
 
 
 def _extraction_still_unsure(state: Mapping[str, Any]) -> bool:
@@ -443,6 +447,36 @@ def judge_gate(state: Mapping[str, Any]) -> bool:
     return confidence is not None and low <= confidence < band_high
 
 
+def _judge_max_passes(thresholds: Mapping[str, Any]) -> int:
+    """``judge_max_passes`` (one completeness pass per extraction attempt); default 3."""
+    raw = thresholds.get("judge_max_passes")
+    return int(raw) if raw is not None else 3
+
+
+def retry_rejudge_due(state: Mapping[str, Any]) -> bool:
+    """#241: a retry extraction whose predecessor was judged owes another verdict.
+
+    ``judge_gate`` only fires in the ambiguous band, and a retry's self-reported
+    confidence does not predict its score: a retry that said 1.0 used to archive
+    unjudged after the arbiter had asked for it. True when this is a retry
+    (``extraction_attempts >= 2``), an earlier attempt was judged
+    (``judge_pass_count >= 1``) and the pass budget (``judge_max_passes``) is not
+    spent. Off by default until the judge is calibrated (#242): opt in with
+    ``judge_rejudge_retry: true`` (taxonomy, per class overridable).
+    The judge lane's own limits apply: the ``MAILROOM_JUDGE_VERIFY`` kill switch, a guardrail failure or an empty extraction. When the passes are
+    spent the retry archives as before; it does not escalate.
+    """
+    thresholds = _thresholds_for(state)
+    if not thresholds.get("judge_rejudge_retry", False):
+        return False
+    if int(state.get("extraction_attempts") or 0) < 2:
+        return False
+    passes = int(state.get("judge_pass_count") or 0)
+    if passes < 1 or passes >= _judge_max_passes(thresholds):
+        return False
+    return _judge_can_review(state)
+
+
 def after_extraction_gated(state: dict) -> Literal[
     "extract", "retry_extract", "compile_report", "judge_verify", "human_review", "boss_escalation"
 ]:
@@ -468,19 +502,30 @@ def after_extraction_gated(state: dict) -> Literal[
 def after_retry_extraction_gated(state: dict) -> Literal[
     "retry_extract", "compile_report", "judge_verify", "human_review", "boss_escalation"
 ]:
-    """Same gate applied to the post-retry extraction router.
+    """Same gate applied to the post-retry extraction router, plus ``retry_rejudge_due``.
 
     Transient blips self-loop on ``retry_extract`` (own per-node budget);
     they no longer bounce to first-pass ``extract``.
     """
     dest = after_retry_extraction(state)
-    if dest == "compile_report" and judge_gate(state):
-        logger.info(
-            "judge_gate_engaged",
-            doc_id=state.get("doc_id"),
-            extraction_confidence=state.get("extraction_confidence"),
-        )
-        return "judge_verify"
+    if dest == "compile_report":
+        if judge_gate(state):
+            logger.info(
+                "judge_gate_engaged",
+                doc_id=state.get("doc_id"),
+                extraction_confidence=state.get("extraction_confidence"),
+            )
+            return "judge_verify"
+        if retry_rejudge_due(state):
+            # #241: the earlier attempt was judged; a confident retry is not exempt.
+            logger.info(
+                "judge_rejudge_retry",
+                doc_id=state.get("doc_id"),
+                extraction_confidence=state.get("extraction_confidence"),
+                extraction_attempts=state.get("extraction_attempts"),
+                judge_pass_count=state.get("judge_pass_count"),
+            )
+            return "judge_verify"
     return dest
 
 
@@ -723,9 +768,7 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
         if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
             return "human_review"
         return "compile_report"
-    thresholds = _thresholds_for(state)
-    raw_max_passes = thresholds.get("judge_max_passes")
-    max_passes = int(raw_max_passes) if raw_max_passes is not None else 3
+    max_passes = _judge_max_passes(_thresholds_for(state))
     passes = int(state.get("judge_pass_count") or 0)
     if passes >= max_passes and verdict in ("partial", "incomplete"):
         logger.info(

@@ -63,6 +63,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
 from .corpus import CORRESPONDENCE_TOPICS, RAW_CORPUS_SUBCLASS_SURFACES
+from .doc_classes import field_names
 from .gt_metadata import (
     ABSENT_PRESENCE_STATUSES,
     gt_presence_map,
@@ -272,11 +273,9 @@ def _usable(fields: Mapping[str, Any], presence: Mapping[str, str], field: str) 
 
 def correspondence_populated_fields(gt_fields: Any) -> list[str]:
     """Live correspondence fields that carry expected GT for one row, in map order."""
-    from ..scoring.suites import DEFAULT_FIELD_TYPES
-
     fields = _parse_fields(gt_fields)
     presence = gt_presence_map(fields)
-    return [f for f in DEFAULT_FIELD_TYPES["correspondence"] if _usable(fields, presence, f)]
+    return [f for f in field_names("correspondence") if _usable(fields, presence, f)]
 
 
 def audit_correspondence_gt_row(gt_fields: Any) -> list[str]:
@@ -317,9 +316,7 @@ def audit_correspondence_gt(rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]
     - ``populated_field_counts`` — number of populated live fields → rows;
     - ``unscored_fields`` — live fields that no row populates.
     """
-    from ..scoring.suites import DEFAULT_FIELD_TYPES
-
-    live = list(DEFAULT_FIELD_TYPES["correspondence"])
+    live = list(field_names("correspondence"))
     totals: dict[str, int] = {}
     population = dict.fromkeys(live, 0)
     histogram: dict[int, int] = {}

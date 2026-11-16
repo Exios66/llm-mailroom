@@ -317,7 +317,14 @@ class BaseAgent(ABC):
         self._last_chunked = True
         self._last_failed_chunks = failed
         if merged is None:
-            return {"_parse_error": True, "confidence": 0.0}
+            # Every window failed: keep the bookkeeping so routing and the
+            # review causes still see a chunk failure (#249).
+            return {
+                "_parse_error": True,
+                "confidence": 0.0,
+                "_n_chunks": len(chunks),
+                "_failed_chunks": failed,
+            }
         return finalize_chunked_merge(
             merged, agent_name=self.agent_name, n_chunks=len(chunks), failed=failed
         )

@@ -388,3 +388,42 @@ def test_validate_operator_extraction_accepts_matching_schema():
         assert False, "expected ValueError"
     except ValueError as exc:
         assert "extracted_data" in str(exc)
+
+
+@pytest.mark.parametrize("blank", ["   ", "", None])
+def test_blank_body_reviewer_falls_back_to_x_reviewer_header(client, temp_base_dir, blank):
+    """#251: a whitespace-only ``reviewer`` used to win the ``or`` and then normalize to
+    ``human_reviewer``, discarding the X-Reviewer header."""
+    from pipeline.bins import load_manifest
+
+    _park_review(temp_base_dir)
+    r = client.post(
+        "/review/doc-review-1/resolve",
+        headers={**_auth(), "X-Reviewer": "alice@example.com"},
+        json={
+            "decision": "approved",
+            "disposition": "complete",
+            "extracted_data": {"parties": ["Acme"], "effective_date": "2024-01-01", "confidence": 0.99},
+            "reviewer": blank,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert load_manifest("doc-review-1").human_label["reviewer"] == "alice@example.com"
+
+
+def test_explicit_body_reviewer_still_wins_over_header(client, temp_base_dir):
+    from pipeline.bins import load_manifest
+
+    _park_review(temp_base_dir)
+    r = client.post(
+        "/review/doc-review-1/resolve",
+        headers={**_auth(), "X-Reviewer": "alice@example.com"},
+        json={
+            "decision": "approved",
+            "disposition": "complete",
+            "extracted_data": {"parties": ["Acme"], "effective_date": "2024-01-01", "confidence": 0.99},
+            "reviewer": "bob",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert load_manifest("doc-review-1").human_label["reviewer"] == "bob"

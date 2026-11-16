@@ -38,6 +38,7 @@ from typing import Iterable
 
 import yaml
 
+from ..schemas import doc_classes
 from .metric_meta import ALLOWED_GROUND_TRUTH, METRIC_META
 
 __all__ = [
@@ -63,26 +64,16 @@ __all__ = [
 # (``SPECIALISTS``, ``AUDITORS``, ``CLASSIFIERS``, ``TRANSCRIBERS``) expand
 # to these tuples so a newly added specialist cannot be omitted from the
 # extraction metric surface (the v0.7.0 ``insurance_claims_specialist`` gap).
-# All specialists the registry still scores (live + retired historical).
-SPECIALIST_AGENTS: tuple[str, ...] = (
-    "contracts_specialist",
-    "merger_agreement_specialist",
-    "corporate_records_specialist",
-    "due_diligence_specialist",
-    "correspondence_specialist",
-    "compliance_specialist",
-    "court_opinions_specialist",
-    "insurance_claims_specialist",
+# All specialists the registry still scores (live + retired historical), derived
+# from ``schemas/doc_classes.py`` (edit the registry, not this list).
+SPECIALIST_AGENTS: tuple[str, ...] = tuple(
+    doc_classes.DOC_CLASSES[key].specialist for key in doc_classes.ROSTER_DOC_TYPES
 )
 #: Live llm-mailroom extraction roster (mailroom-issues #236–#238).
 #: Retired specialists stay in SPECIALIST_AGENTS so historical traces
 #: still validate.
-LIVE_SPECIALIST_AGENTS: tuple[str, ...] = (
-    "contracts_specialist",
-    "merger_agreement_specialist",
-    "corporate_records_specialist",
-    "correspondence_specialist",
-    "insurance_claims_specialist",
+LIVE_SPECIALIST_AGENTS: tuple[str, ...] = tuple(
+    doc_classes.DOC_CLASSES[key].specialist for key in doc_classes.LIVE_DOC_TYPES
 )
 
 AUDITOR_AGENTS: tuple[str, ...] = (
@@ -346,7 +337,7 @@ metrics:
     aggregation: mean
     source: "extraction_metrics.extraction_binary_metrics"
     citation: "ACE / CoNLL / SemEval slot filling; TP requires typed score ≥ 1.0. F1 is van Rijsbergen β=1."
-    inclusion: "Skipped when expected is empty/null. Empty GT field values are not FN. List F1 is None if no list fields."
+    inclusion: "Skipped when expected is empty/null. Empty GT field values are not FN. List F1 is None if no list fields. A schema field the GT does not label is excluded on both sides (a value there is not an FP); with no labelled field the suite reports P/R/F1/F2 as null."
     ground_truth: required
   extraction_f2:
     tier: 0
@@ -403,6 +394,215 @@ metrics:
     source: "reviewer.score_review_lane"
     citation: "Every accept must have text, an eligible reviewer label, no causes, a cutoff, and agreement unless the sorter was below its low band."
     inclusion: "Always defined; 0 means every accepted row passed the rule."
+    ground_truth: structural
+  # Intake classifier (ml/metrics.py): the mailroom-ml fast path.
+  ml_intake_doc_type_accuracy:
+    tier: 1
+    description: "Intake classifier document-class accuracy"
+    applicable_agents: [INTAKE]
+    aggregation: mean
+    source: "ml.score_intake_model"
+    citation: "Exact match of the predicted class with the dataset class."
+    inclusion: "None when no record has a gold class."
+    ground_truth: required
+  ml_intake_doc_type_macro_f1:
+    tier: 1
+    description: "Intake classifier document-class macro F1"
+    applicable_agents: [INTAKE]
+    aggregation: mean
+    source: "ml.score_intake_model"
+    citation: "Unweighted one-vs-rest macro F1 over the gold classes (classification.macro_prf)."
+    inclusion: "None when no record has a gold class."
+    ground_truth: required
+  ml_intake_doc_type_ece:
+    tier: 1
+    description: "Calibration error of the class head"
+    applicable_agents: [INTAKE]
+    aggregation: mean
+    source: "ml.score_intake_model"
+    citation: "Equal-width 10-bin ECE of doc_type_confidence against class correctness (analysis.calibration)."
+    inclusion: "None when no scored record carries a confidence in [0, 1]."
+    ground_truth: required
+  ml_intake_subclass_accuracy:
+    tier: 1
+    description: "Intake classifier subclass accuracy"
+    applicable_agents: [INTAKE]
+    aggregation: mean
+    source: "ml.score_intake_model"
+    citation: "Subclass right only when the class is right and the predicted subclass normalizes (normalize_corpus_subclass, gold class) to the gold one."
+    inclusion: "None when no scored record has a gold subclass."
+    ground_truth: required
+  ml_intake_subclass_macro_f1:
+    tier: 1
+    description: "Intake classifier subclass macro F1"
+    applicable_agents: [INTAKE]
+    aggregation: mean
+    source: "ml.score_intake_model"
+    citation: "Macro F1 over gold class/subclass pairs, after the same normalization."
+    inclusion: "None when no scored record has a gold subclass."
+    ground_truth: required
+  ml_intake_subclass_ece:
+    tier: 1
+    description: "Calibration error of the subclass head"
+    applicable_agents: [INTAKE]
+    aggregation: mean
+    source: "ml.score_intake_model"
+    citation: "Equal-width 10-bin ECE of subclass_confidence against subclass correctness."
+    inclusion: "None when no subclass-scored record carries a confidence in [0, 1]."
+    ground_truth: required
+  ml_intake_fast_path_coverage:
+    tier: 1
+    description: "Share of documents the model answered without the LLM sorter"
+    applicable_agents: [INTAKE]
+    aggregation: mean
+    source: "ml.score_intake_model"
+    citation: "fast_path records over scored records."
+    inclusion: "None when no record has a gold class."
+    ground_truth: structural
+  ml_intake_selective_risk:
+    tier: 1
+    description: "Error rate of fast-path answers"
+    applicable_agents: [INTAKE]
+    aggregation: mean
+    source: "ml.score_intake_model"
+    citation: "Fast-path records whose class, or gold-labelled subclass, is wrong, over fast-path records."
+    inclusion: "None when no record took the fast path."
+    ground_truth: required
+  ml_intake_selective_risk_upper:
+    tier: 1
+    description: "Wilson upper bound of the fast-path error rate"
+    applicable_agents: [INTAKE]
+    aggregation: mean
+    source: "ml.score_intake_model"
+    citation: "Upper end of the Wilson score interval (z = 1.96 by default) of selective_risk; the value a release gate holds under its error budget."
+    inclusion: "None when no record took the fast path."
+    ground_truth: required
+  # Decision lanes (scoring/decision_lanes.py): judge, arbiter, boss, review tray.
+  judge_verdict_accuracy:
+    tier: 1
+    description: "Judge verdict accuracy against human or corpus gold"
+    applicable_agents: [judge]
+    aggregation: mean
+    source: "decision_lanes.score_judge_lane"
+    citation: "Exact match of the judge verdict with the gold verdict: human resolution (approve_as_is complete, correct partial, reject/reclassify incomplete), else the dataset extraction score read through the ambiguous band."
+    inclusion: "None when no judged row has gold. judge_error rows and rows without gold are unscored, never 0."
+    ground_truth: required
+  judge_verdict_macro_f1:
+    tier: 1
+    description: "Judge macro F1 over the gold verdict classes"
+    applicable_agents: [judge]
+    aggregation: mean
+    source: "decision_lanes.score_judge_lane"
+    citation: "Unweighted one-vs-rest macro F1 over the gold verdict classes (classification.macro_prf); gold as in judge_verdict_accuracy."
+    inclusion: "None when no judged row has gold."
+    ground_truth: required
+  judge_escalation_recall:
+    tier: 1
+    description: "Share of not-complete documents the judge did not call complete"
+    applicable_agents: [judge]
+    aggregation: mean
+    source: "decision_lanes.score_judge_lane"
+    citation: "Recall of the judge's escalation (verdict other than complete) over documents whose gold verdict is partial or incomplete."
+    inclusion: "None when no scored row has a not-complete gold verdict."
+    ground_truth: required
+  judge_false_escalation_rate:
+    tier: 1
+    description: "Share of complete documents the judge escalated"
+    applicable_agents: [judge]
+    aggregation: mean
+    source: "decision_lanes.score_judge_lane"
+    citation: "Complement of complete-class recall: gold complete, judge partial or incomplete."
+    inclusion: "None when no scored row has a complete gold verdict."
+    ground_truth: required
+  judge_error_rate:
+    tier: 1
+    description: "Share of judge runs that ended in judge_error"
+    applicable_agents: [judge]
+    aggregation: mean
+    source: "decision_lanes.score_judge_lane"
+    citation: "judge_error verdicts over every row the judge ran on; needs no gold."
+    inclusion: "None when the judge ran on no row."
+    ground_truth: structural
+  arbiter_decision_accuracy:
+    tier: 1
+    description: "Share of arbiter rulings that matched their outcome"
+    applicable_agents: [arbiter]
+    aggregation: mean
+    source: "decision_lanes.score_arbiter_lane"
+    citation: "Retry right when the next attempt's dataset score rose by epsilon; accept right when the person approved as is or the final score is at or above the high band; human_review right when the person changed the work or the final score is below the high band."
+    inclusion: "None when no ruling has gold. Rulings without gold are unscored, never 0."
+    ground_truth: required
+  arbiter_retry_usefulness:
+    tier: 1
+    description: "Share of retry_extraction rulings whose next attempt rose by at least epsilon"
+    applicable_agents: [arbiter]
+    aggregation: mean
+    source: "decision_lanes.score_arbiter_lane"
+    citation: "Dataset extraction score of attempt k+1 minus attempt k, at least epsilon (default 0.05), for a retry ruled on after attempt k."
+    inclusion: "None when no retry has the dataset score of both attempts."
+    ground_truth: required
+  arbiter_wrongful_accept_rate:
+    tier: 1
+    description: "Share of accept_with_caveats rulings that were wrong"
+    applicable_agents: [arbiter]
+    aggregation: mean
+    source: "decision_lanes.score_arbiter_lane"
+    citation: "Accept wrong when the person corrected, reclassified or rejected the work, or, with no resolution, the final dataset score is below the high band."
+    inclusion: "None when no accept ruling has gold."
+    ground_truth: required
+  arbiter_unnecessary_escalation_rate:
+    tier: 1
+    description: "Share of human_review rulings that were not needed"
+    applicable_agents: [arbiter]
+    aggregation: mean
+    source: "decision_lanes.score_arbiter_lane"
+    citation: "Escalation unnecessary when the person approved as is, or, with no resolution, the final dataset score is at or above the high band."
+    inclusion: "None when no human_review ruling has gold."
+    ground_truth: required
+  boss_wrongful_approve_rate:
+    tier: 1
+    description: "Share of audited boss approvals the person later changed or refused"
+    applicable_agents: [boss]
+    aggregation: mean
+    source: "decision_lanes.score_boss_lane"
+    citation: "Human outcome only: approved, then the person corrected, reclassified or rejected the document."
+    inclusion: "None when no approved row has a human resolution (row is no_boss_gold otherwise)."
+    ground_truth: required
+  boss_needless_review_rate:
+    tier: 1
+    description: "Share of boss review rulings the person approved as is"
+    applicable_agents: [boss]
+    aggregation: mean
+    source: "decision_lanes.score_boss_lane"
+    citation: "Human outcome only: review, then the person approved as is."
+    inclusion: "None when no review row has a human resolution."
+    ground_truth: required
+  review_tray_wasted_review_rate:
+    tier: 1
+    description: "Share of resolved reviews approved as is with no field corrections"
+    applicable_agents: [human_review]
+    aggregation: mean
+    source: "decision_lanes.score_review_tray"
+    citation: "A review that changed nothing: resolution approve_as_is and empty field_corrections."
+    inclusion: "None when no parked document is resolved."
+    ground_truth: structural
+  review_tray_correction_rate:
+    tier: 1
+    description: "Share of resolved reviews that corrected fields"
+    applicable_agents: [human_review]
+    aggregation: mean
+    source: "decision_lanes.score_review_tray"
+    citation: "Resolution correct over resolved reviews."
+    inclusion: "None when no parked document is resolved."
+    ground_truth: structural
+  review_tray_reject_rate:
+    tier: 1
+    description: "Share of resolved reviews that rejected the document"
+    applicable_agents: [human_review]
+    aggregation: mean
+    source: "decision_lanes.score_review_tray"
+    citation: "Resolution reject over resolved reviews."
+    inclusion: "None when no parked document is resolved."
     ground_truth: structural
 
   # ===================== T1 — CORE =====================
