@@ -271,9 +271,32 @@ def _pct(values: list[float], q: float) -> float:
     return ordered[idx]
 
 
-def _worker_env(base_dir: str, log_level: str, extra: dict | None = None) -> dict:
-    """Environment for a worker: hermetic, no tracing, no secrets, fresh base."""
+def _dotenv_secret_names(dotenv_path: Path | None) -> set[str]:
+    """Credential-like names defined in ``dotenv_path`` (default: the repository ``.env``).
+
+    Workers import project modules that call ``load_env()``, which re-reads the
+    repository ``.env`` with ``override=False``: a secret dropped from the inherited
+    environment would come straight back from the file (#251). Best effort: an
+    unreadable or missing file yields no names."""
+    path = dotenv_path if dotenv_path is not None else REPO_ROOT / ".env"
+    try:
+        from dotenv import dotenv_values
+
+        return {name for name in dotenv_values(path) if _is_secret_env(name)}
+    except Exception:
+        return set()
+
+
+def _worker_env(
+    base_dir: str, log_level: str, extra: dict | None = None, dotenv_path: Path | None = None
+) -> dict:
+    """Environment for a worker: hermetic, no tracing, no secrets, fresh base.
+
+    Secrets in the inherited environment are dropped; secret names the ``.env``
+    file defines are pinned to ``""`` so the worker's ``load_env()`` cannot
+    restore them (it never overrides a variable that is already set)."""
     env = {k: v for k, v in os.environ.items() if not _is_secret_env(k)}
+    env.update({name: "" for name in _dotenv_secret_names(dotenv_path)})
     env.update(
         {
             "MAILROOM_BASE_DIR": base_dir,
