@@ -3880,6 +3880,7 @@ PIPELINE_RESULT_TEXT_LIMIT = 100_000
 
 
 _ORACLE_ROUTING_WARNED: set[str] = set()
+_ORACLE_ROUTING_WARNED_MAX = 1024  # a long-lived watcher sees a new run_id per run
 
 
 def _warn_oracle_routing_once(run_id: str | None) -> None:
@@ -3887,6 +3888,8 @@ def _warn_oracle_routing_once(run_id: str | None) -> None:
     key = run_id or ""
     if key in _ORACLE_ROUTING_WARNED:
         return
+    if len(_ORACLE_ROUTING_WARNED) >= _ORACLE_ROUTING_WARNED_MAX:
+        _ORACLE_ROUTING_WARNED.clear()  # bounded: at worst one extra warning per run
     _ORACLE_ROUTING_WARNED.add(key)
     logger.warning(
         "oracle_routing_enabled",
