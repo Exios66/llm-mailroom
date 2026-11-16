@@ -37,7 +37,9 @@ from graph.routing import (
     after_report,
     judge_gate,
     judge_should_run,
+    keep_best_attempt_enabled,
 )
+from graph import attempts as attempt_history
 from observability.tracing import pipeline_trace, traced_node, observation
 from schemas.manifest import DocumentManifest, PipelineStage
 from pipeline.config import get_confidence_thresholds, UNKNOWN_DOC_TYPE
@@ -2015,6 +2017,10 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     gate = _review_extraction(state, doc_type, result)
     if gate is not None:
         result_dict["extraction_gate"] = gate
+    # #254: every attempt is recorded, whether or not the best one is later kept.
+    result_dict["extraction_attempt_history"] = attempt_history.record_attempt(
+        state, kind="extract", extracted=result, confidence=confidence, guard=guard, gate=gate
+    )
     # Per-agent memory (iterative improvement): record guardrail rejections and
     # extraction confidence so the specialist's retry calls learn from them.
     try:
@@ -2233,6 +2239,9 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
     gate = _review_extraction(state, doc_type, result)
     if gate is not None:
         updates["extraction_gate"] = gate
+    updates["extraction_attempt_history"] = attempt_history.record_attempt(
+        state, kind="retry_extract", extracted=result, confidence=confidence, guard=guard, gate=gate
+    )
     return updates
 
 
@@ -2337,7 +2346,7 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         )
     except Exception:
         logger.exception("in_pipeline_judge_score_failed", doc_id=state.get("doc_id"))
-    return {
+    verdict_update: dict[str, Any] = {
         "judge_verdict": label,
         "judge_score": score,
         "judge_findings": findings,
@@ -2345,6 +2354,13 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         "judge_pass_count": int(state.get("judge_pass_count") or 0) + 1,
         "transient_error": False,
     }
+    # #254: the verdict belongs to the attempt just judged (the latest).
+    history = attempt_history.record_verdict(
+        state, verdict=label, score=score, findings=findings, source_verified=source_verified
+    )
+    if history is not None:
+        verdict_update[attempt_history.HISTORY_KEY] = history
+    return verdict_update
 
 
 def arbiter_node(state: DocumentState) -> dict[str, Any]:
@@ -2504,6 +2520,8 @@ def _paused_review_result(result, initial_state, thread_id: str, trace_id: str) 
         else dict(initial_state)
     )
     out["stage"] = PipelineStage.REVIEW.value
+    # #254: the review node has parked the selected attempt; report the same one.
+    out = _with_selected_attempt(out)
     out["review_decision"] = out.get("review_decision") or "pending_review"
     out["checkpoint_thread_id"] = thread_id
     if trace_id and not out.get("trace_id"):
@@ -2598,6 +2616,35 @@ def _restart_review_clock(doc_id: str) -> None:
         logger.warning("review_clock_restart_failed", doc_id=doc_id, exc_info=True)
 
 
+def _attempt_selection(state: Mapping[str, Any]) -> dict[str, Any]:
+    """State updates choosing the attempt to report or review (#254); ``{}`` on any failure.
+
+    Always records ``selected_attempt``; restores an earlier attempt's fields only
+    when ``confidence.keep_best_attempt`` is on. Best-effort: selection must never
+    fail a document, so a problem keeps the latest attempt as it is.
+    """
+    try:
+        return attempt_history.select_attempt(state, enabled=keep_best_attempt_enabled(state))
+    except Exception:
+        logger.exception("attempt_selection_failed", doc_id=state.get("doc_id"))
+        return {}
+
+
+def _with_selected_attempt(state: Mapping[str, Any]) -> dict[str, Any]:
+    """A copy of ``state`` with the selected attempt's fields applied (the input is not mutated)."""
+    return {**state, **_attempt_selection(state)}
+
+
+def _attempt_manifest_fields(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Copy the attempt history and the selection onto a DocumentManifest (#254)."""
+    history = state.get("extraction_attempt_history")
+    return {
+        "extraction_attempt_history": [dict(e) for e in history] if history else None,
+        "selected_attempt": state.get("selected_attempt"),
+        "selected_attempt_reason": state.get("selected_attempt_reason"),
+    }
+
+
 def human_review_node(state: DocumentState) -> dict[str, Any]:
     """Park the document for a human, then ``interrupt()`` until they decide.
 
@@ -2609,6 +2656,9 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
     from pipeline.bins import park_for_review
     from pipeline.reconsideration import collect_review_causes, format_causes
 
+    # #254: a reviewer is handed the selected attempt (the latest unless
+    # keep_best_attempt is on). Recomputed from the history on every replay.
+    state = _with_selected_attempt(state)  # type: ignore[assignment]
     file_path_str = state.get("file_path", "")
     esc_reason = state.get("escalation_reason", "Unknown reason")
     doc_id = state.get("doc_id", "")
@@ -2661,6 +2711,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             extraction_source=state.get("extraction_source") or None,
             review_entered_at=entered_at,
             **_lane_b_manifest_fields(state),
+            **_attempt_manifest_fields(state),
             **_review_evidence_fields(state, causes),
         )
         dest, newly_parked = park_for_review(Path(file_path_str), manifest)
@@ -2804,6 +2855,10 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             # previous apply may have marked on this state.
             "extraction_source": None,
             "extraction_attempts": 0,
+            # A fresh extraction starts its own attempt history (#254).
+            attempt_history.HISTORY_KEY: [],
+            "selected_attempt": None,
+            "selected_attempt_reason": None,
             "classification_attempts": 0,
             # Fair Lane B budget on the corrected run; keep last arbiter_* /
             # judge_* fields on state for the eventual archive trail.
@@ -3051,6 +3106,9 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
     """Procedural matter-record assembly (reporter LLM retired)."""
     from agents.reporter import compile_matter_record
 
+    # #254: report the selected attempt (the latest unless keep_best_attempt is on).
+    selection = _attempt_selection(state)
+    state = {**state, **selection}  # type: ignore[assignment]
     extracted = state.get("extracted_data") or {}
     if not isinstance(extracted, dict):
         extracted = {}
@@ -3089,6 +3147,7 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
 
     logger.info("report_compiled", doc_id=state.get("doc_id"), procedural=True)
     return {
+        **selection,
         "extracted_data": {
             **extracted,
             "_report": report,
@@ -3256,6 +3315,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         extraction_source=state.get("extraction_source") or None,
         human_label=state.get("human_label") or None,
         **_lane_b_manifest_fields(state),
+        **_attempt_manifest_fields(state),
         **_review_evidence_fields(state, state.get("review_causes")),
     )
 

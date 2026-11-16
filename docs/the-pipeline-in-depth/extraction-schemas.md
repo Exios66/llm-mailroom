@@ -292,6 +292,7 @@ There is no separate `citations` or `provenance` field in any extraction schema.
 | `extraction_attempts` | `int` | Number of extract runs. |
 | `judge_verdict`, `judge_score`, `judge_findings` | | Lane B judge result, when it ran. |
 | `arbiter_decision`, `arbiter_reasoning`, `arbiter_handoff`, `arbiter_fields_to_fix`, `arbiter_retry_count` | | Lane B arbiter result, when it ran. |
+| `extraction_attempt_history`, `selected_attempt`, `selected_attempt_reason` | | Every extraction attempt (initial and each retry) with its guardrail issues, schema/gate status and judge verdict, and the attempt the manifest's fields came from (#254). The latest unless `confidence.keep_best_attempt` is on. `None` on older manifests. |
 | `intake` | `dict \| None` | Intake provenance (`source`, message id, sender and so on). |
 
 The graph state also carries `extraction_guardrail`, the list of guardrail issues (`extraction_parse_error`, `extraction_schema_invalid`, `extraction_empty`, or `no_specialist_dispatch`). Each extract run writes an `extracted` audit event (`AuditLogEntry` in [`src/schemas/audit.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/schemas/audit.py)) with `attempts`, `guardrail_issues` and `conflict_detected` in `detail`.
