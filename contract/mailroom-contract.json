@@ -865,7 +865,7 @@
     "judge_band_high": 0.95,
     "arbiter_retry_max": 2,
     "judge_max_passes": 3,
-    "judge_rejudge_retry": true,
+    "judge_rejudge_retry": false,
     "conflict_threshold": 0.3,
     "by_class": {
       "contract": {

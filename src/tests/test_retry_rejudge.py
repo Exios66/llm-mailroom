@@ -42,6 +42,19 @@ def _patch_thresholds(monkeypatch, by_doc_type: dict, default: dict):
     )
 
 
+@pytest.fixture(autouse=True)
+def _knob_on(request, monkeypatch):
+    """Most tests exercise the opt-in path; the default-off tests opt out of this fixture."""
+    if request.node.name.startswith("test_shipped_"):
+        return
+    real = routing.get_confidence_thresholds
+    monkeypatch.setattr(
+        routing,
+        "get_confidence_thresholds",
+        lambda doc_type=None: {**real(doc_type), "judge_rejudge_retry": True},
+    )
+
+
 def test_confident_retry_after_a_judged_attempt_goes_back_to_the_judge():
     state = _retry_state()
     assert after_retry_extraction_gated(state) == "judge_verify"
@@ -89,9 +102,18 @@ def test_per_class_knob_override(monkeypatch):
     assert after_retry_extraction_gated(_retry_state(doc_type="correspondence")) == "judge_verify"
 
 
-def test_absent_knob_defaults_to_on(monkeypatch):
+def test_absent_knob_defaults_to_off(monkeypatch):
     _patch_thresholds(monkeypatch, {}, {"low": 0.88, "judge_band_high": 0.95})
-    assert after_retry_extraction_gated(_retry_state()) == "judge_verify"
+    assert retry_rejudge_due(_retry_state()) is False
+    assert after_retry_extraction_gated(_retry_state()) == "compile_report"
+
+
+def test_shipped_taxonomy_keeps_the_rejudge_off():
+    """Until #242 calibrates the judge, a confident retry archives unjudged as before."""
+    state = _retry_state()
+    assert retry_rejudge_due(state) is False
+    assert judge_should_run(state) is False
+    assert after_retry_extraction_gated(state) == "compile_report"
 
 
 def test_attempt_one_is_unaffected():
