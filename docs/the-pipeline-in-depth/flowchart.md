@@ -109,8 +109,8 @@ flowchart TD
     N_RETRY_EXTRACT -. "transient" .-> N_RETRY_EXTRACT
     N_RETRY_EXTRACT -- "schema invalid, hollow, coverage below floor,<br/>or confidence below low; attempts within retry_max" --> N_RETRY_EXTRACT
     N_RETRY_EXTRACT -- "conflict_detected" --> N_BOSS
-    N_RETRY_EXTRACT -- "judge gate engaged" --> N_JUDGE
-    N_RETRY_EXTRACT -- "confidence at or above low,<br/>judge gate not engaged" --> N_REPORT
+    N_RETRY_EXTRACT -- "judge gate engaged, or an earlier attempt was judged<br/>(judge_rejudge_retry, passes left)" --> N_JUDGE
+    N_RETRY_EXTRACT -- "confidence at or above low,<br/>judge gate not engaged, no re-judge due" --> N_REPORT
     N_RETRY_EXTRACT -- "unsupported, or retry budget spent" --> N_HUMAN
 
     %% ---------------- Quality and escalation ----------------
@@ -208,6 +208,7 @@ Values from the `confidence:` block of `src/config/taxonomy.yaml`. The per-class
 | `retry_max` | 2 | global | global | global | global | global |
 | `arbiter_retry_max` | 2 | global | global | global | global | global |
 | `judge_max_passes` | 3 | global | global | global | global | global |
+| `judge_rejudge_retry` | true | global | global | global | global | global |
 
 Notes:
 
