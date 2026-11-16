@@ -78,6 +78,8 @@ class TestRetryChatCompletionEmptyChoices:
         [
             SimpleNamespace(choices=[], usage=None, model="m"),
             SimpleNamespace(choices=[SimpleNamespace(message=None)], usage=None, model="m"),
+            SimpleNamespace(choices=[SimpleNamespace()], usage=None, model="m"),
+            SimpleNamespace(choices=[None], usage=None, model="m"),
         ],
     )
     def test_empty_list_and_missing_message_are_errors(self, bad):
