@@ -410,10 +410,13 @@ RECORD_TYPE_DESCRIPTION = (
 COMMUNICATION_TYPE_DESCRIPTION = (
     "Canonical Hub subclass. Emit exactly one of: email, letter, memo, "
     "notice, demand, attorney_demand, press_release, meeting_request. "
-    "Enron-style inbox messages are email. Internal memoranda are memo. "
-    "Calendar or meeting invites are meeting_request. News/press releases "
-    "are press_release. Formal demand letters are demand; attorney-signed "
-    "demands are attorney_demand."
+    "Type the content, not the carrier: a memo, letter, notice, demand, "
+    "press release or meeting request sent, forwarded or pasted in an email "
+    "takes that type. email only for ordinary email correspondence with no "
+    "other form inside it. Internal memoranda are memo. Calendar or meeting "
+    "invites are meeting_request. News/press releases are press_release. "
+    "Formal demand letters are demand; attorney-signed demands are "
+    "attorney_demand."
 )
 
 CLAIM_TYPE_DESCRIPTION = (
@@ -446,8 +449,10 @@ def specialist_handoff(doc_type: str | None, subtype: str | None = None) -> str:
         return (
             "CORRESPONDENCE INVENTORY — set communication_type to exactly one of: "
             + ", ".join(CORRESPONDENCE_TYPES)
-            + ". Readable emails/memos/meeting requests are never unknown; "
-            "Enron-style inbox text is email."
+            + ". Readable emails/memos/meeting requests are never unknown. "
+            "Type the content, not the carrier: a memo, letter, notice, demand, "
+            "press release or meeting request sent or forwarded in an email "
+            "takes that type; email only for ordinary email correspondence."
         )
     if kind == "insurance_claim":
         return (

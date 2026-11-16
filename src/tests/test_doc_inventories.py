@@ -106,6 +106,37 @@ def test_handoff_lists_each_specialist_inventory():
     assert "license" in contract
 
 
+_CARRIER_RULE = "Type the content, not the carrier"
+_EIGHT_TYPES = (
+    "email", "letter", "memo", "notice", "demand",
+    "attorney_demand", "press_release", "meeting_request",
+)
+
+
+def test_communication_type_description_never_lets_the_carrier_decide_the_type():
+    """#269: the schema description overrides the prompt, so it must not map every
+    inbox message to ``email`` (sandbox: 6 of 7 non-email correspondence typed ``email``)."""
+    text = COMMUNICATION_TYPE_DESCRIPTION
+    lowered = text.lower()
+    assert "inbox messages are email" not in lowered
+    assert "enron-style" not in lowered
+    assert _CARRIER_RULE in text
+    assert "sent, forwarded or pasted in an email takes that type" in text
+    assert "email only for ordinary email correspondence" in text
+    # The enum list is unchanged and complete, in order.
+    assert CORRESPONDENCE_TYPES == _EIGHT_TYPES
+    listed = text.split("Emit exactly one of:")[1].split(".")[0]
+    assert tuple(t.strip() for t in listed.split(",")) == _EIGHT_TYPES
+
+
+def test_correspondence_handoff_does_not_map_inbox_text_to_email():
+    mail = specialist_handoff("correspondence")
+    assert "inbox text is email" not in mail.lower()
+    assert _CARRIER_RULE in mail
+    for token in _EIGHT_TYPES:
+        assert token in mail
+
+
 def test_schemas_and_pydantic_carry_hub_descriptions():
     assert RECORD_TYPE_DESCRIPTION in CORPORATE_RECORDS_SCHEMA["properties"]["record_type"]["description"]
     assert COMMUNICATION_TYPE_DESCRIPTION in CORRESPONDENCE_SCHEMA["properties"]["communication_type"]["description"]
