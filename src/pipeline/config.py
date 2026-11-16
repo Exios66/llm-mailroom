@@ -1,7 +1,10 @@
+import contextlib
+import contextvars
+import os
 import yaml
 from pathlib import Path
 from functools import lru_cache
-from typing import Literal
+from typing import Iterator, Literal
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "taxonomy.yaml"
 
@@ -65,6 +68,60 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
                 if value is not None:
                     base[key] = value
     return base
+
+
+ORACLE_ROUTING_ENV = "MAILROOM_ORACLE_ROUTING"
+_ORACLE_TRUE = frozenset({"1", "true", "yes", "on"})
+_ORACLE_FALSE = frozenset({"0", "false", "no", "off"})
+_ORACLE_OVERRIDE: contextvars.ContextVar[bool | None] = contextvars.ContextVar(
+    "mailroom_oracle_routing_override", default=None
+)
+
+
+def oracle_routing_enabled() -> bool:
+    """Whether routing may read ``ground_truth`` from the pipeline state (#207).
+
+    Default **off**: a document is routed on what the pipeline observed, exactly as
+    in production, even when a runner passes ``run_pipeline(ground_truth=...)`` for
+    scoring and tracing. On, the six GT-aware routing arms (class miss in
+    ``after_classify`` / ``after_retry_classify`` / ``after_classification_arbiter`` /
+    ``after_review_classify``, expected-field coverage in ``after_extraction``) act
+    on the label; such a run is oracle-assisted and its automation and accuracy
+    numbers do not transfer to production.
+
+    Resolution, first match wins: an enclosing :func:`oracle_routing_override`;
+    ``MAILROOM_ORACLE_ROUTING`` (``1/true/yes/on`` or ``0/false/no/off``; empty or
+    unrecognised values are ignored, so a typo cannot silently switch it on);
+    taxonomy ``routing.use_ground_truth`` (only boolean ``true`` enables); off.
+    Outside a run, the env var is read on every call. Pipeline execution freezes
+    the resolved value in a run-scoped override before opening its trace, so routing
+    agrees with that trace even if the process environment changes. The taxonomy
+    is ``lru_cache``d like the rest of it.
+    """
+    forced = _ORACLE_OVERRIDE.get()
+    if forced is not None:
+        return forced
+    raw = os.environ.get(ORACLE_ROUTING_ENV, "").strip().lower()
+    if raw in _ORACLE_TRUE:
+        return True
+    if raw in _ORACLE_FALSE:
+        return False
+    block = load_config().get("routing")
+    return isinstance(block, dict) and block.get("use_ground_truth") is True
+
+
+@contextlib.contextmanager
+def oracle_routing_override(enabled: bool) -> Iterator[None]:
+    """Force the oracle-routing switch for the enclosed code (tests, offline replay).
+
+    Wins over the env var and the taxonomy and is restored on exit; scoped to the
+    current thread / task through a ``ContextVar``.
+    """
+    token = _ORACLE_OVERRIDE.set(bool(enabled))
+    try:
+        yield
+    finally:
+        _ORACLE_OVERRIDE.reset(token)
 
 
 DEFAULT_MAX_CONCURRENT_DOCS = 4

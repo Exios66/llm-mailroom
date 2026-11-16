@@ -12,7 +12,7 @@ Top-level keys:
 pipeline:                      # bins + pdf_direct_chars_per_page
 llm_retry:                     # transient-failure retry tuning
 run_limits:                    # per-run deadline / token budget
-chunking:                      # chunked-extraction windows
+chunking:                      # chunked-extraction windows and merge policy (merge.policy: union | evidence)
 cost_models:                   # per-1M-token pricing for estimated_cost_usd
 confidence:                    # routing thresholds (high/low/retry/bands)
 field_scoring:                 # deterministic field-type-aware scorer
@@ -50,6 +50,8 @@ Controls the branching logic in `graph/routing.py`. Tunable without code changes
 | `judge_band_high`    | 0.95 (global)          | Lane B completeness-judge gate: `low <= extraction_confidence < judge_band_high` fires `judge_verify`                                                                                                               |
 | `arbiter_retry_max`  | 2                      | Max arbiter-approved re-extract loops (approval-inclusive)                                                                                                                                                          |
 | `judge_max_passes`   | 3                      | `1 + arbiter_retry_max` — one completeness judge per extraction attempt                                                                                                                                             |
+| `judge_rejudge_retry` | false | Opt-in (#241): `true` (global or per class) sends a retry whose earlier attempt was judged back to `judge_verify` whatever its confidence, while `judge_pass_count < judge_max_passes`. Off until the judge is calibrated (#242), so a confident retry archives unjudged |
+| `keep_best_attempt` | false | Opt-in (#254): `true` (global or per class) makes `compile_report` and the review handoff use the best-judged extraction attempt instead of the latest: `complete` > `partial` > `incomplete`, then `extraction_confidence`, ties keep the latest; only judged attempts that passed the schema/quality gate compete, and a matter conflict pins the latest. Every attempt is recorded in `extraction_attempt_history` whatever the knob says, and `selected_attempt` names the one used. Off until the judge is calibrated (#242). Routing never reads it |
 | `conflict_threshold` | 0.3                    | **Unused routing knob** (kept for config-file compatibility). Matter conflicts escalate via deterministic same-class field comparison in `graph/build_graph.py:_detect_conflict`, not an extraction-confidence gap. |
 | `by_class`           | (severity map)         | Per-class `high` / `low` / `judge_band_high` for critical contracts/mergers/insurance, high compliance, elevated corporate, standard correspondence                                                                 |
 
@@ -61,11 +63,23 @@ confidence:
   judge_band_high: 0.95
   arbiter_retry_max: 2
   judge_max_passes: 3
+  judge_rejudge_retry: false
+  keep_best_attempt: false
   conflict_threshold: 0.3  # unused; conflicts are field-value comparison
   by_class:
     contract: { severity: critical, high: 0.98, low: 0.90, judge_band_high: 0.97 }
     # … merger_agreement, insurance_claim, corporate_record, correspondence
 ```
+
+### `routing`
+
+Whether routing may read the ground-truth label that pilots and experiments pass to `run_pipeline(ground_truth=...)` (#207).
+
+| Key                | Default | Description |
+| ------------------ | ------- | ----------- |
+| `use_ground_truth` | `false` | `false`: routing ignores `ground_truth`, so a pilot or experiment routes each document exactly as production would. `true` (oracle routing): the GT class-miss arms in `after_classify`, `after_retry_classify`, `after_classification_arbiter` and `after_review_classify`, and the expected-field coverage floor in `after_extraction`, act on the label. Such a run is oracle-assisted: a wrong class cannot auto-archive, so its automation and accuracy numbers do not transfer to production |
+
+`MAILROOM_ORACLE_ROUTING=1|0` (`true/yes/on` and `false/no/off` also work) overrides the taxonomy for one run; an empty or unrecognised value is ignored. The ground truth stays in state either way: scoring, tracing, result emission and review-cause labelling (`class_miss`, `subclass_miss`) still read it. Every run records `oracle_routing` in its trace metadata, and `run_pilot.py` / `run_experiment.py` put it in their report, so a result set says whether it was oracle-assisted. Results from before #207 were oracle-assisted and are not comparable with default-off runs; re-baseline rather than diff against them.
 
 ### `doc_classes`
 
@@ -232,6 +246,21 @@ agents:
   # ... (one entry per agent; includes pdf_transcriber, image_extractor and judge)
 ```
 
+### `chunking.merge`
+
+How the per-window results of a chunked extraction are merged (#255). The window size keys (`enabled`, `chunk_chars`, `overlap_chars`) are described in [Extraction schemas](../the-pipeline-in-depth/extraction-schemas.md).
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `policy` | `union` | `union` keeps every window's list items and takes each scalar from the first window that states it (unchanged behaviour). `evidence` is an opt-in precision filter for the list fields in `fields`. An unknown value falls back to `union` with a warning. |
+| `min_windows` | `2` | `evidence` only: an in-scope item that fails the verbatim check is still kept when at least this many windows assert it. |
+| `fields` | `[cuad_clauses, claim_checklist, action_items, denial_reasons]` | `evidence` only: the list fields the filter applies to, the ones that carry claimable text (a clause, action or reason that a model can quote or paraphrase). Every other list field (`parties`, `party_roles`, `signatories`, `keywords`, `merger_sub`, `financial_advisors`, `legal_counsel`, `additional_recipients`, `supporting_documents`, `maud_clauses`) is unioned exactly as under `union`: entity and label lists are not quotes, and filtering them against the window text emptied them. `[]` filters nothing. |
+| `by_agent` | `{}` | Per-specialist overrides of `policy`, `min_windows` and `fields`, keyed by an agent under `agents:`, e.g. `by_agent: {contracts_specialist: {policy: evidence}}`. |
+
+Under `evidence`, an in-scope item is checked by finding its quoted span in the text of the window that asserted it (typographic quotes, apostrophes and dashes fold to ASCII, whitespace collapses, case is ignored). An item with no span long enough to check (under 12 characters, such as `Governing Law: Delaware`) is kept. Only an item that has a checkable span and fails the check is removed, and it is recorded under `_unsupported_chunk_claims`.
+
+This deviates from the proposal in #255, which was to pass filtered items to the judge. They are not shown to the judge: `_clean_fields_for_judge` strips `_`-prefixed keys, and changing the judge prompt is out of scope (prompts are Langfuse-managed with a matching in-code fallback). The recall cost is real: a genuine clause that every window paraphrased is removed from the extraction, and a retry runs through the same filter, so it is not recovered there either. Treat `evidence` as a treatment to A/B-test, not a default.
+
 ### `llm_retry`
 
 Transient-failure retry for LLM calls (`llm/retry.py`). Retries only connection errors, timeouts, rate limits (429), and 5xx — never 4xx client errors.
@@ -264,6 +293,7 @@ See `.env.example` for the complete list:
 | `GENERIC_BASE_URL`              | No                        | —                                                            | Generic provider base URL                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `DATABASE_URL`                  | No                        | `sqlite+aiosqlite:///<MAILROOM_BASE_DIR>/mailroom.db`        | Async database URL. SQLite by default; set a Postgres URL to switch                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | `MAILROOM_BASE_DIR`             | No                        | `./data`                                                     | Pipeline filesystem root (also where SQLite + `warehouse/` Parquet files live)                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `MAILROOM_ORACLE_ROUTING`       | No                        | off (taxonomy `routing.use_ground_truth: false`)            | `1`/`true` lets routing read `run_pipeline(ground_truth=...)` for this run (oracle-assisted; numbers do not transfer to production); `0`/`false` forces it off. Recorded as `oracle_routing` in trace metadata and in the pilot/experiment report (#207). |
 | `MAILROOM_WAREHOUSE_EXPORT`     | No                        | `auto`                                                       | After `archived`/`failed`, append rows to `data/warehouse/documents_YYYY-MM-DD.parquet` + matching audit file. `auto` = on when pyarrow is installed; `1`/`0` to force. Backfill: `scripts/export_warehouse.py`.                                                                                                                                                                                                                                                                                   |
 | `OBSERVABILITY_PROVIDER`        | No                        | `auto`                                                       | Tracing backend: `auto` \| `langfuse` \| `braintrust` \| `phoenix` \| `none`. `auto` = Langfuse if key → Braintrust if key → local Arize Phoenix (cost-free) → `none`                                                                                                                                                                                                                                                                                                                              |
 | `OBSERVABILITY_ENVIRONMENT`     | No                        | entrypoint default (`live`/`pilot`/`misc`/`mock`)            | Environment label copied onto every Langfuse observation                                                                                                                                                                                                                                                                                                                                                                                                                                           |

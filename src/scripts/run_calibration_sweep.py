@@ -1089,16 +1089,33 @@ def _file_sha256(path: Path) -> str | None:
         return None
 
 
-def resume_mismatch(existing: list[dict], docs: list[Doc], current: dict) -> str | None:
+# Selection settings added to RunInfo by #247. Rows written before then lack them; only these may
+# be waived, with --allow-legacy-resume.
+LEGACY_RUN_KEYS = ("seed", "per_class", "limit")
+
+
+def legacy_rows(existing: list[dict]) -> int:
+    """How many saved rows predate the #247 selection settings (lack any of ``LEGACY_RUN_KEYS``)."""
+    return sum(1 for row in existing if any(k not in (row.get("run") or {}) for k in LEGACY_RUN_KEYS))
+
+
+def resume_mismatch(
+    existing: list[dict], docs: list[Doc], current: dict, *, allow_legacy: bool = False
+) -> str | None:
     """Why ``existing`` records cannot be continued by this invocation, or ``None`` when they can.
 
     A resume skips documents by ``doc_id`` alone, so it is only sound when the saved records
     came from the same inputs and settings. ``current`` holds this run's ``mode``,
     ``dataset_id``, ``dataset_revision``, ``split``, ``taxonomy_sha256``, ``judge_attempts``,
-    ``max_extraction_candidates`` and ``thresholds``. A saved record that lacks a recorded value
-    cannot be validated and is refused too: start a new output file.
+    ``max_extraction_candidates`` and ``thresholds``, plus the selection settings ``seed`` and
+    ``per_class`` (``None`` unless the HF corpus is sampled) and ``limit``. A saved record that lacks
+    a recorded value cannot be validated and is refused too: start a new output file. ``limit`` is
+    a prefix of the document list, so a resume may raise it (or drop it) to sweep more of the same
+    documents; lowering it is refused. ``allow_legacy`` waives only a *missing* ``seed``,
+    ``per_class`` or ``limit`` (rows written before #247 recorded them); a recorded value that
+    differs is still refused, and so is every other check.
     """
-    run_keys = ("mode", "dataset_id", "dataset_revision", "split", "taxonomy_sha256")
+    run_keys = ("mode", "dataset_id", "dataset_revision", "split", "taxonomy_sha256", "seed", "per_class")
     diffs: dict[str, str] = {}
     for row in existing:
         run = row.get("run") or {}
@@ -1107,9 +1124,19 @@ def resume_mismatch(existing: list[dict], docs: list[Doc], current: dict) -> str
             diffs["gt_in_state"] = "saved records have ground truth in state"
         for key in run_keys:
             if key not in run:
-                diffs.setdefault(key, "not recorded in the saved records")
-            elif run[key] != current[key]:
-                diffs.setdefault(key, f"saved {run[key]!r}, now {current[key]!r}")
+                if not (allow_legacy and key in LEGACY_RUN_KEYS):
+                    diffs.setdefault(key, "not recorded in the saved records")
+            elif run[key] != current.get(key):
+                diffs.setdefault(key, f"saved {run[key]!r}, now {current.get(key)!r}")
+        if "limit" not in run:
+            if not allow_legacy:
+                diffs.setdefault("limit", "not recorded in the saved records")
+        else:
+            saved_limit, new_limit = run["limit"], current.get("limit")
+            if saved_limit is not None and (not isinstance(saved_limit, int) or saved_limit < 0):
+                diffs.setdefault("limit", f"saved {saved_limit!r} is not a valid limit")
+            elif new_limit is not None and (saved_limit is None or new_limit < saved_limit):
+                diffs.setdefault("limit", f"saved {saved_limit!r}, now {new_limit!r} (it can only be raised)")
         if "judge_attempts" not in diag:
             diffs.setdefault("judge_attempts", "not recorded in the saved records")
         elif diag["judge_attempts"] != current["judge_attempts"]:
@@ -1227,6 +1254,13 @@ def real_guard(env: dict | None = None) -> str | None:
 # --------------------------------------------------------------------------------------
 
 
+def _nonneg_int(value: str) -> int:
+    n = int(value)
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {n}")
+    return n
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     src = p.add_mutually_exclusive_group(required=True)
@@ -1240,9 +1274,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--per-class", type=int, default=5, help="HF: documents per class.")
     p.add_argument("--seed", type=int, default=0, help="HF: sampling seed.")
     p.add_argument("--samples-dir", type=Path, default=None, help="Manifest: root for sample files.")
-    p.add_argument("--limit", type=int, default=None, help="Sweep only the first N documents.")
+    p.add_argument("--limit", type=_nonneg_int, default=None, help="Sweep only the first N documents.")
     p.add_argument("--resume", action="store_true", help="Skip doc_ids already in --out.")
     p.add_argument("--retry-errors", action="store_true", help="With --resume: drop errored records and re-run them.")
+    p.add_argument(
+        "--allow-legacy-resume", action="store_true",
+        help="With --resume: accept saved records written before seed/per_class/limit were recorded (#247), "
+             "with a warning. Every other identity check still applies. Off by default.",
+    )
     p.add_argument("--concurrency", type=int, default=1, help="Documents in flight (thread pool).")
     p.add_argument("--judge-attempts", choices=["first", "all"], default="first")
     p.add_argument("--max-extraction-candidates", type=int, default=2)
@@ -1251,6 +1290,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    if args.allow_legacy_resume and not args.resume:
+        print("--allow-legacy-resume needs --resume", file=sys.stderr)
+        return 2
     mock = bool(args.mock)
     from pipeline.env import load_env
 
@@ -1289,6 +1331,9 @@ def main(argv: list[str] | None = None) -> int:
             docs, ds = load_fixture_docs()
         if args.limit is not None:
             docs = docs[: args.limit]
+        # Only the sampled HF corpus depends on --seed / --per-class; elsewhere they are inert.
+        sample_seed = args.seed if args.hf_split else None
+        sample_per_class = args.per_class if args.hf_split else None
         ids = [d.doc_id for d in docs]
         if len(set(ids)) != len(ids):
             print("duplicate doc_ids in the selected documents", file=sys.stderr)
@@ -1304,12 +1349,21 @@ def main(argv: list[str] | None = None) -> int:
                 "dataset_revision": ds["dataset_revision"], "split": ds["split"],
                 "taxonomy_sha256": _taxonomy_sha256(), "judge_attempts": args.judge_attempts,
                 "max_extraction_candidates": args.max_extraction_candidates, "thresholds": thresholds,
+                "seed": sample_seed, "per_class": sample_per_class, "limit": args.limit,
             }
-            why = resume_mismatch(existing, docs, current)
+            why = resume_mismatch(existing, docs, current, allow_legacy=args.allow_legacy_resume)
             if why:
+                hint = ""
+                if not args.allow_legacy_resume and legacy_rows(existing):
+                    hint = "; rows written before seed/per_class/limit were recorded can be kept with --allow-legacy-resume"
                 print(f"refusing --resume: {args.out} was not produced by this configuration ({why}); "
-                      "use a new --out", file=sys.stderr)
+                      f"use a new --out{hint}", file=sys.stderr)
                 return 2
+            n_legacy = legacy_rows(existing) if args.allow_legacy_resume else 0
+            if n_legacy:
+                print(f"warning: --allow-legacy-resume: {n_legacy} saved record(s) in {args.out} predate the "
+                      "seed/per_class/limit fields, so their document selection was not verified; make sure "
+                      "this run uses the same --seed, --per-class and --limit as the original", file=sys.stderr)
             keep = [(line, row) for line, row in raw_existing if not (args.retry_errors and row.get("error"))]
             if args.retry_errors or torn or not _ends_with_newline(args.out):
                 # Drop errored (--retry-errors) and torn lines and restore the newline delimiter, so
@@ -1337,6 +1391,7 @@ def main(argv: list[str] | None = None) -> int:
             git_sha=_git_sha(), taxonomy_sha256=_taxonomy_sha256(), dojo_version=_dojo_version(),
             dataset_id=ds["dataset_id"], dataset_revision=ds["dataset_revision"], split=ds["split"],
             mode="mock" if mock else "real", gt_in_state=False,
+            seed=sample_seed, per_class=sample_per_class, limit=args.limit,
         )
         ctx = SweepContext(
             run=run, base_dir=base_dir, mock=mock, judge_attempts=args.judge_attempts,

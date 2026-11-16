@@ -23,8 +23,9 @@ which are stood in for by a stub payload plus a patched ``validate_extraction``.
 
 States are built WITHOUT ``ground_truth`` (production-faithful: routing reads
 ``ground_truth`` through ``class_misses_ground_truth`` / ``coverage_below_floor``
-and live traffic has none). ``oracle=True`` adds the gold class to the state and
-must be reported separately, never as the objective.
+and live traffic has none). ``oracle=True`` adds the gold class to the state, switches
+oracle routing on for the walk (``pipeline.config.oracle_routing_override``) and must be
+reported separately, never as the objective.
 
 The objective (every constant is a parameter, see :class:`ObjectiveParams`)::
 
@@ -546,6 +547,16 @@ def replay(record: RunRecord, policy: Mapping[str, Any] | None = None, *, oracle
 
 
 def _replay(record: RunRecord, oracle: bool) -> ReplayOutcome:
+    # Routing reads the gold class only with oracle routing on (#207): the flag
+    # that puts it in state must also opt in, and a production replay must stay
+    # off whatever MAILROOM_ORACLE_ROUTING says.
+    from pipeline.config import oracle_routing_override
+
+    with oracle_routing_override(oracle):
+        return _replay_walk(record, oracle)
+
+
+def _replay_walk(record: RunRecord, oracle: bool) -> ReplayOutcome:
     import graph.routing as routing
 
     w = _Walk(record, oracle)
@@ -785,10 +796,10 @@ def extraction_evidence(
             conf = _conf(att)
             if att.extraction_score is None or conf is None:
                 continue
-            if att.schema_valid is False or att.hollow:
-                # Routing retries these whatever their confidence (the schema and hollow gates in
-                # ``after_extraction``), so they can never be auto-archived at any cutoff: a poor score
-                # here would only mark a confident, valid retry's cutoff as unearned.
+            if att.schema_valid is False or att.hollow or att.failed_chunks > 0:
+                # Routing retries these whatever their confidence (the schema and hollow gates, and
+                # ``_chunks_lost``, in ``after_extraction``), so they can never be auto-archived at any
+                # cutoff: a poor score here would only mark a confident, valid retry's cutoff as unearned.
                 continue
             pairs.setdefault(gold, []).append((float(conf), att.extraction_score >= field_floor))
             docs.setdefault(gold, []).append(doc)
@@ -803,7 +814,7 @@ def extraction_pairs(
     What is pooled: for each record whose sorter attempt 1 named the gold class (so the pairs
     isolate extraction calibration from classification errors), every extraction attempt of
     the gold class that has both a confidence and an offline score and that routing could
-    archive (not ``schema_valid`` False, not hollow: those are retried at any confidence). A
+    archive (not ``schema_valid`` False, not hollow, no lost window: those are retried at any confidence). A
     document with three scored attempts contributes three pairs; an attempt of another class
     never counts.
 

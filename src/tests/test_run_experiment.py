@@ -81,6 +81,8 @@ def test_main_mock_end_to_end_and_baseline_gate(tmp_path, monkeypatch, capsys):
     assert rx.main(["--dataset", "mailroom-fixtures", "--mock", "--max-items", "2", "--write-baseline", str(out)]) == 0
     base = json.loads(out.read_text())
     assert base["n_items"] == 2 and base["metrics"]["class_accuracy"] == 1.0
+    # #207: the result says whether routing was oracle-assisted (default: no)
+    assert base["oracle_routing"] is False
     assert rx.main(["--dataset", "mailroom-fixtures", "--mock", "--max-items", "2", "--baseline", str(out)]) == 0
     # hand-degrade the baseline's expectation upward is a no-op; degrade the *current* by demanding more items
     base["metrics"]["class_accuracy"] = 1.0
@@ -109,3 +111,11 @@ def test_fixture_dataset_excludes_ambiguous_and_covers_live_classes():
     rows = rx.fixture_rows(None)
     assert rows and not any(r["filename"].startswith("ambiguous") for r in rows)
     assert {r["expected_doc_class"] for r in rows} == set(rx.FIXTURE_CLASSES)
+
+
+@pytest.mark.parametrize("current_mode,baseline_mode", [(False, True), (True, False)])
+def test_regression_gate_rejects_different_oracle_routing_modes(current_mode, baseline_mode):
+    current = {"n_items": 1, "n_errors": 0, "metrics": {"class_accuracy": 1.0}, "oracle_routing": current_mode}
+    baseline = {**current, "oracle_routing": baseline_mode}
+    assert any("oracle_routing" in p for p in rx.check_regression(current, baseline))
+    assert rx.check_regression(current, current) == []

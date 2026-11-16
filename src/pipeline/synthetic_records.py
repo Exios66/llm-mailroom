@@ -192,6 +192,7 @@ def _extraction_attempt(rng: random.Random, attempt: int, gold: str) -> tuple[Ex
     return (
         ExtractionAttempt(
             attempt=attempt,
+            doc_type=gold,  # typed: replay must not read this as evidence for another class (#245)
             confidence_raw=conf,
             confidence=conf,
             schema_valid=rng.random() > 0.03,
@@ -208,12 +209,13 @@ def _extraction_attempt(rng: random.Random, attempt: int, gold: str) -> tuple[Ex
     )
 
 
-def _judge_for_attempt(rng: random.Random, attempt: int, success: bool) -> JudgeObservation:
+def _judge_for_attempt(rng: random.Random, attempt: int, success: bool, doc_type: str) -> JudgeObservation:
     complete = rng.random() < (0.85 if success else 0.20)  # a noisy judge
     verdict = "complete" if complete else rng.choice(["partial", "incomplete"])
     return JudgeObservation(
         ran=True,
         on_attempt=attempt,
+        doc_type=doc_type,
         verdict=verdict,
         score=round(rng.uniform(0.8, 1.0) if complete else rng.uniform(0.3, 0.7), 4),
         source_verified=complete and success and rng.random() < 0.9,
@@ -224,12 +226,13 @@ def _judge_for_attempt(rng: random.Random, attempt: int, success: bool) -> Judge
     )
 
 
-def _arbiter_for_attempt(rng: random.Random, attempt: int) -> ArbiterObservation:
+def _arbiter_for_attempt(rng: random.Random, attempt: int, doc_type: str) -> ArbiterObservation:
     roll = rng.random()
     decision = "accept_with_caveats" if roll < 0.30 else "retry_extraction" if roll < 0.80 else "human_review"
     return ArbiterObservation(
         ran=True,
         on_attempt=attempt,
+        doc_type=doc_type,
         decision=decision,
         prompt_tokens=4500,
         completion_tokens=300,
@@ -252,9 +255,16 @@ def generate_records(
     curve is recovered exactly); it may be a dict to under-sample a class on
     purpose. Records are shuffled and then split into ``train`` / ``test`` by
     ``test_fraction``. Every attempt, the reviewer, the judge (each attempt) and
-    the arbiter (after each non-``complete`` verdict) are observed.
+    the arbiter (after each non-``complete`` verdict) are observed. Extraction,
+    judge and arbiter observations are typed with the gold class they ran as, so a
+    replay whose sorter routes to another class finds no evidence for it.
+
+    ``test_fraction`` must lie in ``[0, 1]`` (``ValueError`` otherwise, NaN included).
     """
     from pipeline.policy_replay import llm_review_verdict
+
+    if not 0.0 <= test_fraction <= 1.0:  # also rejects NaN
+        raise ValueError(f"test_fraction must be within [0, 1], got {test_fraction!r}")
 
     names = tuple(classes) if classes is not None else tuple(SORTER_CURVES)
     if len(set(names)) == 1:  # _other() needs a second class to name when the sorter is wrong
@@ -298,10 +308,10 @@ def generate_records(
         for k in range(1, MAX_EXTRACTION_ATTEMPTS + 1):
             att, success = _extraction_attempt(rng, k, gold)
             extraction.append(att)
-            judge = _judge_for_attempt(rng, k, success)
+            judge = _judge_for_attempt(rng, k, success, gold)
             judges.append(judge)
             if judge.verdict != "complete":
-                arbiters.append(_arbiter_for_attempt(rng, k))
+                arbiters.append(_arbiter_for_attempt(rng, k, gold))
 
         split = "test" if rng.random() < test_fraction else "train"
         records.append(
@@ -330,12 +340,23 @@ def generate_records(
     return records
 
 
+def _fraction(raw: str) -> float:
+    """argparse type: a float in ``[0, 1]``, reported as a usage error otherwise."""
+    try:
+        value = float(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number: {raw!r}") from None
+    if not 0.0 <= value <= 1.0:  # also rejects NaN
+        raise argparse.ArgumentTypeError(f"must be within [0, 1], got {raw!r}")
+    return value
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--out", required=True)
     parser.add_argument("--n-per-class", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--test-fraction", type=float, default=0.3)
+    parser.add_argument("--test-fraction", type=_fraction, default=0.3)
     args = parser.parse_args(argv)
     from pipeline.policy_replay import dump_records
 

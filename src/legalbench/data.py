@@ -71,6 +71,9 @@ def load_cuad_qa(
     repeatable. The document text is the contract's full text (all paragraph
     contexts concatenated) so the model answers against the whole contract.
 
+    Contracts whose text is shorter than ``min_text_chars`` are excluded before
+    sampling, so ``n`` rows come back whenever that many eligible pairs exist.
+
     Returns rows: {qa_id, contract_title, category, question, answer
     ("yes"/"no"), evidence, document_text}.
     """
@@ -109,13 +112,22 @@ def load_cuad_qa(
     if not titles:
         raise CorpusUnavailable(f"No QA pairs in {path}")
 
+    # Compute the joined length without materializing text for unselected titles.
+    text_lengths: dict[str, int] = {}
+    for title in titles:
+        paragraphs = by_title[title]["contract"].get("paragraphs") or []
+        text_lengths[title] = sum(len(str(p.get("context") or "")) for p in paragraphs) + 2 * max(0, len(paragraphs) - 1)
+
     # Universe of ACTUAL (title, category) pairs, sorted deterministically.
     # (In the real corpus every contract carries all 41 categories, so this
     # is exactly 510 x 41 = 20,910; contracts with partial coverage are
-    # handled correctly too.)
+    # handled correctly too.) Contracts shorter than ``min_text_chars`` are
+    # dropped BEFORE sampling so the requested ``n`` is honoured whenever
+    # enough long-contract pairs exist (#190), mirroring ``load_family_rows``.
     pairs = [
         (title, cat)
         for title in titles
+        if text_lengths[title] >= min_text_chars
         for cat in sorted(by_title[title]["qas"])
     ]
     k = min(n, len(pairs))
@@ -128,15 +140,12 @@ def load_cuad_qa(
         entry = by_title[title]["qas"][cat]
         qid = entry["qid"]
         qa = entry["qa"]
-        text = text_cache.get(title)
-        if text is None:
-            text = "\n\n".join(
+        if title not in text_cache:
+            text_cache[title] = "\n\n".join(
                 str(p.get("context") or "")
                 for p in by_title[title]["contract"].get("paragraphs") or []
             )
-            text_cache[title] = text
-        if len(text) < min_text_chars:
-            continue
+        text = text_cache[title]
         answers = qa.get("answers") or []
         impossible = bool(qa.get("is_impossible"))
         evidence = str(answers[0].get("text") or "") if answers else ""

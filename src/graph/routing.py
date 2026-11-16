@@ -101,10 +101,11 @@ def after_classify(state: dict) -> Literal[
 
     # Ground-truth class miss: the model can be overconfident (0.99 on the
     # wrong class). Lane A is the independent second opinion even at high
-    # stated confidence. Live runs without GT are unchanged.
-    from pipeline.reconsideration import class_misses_ground_truth
+    # stated confidence. Oracle routing only (#207): live runs, and runs that
+    # merely carry GT for scoring, are unchanged.
+    from pipeline.reconsideration import routing_class_miss
 
-    if class_misses_ground_truth(state):
+    if routing_class_miss(state):
         logger.info(
             "gt_class_miss_lane_a",
             confidence=confidence,
@@ -171,9 +172,9 @@ def after_retry_classify(state: dict) -> Literal[
             doc_type=doc_type,
         )
         return "human_review"
-    from pipeline.reconsideration import class_misses_ground_truth
+    from pipeline.reconsideration import routing_class_miss
 
-    if class_misses_ground_truth(state):
+    if routing_class_miss(state):
         logger.info(
             "gt_class_miss_lane_a_post_retry",
             confidence=state.get("classification_confidence"),
@@ -260,8 +261,12 @@ def _judge_can_review(state: dict) -> bool:
 
 
 def judge_should_run(state: dict) -> bool:
-    """The ambiguous band, or an unsure extraction whose retries are spent."""
-    return judge_gate(state) or (_judge_can_review(state) and _extraction_still_unsure(state))
+    """The ambiguous band, a retry owed a re-judge, or an unsure extraction whose retries are spent."""
+    return (
+        judge_gate(state)
+        or retry_rejudge_due(state)
+        or (_judge_can_review(state) and _extraction_still_unsure(state))
+    )
 
 
 def _extraction_still_unsure(state: Mapping[str, Any]) -> bool:
@@ -328,6 +333,7 @@ def after_extraction(state: dict) -> Literal[
     from pipeline.reconsideration import (
         coverage_below_floor,
         extraction_is_hollow,
+        routing_expected_fields,
     )
 
     extracted = state.get("extracted_data")
@@ -363,14 +369,14 @@ def after_extraction(state: dict) -> Literal[
         )
         return "human_review"
 
-    gt = state.get("ground_truth") or {}
-    expected_fields = gt.get("expected_fields") if isinstance(gt, dict) else None
-    sources = gt.get("expected_fields_sources") if isinstance(gt, dict) else None
+    # Oracle routing only (#207): off by default, so a run that carries
+    # `ground_truth` for scoring still routes on observed confidence alone.
+    expected_fields, sources = routing_expected_fields(state)
     if coverage_below_floor(
         extracted if isinstance(extracted, dict) else {},
         expected_fields,
         doc_type=state.get("doc_type"),
-        sources=sources if isinstance(sources, dict) else None,
+        sources=sources,
     ):
         if attempts <= retry_max:
             logger.info(
@@ -443,6 +449,52 @@ def judge_gate(state: Mapping[str, Any]) -> bool:
     return confidence is not None and low <= confidence < band_high
 
 
+def _judge_max_passes(thresholds: Mapping[str, Any]) -> int:
+    """``judge_max_passes`` (one completeness pass per extraction attempt); default 3."""
+    raw = thresholds.get("judge_max_passes")
+    return int(raw) if raw is not None else 3
+
+
+def retry_rejudge_due(state: Mapping[str, Any]) -> bool:
+    """#241: a retry extraction whose predecessor was judged owes another verdict.
+
+    ``judge_gate`` only fires in the ambiguous band, and a retry's self-reported
+    confidence does not predict its score: a retry that said 1.0 used to archive
+    unjudged after the arbiter had asked for it. True when this is a retry
+    (``extraction_attempts >= 2``), an earlier attempt was judged
+    (``judge_pass_count >= 1``) and the pass budget (``judge_max_passes``) is not
+    spent. Off by default until the judge is calibrated (#242): opt in with
+    ``judge_rejudge_retry: true`` (taxonomy, per class overridable).
+    The judge lane's own limits apply: the ``MAILROOM_JUDGE_VERIFY`` kill switch, a guardrail failure or an empty extraction. When the passes are
+    spent the retry archives as before; it does not escalate.
+    """
+    thresholds = _thresholds_for(state)
+    if not thresholds.get("judge_rejudge_retry", False):
+        return False
+    if int(state.get("extraction_attempts") or 0) < 2:
+        return False
+    passes = int(state.get("judge_pass_count") or 0)
+    if passes < 1 or passes >= _judge_max_passes(thresholds):
+        return False
+    return _judge_can_review(state)
+
+
+def keep_best_attempt_enabled(state: Mapping[str, Any]) -> bool:
+    """#254: keep the best-judged extraction attempt instead of the latest. Off by default.
+
+    ``extraction_attempt_history`` is always recorded; this knob only decides
+    whether ``compile_report`` and the review handoff use the best-ranked
+    attempt (``graph/attempts.py``: ``complete`` > ``partial`` > ``incomplete``,
+    then confidence, ties keep the latest). Archive reporting retains the latest
+    when an earlier selection is still unsure or below the coverage floor.
+    It ships ``false`` for the same
+    reason as ``judge_rejudge_retry``: the ranking trusts the judge, which is not
+    calibrated yet (#242). Taxonomy ``confidence.keep_best_attempt``, per class
+    overridable under ``by_class``. Routing decisions never read it.
+    """
+    return bool(_thresholds_for(state).get("keep_best_attempt", False))
+
+
 def after_extraction_gated(state: dict) -> Literal[
     "extract", "retry_extract", "compile_report", "judge_verify", "human_review", "boss_escalation"
 ]:
@@ -468,19 +520,30 @@ def after_extraction_gated(state: dict) -> Literal[
 def after_retry_extraction_gated(state: dict) -> Literal[
     "retry_extract", "compile_report", "judge_verify", "human_review", "boss_escalation"
 ]:
-    """Same gate applied to the post-retry extraction router.
+    """Same gate applied to the post-retry extraction router, plus ``retry_rejudge_due``.
 
     Transient blips self-loop on ``retry_extract`` (own per-node budget);
     they no longer bounce to first-pass ``extract``.
     """
     dest = after_retry_extraction(state)
-    if dest == "compile_report" and judge_gate(state):
-        logger.info(
-            "judge_gate_engaged",
-            doc_id=state.get("doc_id"),
-            extraction_confidence=state.get("extraction_confidence"),
-        )
-        return "judge_verify"
+    if dest == "compile_report":
+        if judge_gate(state):
+            logger.info(
+                "judge_gate_engaged",
+                doc_id=state.get("doc_id"),
+                extraction_confidence=state.get("extraction_confidence"),
+            )
+            return "judge_verify"
+        if retry_rejudge_due(state):
+            # #241: the earlier attempt was judged; a confident retry is not exempt.
+            logger.info(
+                "judge_rejudge_retry",
+                doc_id=state.get("doc_id"),
+                extraction_confidence=state.get("extraction_confidence"),
+                extraction_attempts=state.get("extraction_attempts"),
+                judge_pass_count=state.get("judge_pass_count"),
+            )
+            return "judge_verify"
     return dest
 
 
@@ -567,9 +630,9 @@ def after_classification_arbiter(state: dict) -> Literal["extract", "human_revie
     """The arbiter's accepted class continues to extraction; anything else goes to a person."""
     if state.get("classification_arbiter_decision") not in ("accept_sorter", "accept_reviewer"):
         return "human_review"
-    from pipeline.reconsideration import class_misses_ground_truth
+    from pipeline.reconsideration import routing_class_miss
 
-    if class_misses_ground_truth(state):
+    if routing_class_miss(state):
         logger.info("gt_class_miss_after_classification_arbiter", doc_id=state.get("doc_id"))
         return "human_review"
     return "extract"
@@ -604,9 +667,9 @@ def after_review_classify(state: dict) -> Literal[
             return _escalate_decision_review(state)
         # Same ground-truth gate as the LLM accept arm below: a label both
         # opinions share can still miss the grounded class.
-        from pipeline.reconsideration import class_misses_ground_truth
+        from pipeline.reconsideration import routing_class_miss
 
-        if class_misses_ground_truth(state, reviewer=True):
+        if routing_class_miss(state, reviewer=True):
             logger.info(
                 "gt_class_miss_after_reviewer",
                 verdict=state.get("review_verdict"),
@@ -627,9 +690,9 @@ def after_review_classify(state: dict) -> Literal[
         and confidence >= high
         and is_extractable_doc_type(doc_type)
     ):
-        from pipeline.reconsideration import class_misses_ground_truth
+        from pipeline.reconsideration import routing_class_miss
 
-        if class_misses_ground_truth(state, reviewer=True):
+        if routing_class_miss(state, reviewer=True):
             logger.info(
                 "gt_class_miss_after_reviewer",
                 verdict=verdict,
@@ -723,9 +786,7 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
         if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
             return "human_review"
         return "compile_report"
-    thresholds = _thresholds_for(state)
-    raw_max_passes = thresholds.get("judge_max_passes")
-    max_passes = int(raw_max_passes) if raw_max_passes is not None else 3
+    max_passes = _judge_max_passes(_thresholds_for(state))
     passes = int(state.get("judge_pass_count") or 0)
     if passes >= max_passes and verdict in ("partial", "incomplete"):
         logger.info(

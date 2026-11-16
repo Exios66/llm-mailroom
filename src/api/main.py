@@ -99,6 +99,11 @@ async def lifespan(app: FastAPI):
     A held watcher lock skips watcher startup; watcher stop errors are logged.
     """
     global _embedded_watcher
+    # Refuse to start (and to accept uploads) on a Dojo pin that cannot serve the
+    # frozen specialist prompts: raises SpecialistPinError before any watcher starts.
+    from llm.frozen_v1 import verify_specialist_pins
+
+    verify_specialist_pins()
     _ensure_dirs()
     from audit.sinks.sql import warn_if_ephemeral
 
@@ -744,6 +749,7 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
         apply_classification_override,
         copy_to_inbox,
         locate_document_file,
+        normalize_reviewer,
         plan_resolution,
         stage_name,
     )
@@ -877,7 +883,8 @@ async def _resolve_review_locked(doc_id: str, payload: dict):
             notes=notes,
             submitted_extracted=payload.get("extracted_data"),
             field_corrections=payload.get("field_corrections"),
-            reviewer=payload.get("reviewer") or payload.get("reviewer_header"),
+            # A blank body ``reviewer`` must fall through to the X-Reviewer header (#251).
+            reviewer=normalize_reviewer(payload.get("reviewer"), payload.get("reviewer_header")),
             reject_reason=payload.get("reject_reason"),
         )
     except ValueError as exc:

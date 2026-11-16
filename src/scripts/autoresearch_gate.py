@@ -7,8 +7,8 @@ experiment gate, the display contract, the changelog check) so a change that
 breaks core functionality is discarded whatever its score, then runs the
 objective's own eval and decides:
 
-- ``crash``       the eval did not run (exit code other than 0 or 2, an eval command that
-                  cannot be formatted, or no SCORE line for a scored objective; with
+- ``crash``       the eval did not run (exit code other than 0 or 2 without a ``GUARD … FAIL``
+                  line, an eval command that cannot be formatted, or no SCORE line for a scored objective; with
                   ``require_delta_ci``, no ΔU point estimate for the first candidate)
 - ``guard_fail``  a core guard failed, the eval printed a ``GUARD … FAIL`` /
                   ``GATE … FAIL`` line or exited 2, or the required ΔU interval
@@ -140,10 +140,14 @@ def decide(objective: dict, core: dict, eval_code: int, parsed: dict, best: floa
     if reasons:
         return "guard_fail", reasons
     direction = objective.get("direction", "higher")
+    if parsed["fails"]:
+        # A GUARD/GATE ... FAIL line is the eval reporting a guard failure, even when it then
+        # exits 1 (#251); only an eval that says nothing about a guard is a crash.
+        return "guard_fail", [f"eval:{f}" for f in parsed["fails"]]
     if eval_code not in (0, 2):
         return "crash", [f"eval exit {eval_code}"]
-    if parsed["fails"] or eval_code == 2:
-        return "guard_fail", [f"eval:{f}" for f in parsed["fails"]] or ["eval exit 2"]
+    if eval_code == 2:
+        return "guard_fail", ["eval exit 2"]
     if direction == "guards_only":
         # A guards-only pass is still a result the operator keeps, so mock/synthetic records must
         # not reach it (the review objective's eval reads no records and is unaffected).

@@ -12,8 +12,11 @@ build/
 
 # Data directory (pipeline bins + archive)
 data/
-# ...but not Dojo's package data in the vendored fallback (extraction_status.json).
+# ...but not Dojo's package data in the vendored fallback (extraction_status.json,
+# ml_contract.json, alignment_gaps.json).
 !vendor/llm-dojo-scoring/src/llm_dojo_scoring/schemas/data/
+!vendor/llm-dojo-scoring/src/llm_dojo_scoring/ml/data/
+!vendor/llm-dojo-scoring/src/llm_dojo_scoring/prompts/data/
 
 # IDE
 .vscode/
@@ -70,3 +73,7 @@ graphify-out/
 
 # Autoresearch loop state (per-machine iteration logs and dashboards)
 experiments/autoresearch/state/
+
+# Ground-truth label workbooks hold the full corpus text: private, never tracked
+*.xlsx
+*_texts/

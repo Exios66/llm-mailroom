@@ -64,3 +64,16 @@ def test_absolute_filenames_are_reduced_to_basenames(tmp_path: Path):
     assert payload["document"]["filename"] == "doc.txt"
     assert "/private/" not in json.dumps(payload)
     assert payload["persisted"] is True
+
+
+def test_node_errored_event_records_duration(tmp_path: Path):
+    """#251: ``node_errored`` dropped ``duration_ms`` although the start time is known."""
+    recorder = RunEventRecorder(document={"filename": "doc.txt"}, runs_dir=tmp_path)
+    recorder.on_chain_start(
+        None, {}, run_id="a", tags=["graph:step:1"], metadata={"langgraph_node": "classify"}
+    )
+    recorder.on_chain_error(ValueError("boom"), run_id="a")
+    payload = recorder.finalize({"stage": "failed", "doc_id": "d"})
+    errored = next(event for event in payload["events"] if event["type"] == "node_errored")
+    assert isinstance(errored["duration_ms"], float) and errored["duration_ms"] >= 0
+    assert errored["error_class"] == "ValueError"

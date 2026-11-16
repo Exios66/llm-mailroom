@@ -114,7 +114,17 @@ def test_gate_is_advisory_routing_unchanged(monkeypatch):
     register_extraction_gate(Spy({"verdict": "human_review", "key_field_score": 0.0}))
     gated = bg.extract_node(_state())
     assert gated["extraction_gate"]["verdict"] == "human_review"
-    assert {k: v for k, v in gated.items() if k != "extraction_gate"} == base
+    # #254: the attempt history keeps a per-attempt copy of the advisory answer; nothing else differs.
+    def routing_inputs(update):
+        out = {k: v for k, v in update.items() if k != "extraction_gate"}
+        out["extraction_attempt_history"] = [
+            {k: v for k, v in entry.items() if k != "extraction_gate"}
+            for entry in update["extraction_attempt_history"]
+        ]
+        return out
+
+    assert gated["extraction_attempt_history"][0]["extraction_gate"]["verdict"] == "human_review"
+    assert routing_inputs(gated) == routing_inputs(base)
 
 
 def test_gate_failure_is_recorded_not_raised(monkeypatch):

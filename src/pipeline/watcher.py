@@ -1129,8 +1129,13 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
         }
     else:
         terminal_path = move_to_archive(
-            claimed, matter_id, manifest.doc_type or "unknown", doc_id=manifest.doc_id
+            claimed,
+            matter_id,
+            manifest.doc_type or "unknown",
+            doc_id=manifest.doc_id,
+            manifest=manifest,
         )
+        save_manifest(manifest)  # persist file_location (a numbered re-archive copy, #250)
         terminal_event = "triage_archived"
         sidecar = None
         try:
@@ -1342,6 +1347,13 @@ class Watcher:
         """
         global _watcher_owned, _STATUS_STARTED_AT
         from datetime import datetime, timezone
+
+        # Before the lock, the observer or the inbox scan: a Dojo pin that cannot
+        # serve the frozen specialist prompts must stop the watcher, not file every
+        # document under failed/. Raises SpecialistPinError (not WatcherLockHeld).
+        from llm.frozen_v1 import verify_specialist_pins
+
+        verify_specialist_pins()
 
         inbox = inbox_dir()
         ensure_dirs(inbox)

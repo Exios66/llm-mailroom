@@ -57,6 +57,10 @@ MAX_LIST_LIMIT = 100
 MAX_LIST_OFFSET = 100_000
 MAX_EVENTS = 2000
 MAX_ATTEMPTS = 500
+# Sub-rows of ANOTHER document that name this record's parents. Each is a
+# failure on its own, so reading a handful proves tampering; the rest are only
+# counted. They never share the budget of this document's own attempts.
+MAX_FOREIGN_ATTEMPTS = 50
 MAX_ADDENDA = 200
 MAX_DECISION_FIELDS = 40
 MAX_FIELD_NAME = 64
@@ -582,19 +586,63 @@ _ADDENDUM_KINDS_FALLBACK = (
 )
 
 
-def _foundation_addendum_kinds() -> tuple[str, ...] | None:
+# Terminal events, attempt stages and attempt triggers the foundation writer
+# accepts (``audit.models``). The foundation verifier rejects anything else even
+# when the hash is valid, so this reader must too. Same fallback rule as above.
+_EVENTS_FALLBACK = ("archived", "failed", "triage_archived", "triage_reviewed")
+_STAGES_FALLBACK = ("classification", "extraction", "judge")
+_TRIGGERS_FALLBACK = (
+    "initial",
+    "retry",
+    "arbiter_rescue",
+    "human_correction",
+    "transient",
+    "resume",
+)
+
+
+def _foundation_models_tuple(name: str) -> tuple[str, ...] | None:
+    """A constant tuple from ``audit.models`` (plain dataclasses, no runtime), or None."""
     try:
-        kinds = getattr(importlib.import_module("audit.models"), "ADDENDUM_KINDS", None)
-        if kinds:
-            return tuple(kinds)
+        values = getattr(importlib.import_module("audit.models"), name, None)
+        if values:
+            return tuple(values)
     except Exception:
         pass
     return None
 
 
+def _foundation_addendum_kinds() -> tuple[str, ...] | None:
+    return _foundation_models_tuple("ADDENDUM_KINDS")
+
+
+def _foundation_events() -> tuple[str, ...] | None:
+    return _foundation_models_tuple("EVENTS")
+
+
+def _foundation_stages() -> tuple[str, ...] | None:
+    return _foundation_models_tuple("STAGES")
+
+
+def _foundation_triggers() -> tuple[str, ...] | None:
+    return _foundation_models_tuple("TRIGGERS")
+
+
 def _addendum_kinds() -> tuple[str, ...]:
     """Allowed addendum kinds: the foundation's own list, else the mirrored one."""
     return _foundation_addendum_kinds() or _ADDENDUM_KINDS_FALLBACK
+
+
+def _allowed_events() -> tuple[str, ...]:
+    return _foundation_events() or _EVENTS_FALLBACK
+
+
+def _allowed_stages() -> tuple[str, ...]:
+    return _foundation_stages() or _STAGES_FALLBACK
+
+
+def _allowed_triggers() -> tuple[str, ...]:
+    return _foundation_triggers() or _TRIGGERS_FALLBACK
 
 
 def _recompute_row_hash(
@@ -710,6 +758,12 @@ def _verify_attempts(
 
     parent_by_id: dict[str, dict[str, Any]] = {}
     refs: dict[str, dict[str, str | None]] = {}
+    # What each parent's reference claims about its sub-row (stage, attempt_no),
+    # raw as stored; keyed by (parent id, attempt id). A key the reference does
+    # not carry makes no claim.
+    ref_claims: dict[tuple[str, str], dict[str, Any]] = {}
+    allowed_stages = _allowed_stages()
+    allowed_triggers = _allowed_triggers()
     for parent in parents:
         parent_id = _text(parent.get("parent_id"))
         if not parent_id:
@@ -737,6 +791,9 @@ def _verify_attempts(
                 failures.append({"scope": "attempts", "id": attempt_id, "reason": "attempt-ref-duplicate"})
                 continue
             refs[parent_id][attempt_id] = _text(ref.get("entry_hash"))
+            ref_claims[(parent_id, attempt_id)] = {
+                key: ref[key] for key in ("stage", "attempt_no") if key in ref
+            }
 
     by_id: dict[str, dict[str, Any]] = {}
     for item in attempts:
@@ -774,6 +831,27 @@ def _verify_attempts(
         detail = item.get("detail")
         if not isinstance(detail, dict):
             failures.append({"scope": "attempts", "id": attempt_id, "reason": "detail-not-object"})
+            continue
+        # The foundation verifier rejects a stage/trigger its writer never
+        # emits; a valid hash does not excuse one, so these run before (and
+        # without) the hasher. The parent-reference check below is stricter than
+        # the foundation verifier: the writer always copies the sub-row's stage
+        # and int attempt_no into the reference, so any disagreement (including
+        # a type change such as "1" for 1) means the rows were not written
+        # together. Values are compared raw, never through the display trimming.
+        stage = item.get("stage")
+        if stage not in allowed_stages:
+            failures.append({"scope": "attempts", "id": attempt_id, "reason": "unknown-stage"})
+            continue
+        if item.get("trigger") not in allowed_triggers:
+            failures.append({"scope": "attempts", "id": attempt_id, "reason": "unknown-trigger"})
+            continue
+        claims = ref_claims.get((parent_id, attempt_id), {})
+        if any(
+            type(claim) is not type(item.get(key)) or claim != item.get(key)
+            for key, claim in claims.items()
+        ):
+            failures.append({"scope": "attempts", "id": attempt_id, "reason": "attempt-ref-mismatch"})
             continue
         if attempt_hash is None:
             continue
@@ -853,7 +931,15 @@ def _verify_unified(
     truncated: list[str],
     matter_id: Any,
     attempts_available: bool = True,
+    addenda_available: bool = True,
 ) -> dict[str, Any]:
+    """Verify one unified record.
+
+    ``attempts_available`` / ``addenda_available`` say whether the tables exist,
+    which is not the same as the rows read being empty: an absent table cannot
+    account for sub-rows the main row never lists, so the record is at best
+    ``unverified``, never ``verified``.
+    """
     failures: list[dict[str, Any]] = []
     notes: list[str] = []
     checked = {"main": 0, "attempts": 0, "addenda": 0, "legacy": 0}
@@ -876,6 +962,10 @@ def _verify_unified(
             failures.append({"scope": "main", "id": row_id, "reason": reason})
         elif expected != row.get("entry_hash"):
             failures.append({"scope": "main", "id": row_id, "reason": "hash-mismatch"})
+        # The foundation verifier rejects an event its writer never emits; a
+        # correctly hashed row with another event must not verify here either.
+        if row.get("event") not in _allowed_events():
+            failures.append({"scope": "main", "id": row_id, "reason": "unknown-event"})
         row_seq = _as_int(row.get("seq"))
         if predecessor is None:
             if row.get("prev_hash") != "":
@@ -937,10 +1027,22 @@ def _verify_unified(
         )
     if row is not None:
         notes.append("addenda: per-document chain from the row hash with contiguous seq from 1")
+    if not addenda_available:
+        notes.append("the addenda table is not stored in this schema; addenda are not verified")
 
     if "attempts" in truncated:
         notes.append("attempt sub-rows exceed the bounded read; they are not verified")
         attempts_verified = False
+        # The cap bounds only this document's own rows. A sub-row of another
+        # document that names one of these parents is tampering on its own and
+        # is reported even though the rest of the attempts are not verified.
+        parent_doc = {pid: parent.get("doc_id") for parent in parents if (pid := _text(parent.get("parent_id")))}
+        for item in attempts:
+            parent_id = _text(item.get("parent_id"))
+            if parent_id in parent_doc and _text(item.get("doc_id")) != parent_doc[parent_id]:
+                failures.append(
+                    {"scope": "attempts", "id": _text(item.get("attempt_id")), "reason": "attempt-doc-mismatch"}
+                )
     else:
         attempts_verified = _verify_attempts(
             parents=parents,
@@ -960,6 +1062,8 @@ def _verify_unified(
 
     if failures:
         status = "failed"
+    elif not attempts_available or not addenda_available:
+        status = "unverified"
     elif not attempts_verified and bool(attempts or _lists_attempts(parents)):
         status = "unverified"
     else:
@@ -1270,6 +1374,7 @@ def document_audit(doc_id: str) -> dict[str, Any]:
         "limits": {
             "events": MAX_EVENTS,
             "attempts": MAX_ATTEMPTS,
+            "foreign_attempts": MAX_FOREIGN_ATTEMPTS,
             "addenda": MAX_ADDENDA,
             "decision_fields": MAX_DECISION_FIELDS,
         },
@@ -1312,6 +1417,7 @@ def document_audit(doc_id: str) -> dict[str, Any]:
                 _read_unified(conn, doc_id, tables, legacy_rows, legacy_total, payload)
             else:
                 _read_event_chain(conn, doc_id, legacy_rows, legacy_total, payload)
+            _sanitize_failure_ids(payload["verification"])
             return payload
     except AuditStoreUnavailable as exc:
         payload["store"] = {
@@ -1340,6 +1446,19 @@ def document_audit(doc_id: str) -> dict[str, Any]:
             "included in this read-only response"
         )
         return payload
+
+
+def _sanitize_failure_ids(verification: dict[str, Any]) -> None:
+    """Make every ``failures[].id`` safe to display, in the JSON API and the CLI.
+
+    Ids come from stored rows, and sub-rows are selected by ``parent_id``, so a
+    row of another document can carry any string as its id. Control characters
+    (terminal escapes) are dropped and the length is capped like every other
+    displayed id. Display only: verification already ran on the raw values.
+    """
+    for failure in verification.get("failures") or []:
+        if "id" in failure:
+            failure["id"] = _as_str(failure["id"], limit=128)
 
 
 def _read_legacy(
@@ -1510,6 +1629,14 @@ def _read_unified(
             verification["notes"].append(
                 "sub-rows exist without a terminal row; the legacy section alone cannot account for them"
             )
+        missing = [name for name in ("audit_attempts", "audit_addenda") if name not in tables]
+        if missing and verification["status"] == "verified":
+            # Without the table the orphan check above could not run, so a valid
+            # legacy chain cannot rule out sub-rows whose terminal row is gone.
+            verification["status"] = "unverified"
+            verification["notes"].append(
+                f"{', '.join(missing)} missing from the store; orphan sub-rows cannot be ruled out"
+            )
         payload["verification"] = verification
         return
     if len(rows) > 1:
@@ -1561,6 +1688,7 @@ def _read_unified(
     attempts: list[dict[str, Any]] = []
     addenda: list[dict[str, Any]] = []
     truncated: list[str] = []
+    foreign_unlisted = 0
     if "audit_addenda" in tables:
         addenda_total = _count(conn, "audit_addenda", "doc_id = :doc", {"doc": doc_id})
         result = conn.execute(
@@ -1583,30 +1711,49 @@ def _read_unified(
             for value in (data.get("entry_id"), *(item.get("addendum_id") for item in addenda))
             if isinstance(value, str) and value
         ]
-        owned = "(doc_id = :doc OR parent_id IN :parents)"
-        attempts_total = int(
-            conn.execute(
-                text(f"SELECT COUNT(*) FROM audit_attempts WHERE {owned}").bindparams(
-                    bindparam("parents", expanding=True)
-                ),
-                {"doc": doc_id, "parents": parent_ids},
-            ).scalar()
-            or 0
-        )
+        # This document's own rows are capped on their own. Rows of ANOTHER
+        # document that name one of these parents are read through a separate,
+        # smaller query: they can never use up the own-row budget (which would
+        # turn tampering into "truncated"), and each one is a failure by itself.
+        attempts_total = _count(conn, "audit_attempts", "doc_id = :doc", {"doc": doc_id})
         result = conn.execute(
             text(
-                f"SELECT * FROM audit_attempts WHERE {owned} "
+                "SELECT * FROM audit_attempts WHERE doc_id = :doc "
                 "ORDER BY stage, attempt_no, attempt_id LIMIT :limit"
-            ).bindparams(bindparam("parents", expanding=True)),
-            {"doc": doc_id, "parents": parent_ids, "limit": MAX_ATTEMPTS + 1},
+            ),
+            {"doc": doc_id, "limit": MAX_ATTEMPTS + 1},
         )
         attempts = [_row_dict(item) for item in result]
         if len(attempts) > MAX_ATTEMPTS or attempts_total > MAX_ATTEMPTS:
             truncated.append("attempts")
             attempts = attempts[:MAX_ATTEMPTS]
+        if parent_ids:
+            foreign = "(doc_id IS NULL OR doc_id != :doc) AND parent_id IN :parents"
+            foreign_total = int(
+                conn.execute(
+                    text(f"SELECT COUNT(*) FROM audit_attempts WHERE {foreign}").bindparams(
+                        bindparam("parents", expanding=True)
+                    ),
+                    {"doc": doc_id, "parents": parent_ids},
+                ).scalar()
+                or 0
+            )
+            result = conn.execute(
+                text(
+                    f"SELECT * FROM audit_attempts WHERE {foreign} "
+                    "ORDER BY stage, attempt_no, attempt_id LIMIT :limit"
+                ).bindparams(bindparam("parents", expanding=True)),
+                {"doc": doc_id, "parents": parent_ids, "limit": MAX_FOREIGN_ATTEMPTS},
+            )
+            foreign_rows = [_row_dict(item) for item in result]
+            attempts.extend(foreign_rows)
+            if foreign_total > len(foreign_rows):
+                foreign_unlisted = foreign_total - len(foreign_rows)
 
-    # Verification saw every sub-row naming this record; the projection shows
-    # only this document's own, never another document's content.
+    # Verification saw this document's own sub-rows plus up to
+    # MAX_FOREIGN_ATTEMPTS rows of other documents naming this record (the rest
+    # are counted in a note); the projection shows only this document's own,
+    # never another document's content.
     attempt_projection = [
         _project_attempt(item) for item in attempts if item.get("doc_id") == doc_id
     ]
@@ -1653,7 +1800,13 @@ def _read_unified(
         truncated=truncated,
         matter_id=matter_id,
         attempts_available="audit_attempts" in tables,
+        addenda_available="audit_addenda" in tables,
     )
+    if foreign_unlisted:
+        payload["verification"]["notes"].append(
+            f"{foreign_unlisted} further sub-row(s) of other documents name this record's "
+            "parents and are not listed"
+        )
     if legacy_total > len(legacy_rows):
         payload["verification"]["truncated"] = True
         payload["verification"]["notes"].append("legacy section exceeds the bounded read")

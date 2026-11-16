@@ -97,6 +97,20 @@ def test_crash_on_missing_score_or_bad_exit(tmp_path):
     assert _gate(tmp_path, _registry(tmp_path, _echo("SCORE: 0.5", code=1))) == 1
 
 
+def test_guard_fail_line_with_exit_1_is_guard_fail_not_crash(tmp_path):
+    """#251: an eval that prints ``GUARD ... FAIL`` and exits 1 reported ``crash``."""
+    reg = _registry(tmp_path, _echo("GUARD G1 FAIL 9/10 wrong", "SCORE: 0.9", code=1))
+    assert _gate(tmp_path, reg) == 2
+    row = _results(tmp_path)[-1]
+    assert row["status"] == "guard_fail" and row["reasons"] == ["eval:G1"]
+
+
+def test_exit_1_without_a_guard_line_is_still_a_crash(tmp_path):
+    reg = _registry(tmp_path, _echo("SCORE: 0.9", code=1))
+    assert _gate(tmp_path, reg) == 1
+    assert _results(tmp_path)[-1]["status"] == "crash"
+
+
 def test_delta_ci_must_exclude_zero_when_required(tmp_path):
     line = "DELTA U (candidate - baseline) = +0.0100  95% CI [{}, {}] (paired bootstrap)"
     reg = _registry(tmp_path, _echo(line.format("-0.0020", "0.0200"), "SCORE: 0.5"), require_delta_ci=True)

@@ -130,7 +130,10 @@ def test_guarded_extraction_is_replaced_before_report_and_archive(run_graph):
     assert states["extract"]["extraction_guardrail"]
     assert states["retry_extract"]["extraction_attempts"] == 2
     assert states["retry_extract"]["extracted_data"]["parties"] == ["Acme", "Beta"]
-    assert "invalid list shape" in run_graph.extractor.call_args_list[1].args[2]
+    # #253: the retry is told what failed (the guardrail issue), never the rejected value.
+    retry_context = run_graph.extractor.call_args_list[1].args[2]
+    assert "invalid list shape" not in retry_context
+    assert "extraction_schema_invalid" in retry_context
     assert [c.args[0] for c in run_graph.extractor.call_args_list] == [CLEAN, CLEAN]
     assert run_graph.reporter.call_args.args[0]["extracted_data"] == states["retry_extract"]["extracted_data"]
     assert final.values["extracted_data"]["_report"]["extracted_data"]["parties"] == ["Acme", "Beta"]
@@ -246,5 +249,51 @@ def test_judge_findings_and_arbiter_fix_list_reach_reextraction(run_graph, mocke
     assert "governing_law" in retry_context
     assert "Read the governing law clause again" in retry_context
     assert states["retry_extract"]["arbiter_retry_count"] == 1
+    assert run_graph.reporter.call_args.args[0]["extracted_data"]["governing_law"] == "New York"
+    assert final.values["extracted_data"]["_report"]["extracted_data"]["governing_law"] == "New York"
+
+
+def test_confident_retry_is_rejudged_when_judge_rejudge_retry_is_on(run_graph, mocker):
+    first = {**deepcopy(FIELDS), "governing_law": "New Jersey"}
+    run_graph.extractor.side_effect = [
+        {**first, "confidence": 0.95}, {**deepcopy(FIELDS), "confidence": 0.99},
+    ]
+    import graph.routing as routing
+
+    real_thresholds = routing.get_confidence_thresholds
+    mocker.patch.object(  # opt in: judge_rejudge_retry defaults to off (#241)
+        routing, "get_confidence_thresholds",
+        lambda doc_type=None: {**real_thresholds(doc_type), "judge_rejudge_retry": True},
+    )
+    mocker.patch("agents.judge.CompletenessJudge.__init__", return_value=None)
+    # #241: the confident retry (0.99) is judged again, so the judge runs twice.
+    judge = mocker.patch("agents.judge.CompletenessJudge.judge_completeness", side_effect=[
+        {"completeness_label": "partial", "completeness": 0.6, "reasoning": "governing_law contradicts source"},
+        {"completeness_label": "complete", "completeness": 1.0, "reasoning": "ok"},
+    ])
+    accuracy = mocker.patch("agents.judge.CompletenessJudge.judge_extraction_correctness", return_value={
+        "extraction_correctness_label": "accurate", "extraction_correctness": 1.0, "reasoning": "",
+    })
+    mocker.patch("agents.arbiter.ArbiterAgent.__init__", return_value=None)
+    arbiter = mocker.patch("agents.arbiter.ArbiterAgent.arbitrate", return_value={
+        "decision": "retry_extraction", "reasoning": "Correct the governing law",
+        "handoff_summary": "Read the governing law clause again",
+        "fields_to_fix": ["governing_law"],
+    })
+    order, states, final, _ = run_graph()
+    assert order == ["intake", "classify", "extract", "judge_verify", "arbiter", "retry_extract", "judge_verify", "compile_report", "catalog_write", "archive"]
+    assert judge.call_args_list[0].kwargs == {"doc_type": "contract", "extracted": {**first, "cuad_family": None, "cuad_clauses": [], "maud_clauses": [], "merger_consideration": None}, "doc_text": CLEAN}
+    assert arbiter.call_args.kwargs["extracted"] == {**first, "cuad_family": None, "cuad_clauses": [], "maud_clauses": [], "merger_consideration": None}
+    assert arbiter.call_args.kwargs["judge_findings"] == ["governing_law contradicts source"]
+    assert arbiter.call_args.kwargs["judge_verdict"] == "partial"
+    assert arbiter.call_args.kwargs["doc_text"] == CLEAN
+    retry_context = run_graph.extractor.call_args_list[1].args[2]
+    assert "governing_law" in retry_context
+    assert "Read the governing law clause again" in retry_context
+    assert states["retry_extract"]["arbiter_retry_count"] == 1
+    assert judge.call_count == 2
+    assert judge.call_args_list[1].kwargs["extracted"]["governing_law"] == "New York"
+    accuracy.assert_called_once()
+    assert states["judge_verify"]["judge_pass_count"] == 2
     assert run_graph.reporter.call_args.args[0]["extracted_data"]["governing_law"] == "New York"
     assert final.values["extracted_data"]["_report"]["extracted_data"]["governing_law"] == "New York"

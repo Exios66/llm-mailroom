@@ -35,7 +35,7 @@ def test_align_class_keeps_merger_distinct_from_contract():
     assert align_class("correspondence") == "correspondence"
 
 
-def test_class_miss_even_at_high_confidence_goes_to_lane_a():
+def test_class_miss_even_at_high_confidence_goes_to_lane_a(oracle_routing):
     state = {
         "doc_type": "contract",
         "classification_confidence": 0.99,
@@ -47,7 +47,7 @@ def test_class_miss_even_at_high_confidence_goes_to_lane_a():
     assert after_retry_classify(state) == "review_classify"
 
 
-def test_predicting_contract_for_maud_gt_is_a_class_miss():
+def test_predicting_contract_for_maud_gt_is_a_class_miss(oracle_routing):
     state = {
         "doc_type": "contract",
         "classification_confidence": 0.99,
@@ -79,7 +79,7 @@ def test_live_run_without_gt_still_extracts_at_high_confidence():
     assert after_classify(state) == "extract"
 
 
-def test_reviewer_still_wrong_vs_gt_goes_to_human():
+def test_reviewer_still_wrong_vs_gt_goes_to_human(oracle_routing):
     state = {
         "review_verdict": "reviewer_agrees_high",
         "reviewer_confidence": 0.99,
@@ -114,7 +114,7 @@ def test_hollow_extraction_retries_then_reviews():
     assert after_extraction({**hollow, "extraction_attempts": 3}) == "human_review"
 
 
-def test_expected_field_coverage_below_floor_retries():
+def test_expected_field_coverage_below_floor_retries(oracle_routing):
     state = {
         "doc_type": "contract",
         "extraction_confidence": 0.99,
@@ -136,7 +136,7 @@ def test_expected_field_coverage_below_floor_retries():
     assert after_extraction({**state, "extraction_attempts": 3}) == "human_review"
 
 
-def test_ground_truth_without_schema_fields_never_gates_coverage():
+def test_ground_truth_without_schema_fields_never_gates_coverage(oracle_routing):
     """CUAD/MAUD ground truth carries clause labels, no schema fields.
 
     With nothing grounded to check, coverage has no opinion: a clean
