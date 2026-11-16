@@ -2,7 +2,7 @@
 
 Authoritative source: https://github.com/Exios66/llm-dojo-scoring
 
-- Exact source commit: `93eedd8c3270ce95af56f1e17ce40bae3d03b330` (the Dojo `v0.30.0` head, i.e. the 0.30.0 cut plus llm-dojo-scoring#157)
+- Exact source commit: `13adc8ec722f0d635466062b6dda181958d4d5f8` (the Dojo `v0.30.0` branch head after llm-dojo-scoring#163, which carries #158; supersedes `93eedd8`, the 0.30.0 cut plus #157. Same public surface; scores move: the sixth 0.30.0 score-change set, `rescore_required` in `metrics/score_changelog.py`)
 - Source package version: `0.30.0` (`__version__` at that commit)
 - Snapshot: `git archive` of `llm_dojo_scoring/` at that commit, relocated under `src/`.
   That includes the package data `schemas/data/extraction_status.json`, `ml/data/ml_contract.json`

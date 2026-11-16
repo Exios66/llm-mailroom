@@ -2,7 +2,8 @@
 
 Ported from ``src/experiment_log.py`` (llm-entity-extraction) — the parts the
 scoring suite owns. The record SCHEMA is the contract preserved here; the
-Excel-facing summary is defined in :mod:`llm_dojo_scoring.analysis.export`.
+Excel-facing summary lived in the ``analysis.export`` module, which was removed in 0.30.0
+(see ``CHANGELOG.md``).
 """
 
 from __future__ import annotations

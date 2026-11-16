@@ -1,13 +1,13 @@
 ---
 name: dojo-scoring
-description: llm-dojo-scoring pin and mailroom scoring suites (93eedd8c3270ce95af56f1e17ce40bae3d03b330). Use when adding scores, specialist suites, class match, field types, or SCORE_CONFIG names — never invent metrics absent from the installed registry.
+description: llm-dojo-scoring pin and mailroom scoring suites (13adc8ec722f0d635466062b6dda181958d4d5f8). Use when adding scores, specialist suites, class match, field types, or SCORE_CONFIG names — never invent metrics absent from the installed registry.
 ---
 
 # llm-dojo-scoring (pinned engine)
 
 **When:** Extraction/classification KPIs, specialist suites, field types,
 honesty gaps, Langfuse score configs.  
-Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@93eedd8c3270ce95af56f1e17ce40bae3d03b330`
+Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@13adc8ec722f0d635466062b6dda181958d4d5f8`
 
 ## Rules
 

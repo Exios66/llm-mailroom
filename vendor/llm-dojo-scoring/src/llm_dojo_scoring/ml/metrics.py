@@ -32,7 +32,7 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from ..analysis.bootstrap import wilson_ci
+from ..analysis.bootstrap import round_up, wilson_bounds
 from ..analysis.calibration import expected_calibration_error
 from ..schemas.corpus import DOC_TYPE_SUBCLASSES, normalize_corpus_subclass
 
@@ -138,7 +138,9 @@ def score_intake_model(records: Iterable[Mapping[str, Any]], *, z: float = 1.96)
             errors += int(wrong)
     scored = len(class_gold)
     risk = _rate(errors, accepted)
-    interval = wilson_ci(errors / accepted, accepted, z) if accepted else None
+    # The exact upper bound, rounded up: a release gate compares it with a budget,
+    # so rounding to nearest could pass a model whose true bound is over (#160).
+    upper = round_up(wilson_bounds(errors / accepted, accepted, z)[1], 4) if accepted else None
     metrics = {
         "doc_type_accuracy": _rate(sum(g == p for g, p in zip(class_gold, class_pred)), scored),
         "doc_type_macro_f1": _macro_f1(class_gold, class_pred),
@@ -148,7 +150,7 @@ def score_intake_model(records: Iterable[Mapping[str, Any]], *, z: float = 1.96)
         "subclass_ece": expected_calibration_error(sub_pairs),
         "fast_path_coverage": _rate(accepted, scored),
         "selective_risk": risk,
-        "selective_risk_upper": interval["hi"] if interval else None,
+        "selective_risk_upper": upper,
     }
     return {
         "n": n,
