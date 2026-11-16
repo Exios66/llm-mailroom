@@ -394,18 +394,18 @@ def _recorded_file_in(manifest, base: Path) -> Path | None:
     original = Path(str(getattr(manifest, "original_filename", "") or ""))
     if not original.name:
         return None
-    name = path.name
-    if name != original.name:
-        if name == _review_name(manifest):
-            pass  # this manifest's own review-file name is trusted
-        elif not re.fullmatch(
-            r"%s--\d+%s" % (re.escape(original.stem), re.escape(original.suffix)),
-            name,
-        ):
-            # A numbered collision fallback (``<stem>--<n><suffix>``) is also
-            # this document's own move's product; anything else — notably
-            # another document's ``<stem>--<doc_id>`` name — is not.
-            return None
+    # The move keeps its SOURCE name, so the source may be the original name
+    # or this document's review-file name (human completion archives straight
+    # from review). ``_no_clobber_move_to_dir`` then tries ``<name>``,
+    # ``<stem>--<doc_id>`` and ``<stem>--<n>`` (PR #252 review).
+    doc_id = re.escape(str(getattr(manifest, "doc_id", "") or ""))
+    stems = {original.stem, Path(_review_name(manifest)).stem}
+    tail = r"(?:--(?:%s|\d+))?" % doc_id if doc_id else r"(?:--\d+)?"
+    pattern = r"(?:%s)%s%s" % ("|".join(re.escape(s) for s in stems), tail, re.escape(original.suffix))
+    if not re.fullmatch(pattern, path.name):
+        # Anything else — notably another document's ``<stem>--<its doc_id>``
+        # name — is not this document's own move's product.
+        return None
     try:
         if path.parent.resolve() == base.resolve() and path.is_file():
             return path
@@ -415,8 +415,22 @@ def _recorded_file_in(manifest, base: Path) -> Path | None:
 
 
 def archived_file_path(manifest) -> Path:
-    """Resolve an archive path without treating mutable metadata as ownership."""
-    return _owned_bin_file_path(manifest, archive_dir(manifest.matter_id, manifest.doc_type))
+    """Resolve an archive path without treating mutable metadata as ownership.
+
+    Like ``failed_file_path``: a path the manifest recorded (``file_location``,
+    set by ``move_to_archive(..., manifest=...)``) wins when it is a file in
+    this archive directory and has a name this document's own move could have
+    produced. When the bare name and ``<stem>--<doc_id>`` are both taken, a
+    re-archive stores the new bytes under a numbered name (``<stem>--<n>``)
+    that no document-ID rule can derive, so the recorded path is the only
+    exact locator for them (#250). Never replacing the older copy keeps the
+    A-20 guarantee and the audit entries' archived digests valid.
+    """
+    base = archive_dir(manifest.matter_id, manifest.doc_type)
+    recorded = _recorded_file_in(manifest, base)
+    if recorded is not None:
+        return recorded
+    return _owned_bin_file_path(manifest, base)
 
 
 def processing_file_path(manifest) -> Path | None:
@@ -656,11 +670,20 @@ def move_to_failed(file_path: Path, doc_id: str = "") -> Path:
     return _no_clobber_move_to_dir(file_path, failed_dir(), doc_id)
 
 
-def move_to_archive(file_path: Path, matter_id: str, doc_type: str, doc_id: str = "") -> Path:
+def move_to_archive(
+    file_path: Path, matter_id: str, doc_type: str, doc_id: str = "", manifest=None
+) -> Path:
     """Move a file to the archive with race-free collision resolution
     (audit A-20; re-processing can never destroy a previously archived
-    legal document, and the doc-tagged fallback no longer clobbers)."""
-    return _no_clobber_move_to_dir(file_path, archive_dir(matter_id, doc_type), doc_id)
+    legal document, and the doc-tagged fallback no longer clobbers).
+
+    When ``manifest`` is given, the destination is recorded on it as
+    ``file_location`` (in memory; the caller saves it) so ``archived_file_path``
+    finds a numbered ``--<n>`` re-archive copy (#250)."""
+    dest = _no_clobber_move_to_dir(file_path, archive_dir(matter_id, doc_type), doc_id)
+    if manifest is not None:
+        manifest.file_location = str(dest)
+    return dest
 
 
 def _save_manifest(manifest) -> Path:

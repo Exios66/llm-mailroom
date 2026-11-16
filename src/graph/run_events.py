@@ -198,13 +198,14 @@ class RunEventRecorder(BaseCallbackHandler):  # type: ignore[misc]
         started = self._starts.pop(str(run_id), None)
         if started is None:
             return
-        _started_perf, sequence, node = started
+        started_perf, sequence, node = started
         with self._lock:
             self.events.append(
                 {
                     "type": "node_errored",
                     "sequence": sequence,
                     "node": node,
+                    "duration_ms": round((time.perf_counter() - started_perf) * 1000, 3),
                     "error_class": type(error).__name__,
                     "ts": time.time(),
                 }

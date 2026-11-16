@@ -616,7 +616,7 @@ Field scoring fires before any LLM judge — cheap, reproducible, zero API cost.
 
 1. **Deterministic field scoring** fires on every grounded extraction — no LLM call, instant.
 2. **Classification + extraction guards** clamp bad output below routing thresholds.
-3. **Lane B judge** (`judge_verify`) fires only on the ambiguous band (`low ≤ confidence < judge_band_high`) — most documents skip it.
+3. **Lane B judge** (`judge_verify`) fires on the ambiguous band (`low ≤ confidence < judge_band_high`) — most documents skip it. With the opt-in `judge_rejudge_retry: true` (off by default), a retry whose earlier attempt was judged is also judged again while `judge_pass_count < judge_max_passes`.
 4. **Pipeline-result generation** emits the `pipeline-result` output consumed by two independent Langfuse evaluators.
 5. **Two live evaluators** score the trace independently: `mailroom-pipeline-judge` (verdict) and `mailroom-pipeline-quality` (numeric).
 

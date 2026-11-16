@@ -49,7 +49,8 @@ def test_blank_subclass_equals_none():
 def test_snapshot_without_a_subclass_key_says_nothing_about_it():
     label = _label(human_sub="nda")
     del label["model_snapshot"]["doc_subclass"]
-    assert exp.is_corrected(label) is False and exp.is_wasted(label) is True
+    # Unknown, not "unchanged": it is no evidence of an edit, and no confirmation either (#248).
+    assert exp.is_corrected(label) is False and exp.is_wasted(label) is False
 
 
 def test_class_and_field_corrections_keep_working():
