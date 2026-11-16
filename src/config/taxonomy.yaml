@@ -244,6 +244,11 @@ confidence:
   # One completeness judge pass per extraction attempt (initial + each
   # arbiter-approved retry). Keep = 1 + arbiter_retry_max.
   judge_max_passes: 3
+  # A retry extraction (attempt >= 2) whose earlier attempt was judged is judged
+  # again whatever confidence it reports, while passes remain (#241). Off by
+  # default until the judge is calibrated (#242): false keeps the band-only gate.
+  # Per-class overridable under by_class.
+  judge_rejudge_retry: false
   # Unused routing knob (kept for config-file compatibility). Matter conflicts
   # escalate via deterministic same-class field comparison in
   # graph/build_graph.py:_detect_conflict — not an extraction-confidence gap.

@@ -1,0 +1,491 @@
+{
+  "contract_subtypes": [
+    {
+      "key": "affiliate",
+      "label": "Affiliate Agreement"
+    },
+    {
+      "key": "agency",
+      "label": "Agency Agreement"
+    },
+    {
+      "key": "collaboration",
+      "label": "Collaboration / Cooperation Agreement"
+    },
+    {
+      "key": "co_branding",
+      "label": "Co-Branding Agreement"
+    },
+    {
+      "key": "consulting",
+      "label": "Consulting Agreement"
+    },
+    {
+      "key": "development",
+      "label": "Development Agreement"
+    },
+    {
+      "key": "distributor",
+      "label": "Distributor Agreement"
+    },
+    {
+      "key": "endorsement",
+      "label": "Endorsement Agreement"
+    },
+    {
+      "key": "franchise",
+      "label": "Franchise Agreement"
+    },
+    {
+      "key": "hosting",
+      "label": "Hosting Agreement"
+    },
+    {
+      "key": "ip",
+      "label": "IP Agreement"
+    },
+    {
+      "key": "joint_venture",
+      "label": "Joint Venture Agreement"
+    },
+    {
+      "key": "license",
+      "label": "License Agreement"
+    },
+    {
+      "key": "maintenance",
+      "label": "Maintenance Agreement"
+    },
+    {
+      "key": "manufacturing",
+      "label": "Manufacturing Agreement"
+    },
+    {
+      "key": "marketing",
+      "label": "Marketing Agreement"
+    },
+    {
+      "key": "non_compete_no_solicit",
+      "label": "Non-Compete / No-Solicit / Non-Disparagement Agreement"
+    },
+    {
+      "key": "outsourcing",
+      "label": "Outsourcing Agreement"
+    },
+    {
+      "key": "promotion",
+      "label": "Promotion Agreement"
+    },
+    {
+      "key": "reseller",
+      "label": "Reseller Agreement"
+    },
+    {
+      "key": "service",
+      "label": "Service Agreement"
+    },
+    {
+      "key": "sponsorship",
+      "label": "Sponsorship Agreement"
+    },
+    {
+      "key": "strategic_alliance",
+      "label": "Strategic Alliance Agreement"
+    },
+    {
+      "key": "supply",
+      "label": "Supply Agreement"
+    },
+    {
+      "key": "transportation",
+      "label": "Transportation Agreement"
+    }
+  ],
+  "digests": {
+    "contract_subtypes": "bba47b526a08f6844902775b1aa79570a1fd87636d8764c2dfe673c40c382992",
+    "doc_types": "bd888b5998cde03f752e9e38cd4aae04d00780276aca6db6aa449448bc72956a",
+    "intake": "4741c38b1a419fc414b66255a144c4215300236bbfb8556800e1882307eba958",
+    "maud_consideration_types": "e173a54c9ac938b5173acb99f86385a5fb7fb412516648c1309b01d8fb68fcb6",
+    "subclass_normalization": "61d9b8e78a588d1626b8b1ff6b5175cd76821272f3c893389e34e1d35e737531",
+    "subclass_unknown": "d448c0e0f65da7948e3edb7805b5272b54f75f427c33333157324b626f5ca51f",
+    "subclasses": "5cd19e4fd6f232869ae0cb307c2a6624f06bd981b3cd7b8eccaad222d2bb3fd9",
+    "subtype_aliases": "af349cf83d8b1517f68b980a7f02823b1102586d487ff4571c012a85466b4794"
+  },
+  "doc_types": [
+    "contract",
+    "merger_agreement",
+    "corporate_record",
+    "correspondence",
+    "insurance_claim"
+  ],
+  "intake": {
+    "cases": [
+      {
+        "input": "",
+        "name": "empty",
+        "output": "",
+        "stats": {
+          "changed": false,
+          "cleaned_chars": 0,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 0,
+          "raw_chars": 0
+        }
+      },
+      {
+        "input": "Notice of claim.\nPolicy 42.",
+        "name": "already_clean",
+        "output": "Notice of claim.\nPolicy 42.",
+        "stats": {
+          "changed": false,
+          "cleaned_chars": 27,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 0,
+          "raw_chars": 27
+        }
+      },
+      {
+        "input": "Cafe\u0301 lease",
+        "name": "nfc_normalize",
+        "output": "Caf\u00e9 lease",
+        "stats": {
+          "changed": true,
+          "cleaned_chars": 10,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 0,
+          "raw_chars": 11
+        }
+      },
+      {
+        "input": "Line one\r\nLine two\rLine three",
+        "name": "newline_unify",
+        "output": "Line one\nLine two\nLine three",
+        "stats": {
+          "changed": true,
+          "cleaned_chars": 28,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 0,
+          "raw_chars": 29
+        }
+      },
+      {
+        "input": "Total\u00a0due:\u00a0$1,200",
+        "name": "nbsp_to_space",
+        "output": "Total due: $1,200",
+        "stats": {
+          "changed": true,
+          "cleaned_chars": 17,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 0,
+          "raw_chars": 17
+        }
+      },
+      {
+        "input": "Agree\u200bment\ufeff signed",
+        "name": "strip_zero_width",
+        "output": "Agreement signed",
+        "stats": {
+          "changed": true,
+          "cleaned_chars": 16,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 0,
+          "raw_chars": 18
+        }
+      },
+      {
+        "input": "Para\u0007graph\u000bend",
+        "name": "control_chars",
+        "output": "Para graph end",
+        "stats": {
+          "changed": true,
+          "cleaned_chars": 14,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 0,
+          "raw_chars": 14
+        }
+      },
+      {
+        "input": "The indemni-\nfication clause",
+        "name": "hyphen_unwrap",
+        "output": "The indemnification clause",
+        "stats": {
+          "changed": true,
+          "cleaned_chars": 26,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 1,
+          "raw_chars": 28
+        }
+      },
+      {
+        "input": "Header\n\n\n\n\nBody",
+        "name": "collapse_blank_runs",
+        "output": "Header\n\nBody",
+        "stats": {
+          "changed": true,
+          "cleaned_chars": 12,
+          "collapsed_blank_runs": 1,
+          "hyphen_unwraps": 0,
+          "raw_chars": 15
+        }
+      },
+      {
+        "input": "Name:      Jane   Roe",
+        "name": "collapse_horizontal_space",
+        "output": "Name: Jane Roe",
+        "stats": {
+          "changed": true,
+          "cleaned_chars": 14,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 0,
+          "raw_chars": 21
+        }
+      },
+      {
+        "input": "| Item |   Qty |\n| a |  1 |",
+        "name": "table_row_kept",
+        "output": "| Item |   Qty |\n| a |  1 |",
+        "stats": {
+          "changed": false,
+          "cleaned_chars": 27,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 0,
+          "raw_chars": 27
+        }
+      },
+      {
+        "input": "\n\n   Dear Sir,   \n\n",
+        "name": "trim_edges",
+        "output": "Dear Sir,",
+        "stats": {
+          "changed": true,
+          "cleaned_chars": 9,
+          "collapsed_blank_runs": 0,
+          "hyphen_unwraps": 0,
+          "raw_chars": 19
+        }
+      }
+    ],
+    "prep_steps": [
+      "nfc_normalize",
+      "newline_unify",
+      "nbsp_to_space",
+      "strip_zero_width",
+      "control_chars",
+      "hyphen_unwrap",
+      "collapse_blank_runs",
+      "collapse_horizontal_space",
+      "trim_edges"
+    ]
+  },
+  "maud_consideration_types": [
+    "all_cash",
+    "all_stock",
+    "mixed_cash_stock",
+    "mixed_cash_stock_election",
+    "other"
+  ],
+  "schema": "dojo.ml_contract/1",
+  "subclass_normalization": {
+    "contract": {
+      "": "other",
+      "Affiliate_Agreements": "affiliate",
+      "Agency Agreements": "agency",
+      "Co_Branding": "co_branding",
+      "Collaboration": "collaboration",
+      "Consulting Agreements": "consulting",
+      "Development": "development",
+      "Distributor": "distributor",
+      "Endorsement": "endorsement",
+      "Franchise": "franchise",
+      "Hosting": "hosting",
+      "IP": "ip",
+      "Joint Venture": "joint_venture",
+      "Joint Venture _ Filing": "joint_venture",
+      "License_Agreements": "license",
+      "Maintenance": "maintenance",
+      "Manufacturing": "manufacturing",
+      "Marketing": "marketing",
+      "Non_Compete_Non_Solicit": "non_compete_no_solicit",
+      "Outsourcing": "outsourcing",
+      "Promotion": "promotion",
+      "Reseller": "reseller",
+      "Service": "service",
+      "Sponsorship": "sponsorship",
+      "Strategic Alliance": "strategic_alliance",
+      "Supply": "supply",
+      "Transportation": "transportation",
+      "affiliate": "affiliate",
+      "agency": "agency",
+      "co_branding": "co_branding",
+      "collaboration": "collaboration",
+      "consulting": "consulting",
+      "development": "development",
+      "distributor": "distributor",
+      "endorsement": "endorsement",
+      "franchise": "franchise",
+      "hosting": "hosting",
+      "ip": "ip",
+      "joint_venture": "joint_venture",
+      "license": "license",
+      "maintenance": "maintenance",
+      "manufacturing": "manufacturing",
+      "marketing": "marketing",
+      "non_compete_no_solicit": "non_compete_no_solicit",
+      "outsourcing": "outsourcing",
+      "promotion": "promotion",
+      "reseller": "reseller",
+      "service": "service",
+      "sponsorship": "sponsorship",
+      "strategic_alliance": "strategic_alliance",
+      "supply": "supply",
+      "transportation": "transportation",
+      "unknown_surface": "other"
+    },
+    "corporate_record": {
+      "": "other",
+      "articles_of_incorporation": "articles_of_incorporation",
+      "board_resolution": "board_resolution",
+      "bylaws": "bylaws",
+      "certificate_of_formation": "certificate_of_formation",
+      "charter_amendment": "charter_amendment",
+      "indenture": "indenture",
+      "officer_certificate": "officer_certificate",
+      "other": "other",
+      "powers_of_attorney": "powers_of_attorney",
+      "rights_instrument": "rights_instrument",
+      "subsidiary_list": "subsidiary_list",
+      "unknown_surface": "other"
+    },
+    "correspondence": {
+      "": "other",
+      "attorney_demand": "attorney_demand",
+      "demand": "demand",
+      "email": "email",
+      "letter": "letter",
+      "meeting_request": "meeting_request",
+      "memo": "memo",
+      "notice": "notice",
+      "other": "other",
+      "press_release": "press_release",
+      "unknown_surface": "other"
+    },
+    "insurance_claim": {
+      "": "other",
+      "auto": "auto",
+      "carrier": "carrier",
+      "inpatient": "inpatient",
+      "outpatient": "outpatient",
+      "pde": "pde",
+      "property": "property",
+      "unknown_surface": "other"
+    },
+    "merger_agreement": {
+      "": "other",
+      "all_cash": "all_cash",
+      "all_stock": "all_stock",
+      "mixed_cash_stock": "mixed_cash_stock",
+      "mixed_cash_stock_election": "mixed_cash_stock_election",
+      "other": "other",
+      "unknown_surface": "other"
+    }
+  },
+  "subclass_unknown": "other",
+  "subclasses": {
+    "contract": [
+      "affiliate",
+      "agency",
+      "collaboration",
+      "co_branding",
+      "consulting",
+      "development",
+      "distributor",
+      "endorsement",
+      "franchise",
+      "hosting",
+      "ip",
+      "joint_venture",
+      "license",
+      "maintenance",
+      "manufacturing",
+      "marketing",
+      "non_compete_no_solicit",
+      "outsourcing",
+      "promotion",
+      "reseller",
+      "service",
+      "sponsorship",
+      "strategic_alliance",
+      "supply",
+      "transportation"
+    ],
+    "corporate_record": [
+      "bylaws",
+      "articles_of_incorporation",
+      "certificate_of_formation",
+      "charter_amendment",
+      "powers_of_attorney",
+      "subsidiary_list",
+      "rights_instrument",
+      "indenture",
+      "board_resolution",
+      "officer_certificate",
+      "other"
+    ],
+    "correspondence": [
+      "email",
+      "memo",
+      "letter",
+      "notice",
+      "demand",
+      "attorney_demand",
+      "press_release",
+      "meeting_request",
+      "other"
+    ],
+    "insurance_claim": [
+      "carrier",
+      "inpatient",
+      "outpatient",
+      "pde",
+      "property",
+      "auto"
+    ],
+    "merger_agreement": [
+      "all_cash",
+      "all_stock",
+      "mixed_cash_stock",
+      "mixed_cash_stock_election",
+      "other"
+    ]
+  },
+  "subtype_aliases": {
+    "affiliate_agreement": "affiliate",
+    "affiliate_agreements": "affiliate",
+    "agency_agreements": "agency",
+    "co_branding": "co_branding",
+    "collaboration": "collaboration",
+    "consulting_agreements": "consulting",
+    "development": "development",
+    "distributor": "distributor",
+    "endorsement": "endorsement",
+    "endorsement_agreement": "endorsement",
+    "franchise": "franchise",
+    "hosting": "hosting",
+    "ip": "ip",
+    "joint_venture": "joint_venture",
+    "joint_venture_filing": "joint_venture",
+    "license_agreements": "license",
+    "maintenance": "maintenance",
+    "manufacturing": "manufacturing",
+    "marketing": "marketing",
+    "non_compete_non_solicit": "non_compete_no_solicit",
+    "outsourcing": "outsourcing",
+    "promotion": "promotion",
+    "reseller": "reseller",
+    "service": "service",
+    "sponsorship": "sponsorship",
+    "strategic_alliance": "strategic_alliance",
+    "supply": "supply",
+    "transportation": "transportation"
+  }
+}

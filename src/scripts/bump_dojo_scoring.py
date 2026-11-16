@@ -351,10 +351,19 @@ def _semver(ref: str) -> tuple[int, int, int] | None:
 
 
 #: Rows naming the newest Dojo release next to the consumer pin. They move only
-#: forward, and only when the pin itself is a newer release.
+#: forward, and only when the pin itself is a newer release. A row may carry a
+#: ", X.Y.Z staged and untagged" note for a release that is merged but not yet
+#: tagged; the note is dropped once the pin reaches that release.
+_STAGED_NOTE = r"(?P<staged>, (?P<staged_version>" + _TAG + r") staged and untagged)?"
 _LATEST_ROW_RES: tuple[re.Pattern[str], ...] = (
-    re.compile(r"(\| Latest \| )(" + _TAG + r")( as of )(\d{4}-\d{2}-\d{2})( \(llm-mailroom pins )"),
-    re.compile(r"(\| llm-dojo-scoring \| )(" + _TAG + r")( latest as of )(\d{4}-\d{2}-\d{2})(; llm-mailroom pins )"),
+    re.compile(
+        r"(?P<pre>\| Latest \| )(?P<ver>" + _TAG + r")(?P<mid> as of )(?P<date>\d{4}-\d{2}-\d{2})"
+        + _STAGED_NOTE + r"(?P<post> \(llm-mailroom pins )"
+    ),
+    re.compile(
+        r"(?P<pre>\| llm-dojo-scoring \| )(?P<ver>" + _TAG + r")(?P<mid> latest as of )"
+        r"(?P<date>\d{4}-\d{2}-\d{2})" + _STAGED_NOTE + r"(?P<post>; llm-mailroom pins )"
+    ),
 )
 
 
@@ -364,6 +373,8 @@ def _advance_latest(text: str, tag: str, today: str) -> str:
     A plain release tag replaces an older version or a non-plain version in
     a matching row. Equal or newer plain versions stay unchanged; a SHA or
     non-plain target leaves all rows unchanged. ``today`` is inserted as given.
+    A "staged and untagged" note stays while its release is newer than ``tag``
+    and is dropped once ``tag`` reaches it.
     """
     new = _semver(tag)
     if new is None:
@@ -371,10 +382,14 @@ def _advance_latest(text: str, tag: str, today: str) -> str:
 
     def repl(m: re.Match[str]) -> str:
         """Replace a row's version and date unless its plain version is current or newer."""
-        old = _semver(m.group(2))
+        old = _semver(m.group("ver"))
         if old is not None and old >= new:
             return m.group(0)
-        return f"{m.group(1)}{tag}{m.group(3)}{today}{m.group(5)}"
+        staged = m.group("staged") or ""
+        staged_version = _semver(m.group("staged_version") or "")
+        if staged_version is not None and staged_version <= new:
+            staged = ""
+        return f"{m.group('pre')}{tag}{m.group('mid')}{today}{staged}{m.group('post')}"
 
     for pattern in _LATEST_ROW_RES:
         text = pattern.sub(repl, text)
@@ -443,8 +458,10 @@ def _rewrite_text(text: str, tag: str, *, today: str | None = None, release: str
         rf"\g<1>{tag}\g<3>", out
     )
     # Documented invocation of this script in docs/sister-repos.md.
-    out = _c(r"(bump_dojo_scoring\.py --apply --tag )(__REF__)").sub(
-        rf"\g<1>{tag}", out
+    # The flag skips release verification, which only a commit target can use
+    # (main() rejects a tag target with it), so a tag target drops it.
+    out = _c(r"(bump_dojo_scoring\.py --apply )((?:--allow-missing-release )?)(--tag )(__REF__)").sub(
+        lambda m: f"{m.group(1)}{m.group(2) if is_sha(tag) else ''}{m.group(3)}{tag}", out
     )
     # A SHA is an interim commit, never a published release label.
     if is_sha(tag):
@@ -512,10 +529,16 @@ def main(argv: list[str] | None = None) -> int:
     Print the current and desired refs and check results or updated paths.
     ``--check`` returns 0 for a matching pin, a SHA at the target release's
     commit, or an interim SHA not contained in the target release, and 2 when
-    an update is needed. ``--apply`` resolves release tags to commit pins and
-    writes recognized pin files unless ``--dry-run`` is set. Return 1 for a
-    missing release, a target SHA absent from the latest release, a refused
-    SHA downgrade, or no changes when the pins differ; otherwise return 0.
+    an update is needed. It writes nothing. When the pin is already the target
+    release's commit, ``--check`` also returns 2 (``release_metadata_stale=true``,
+    one ``stale=<path>`` line per file) while a read-only preview of the
+    release-metadata rewrite (latest-release rows, staged note, release label
+    prose) would still change files. ``--apply`` resolves release tags to commit
+    pins and writes recognized pin files unless ``--dry-run`` is set; at the
+    release's commit it keeps the SHA and only rewrites that metadata, returning
+    0. Return 1 for a missing release, a target SHA absent from the latest
+    release, a refused SHA downgrade, or no changes when the pins differ;
+    otherwise return 0.
     ``--allow-missing-release`` skips the release-existence
     check and the SHA ancestry guard, but refuses to replace an immutable SHA
     pin with a movable tag, and refuses any tag target on --apply, because it
@@ -530,7 +553,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument(
         "--check",
         action="store_true",
-        help="exit 0 if current pin equals desired tag; else exit 2 and print both",
+        help="exit 0 if the pin is up to date; exit 2 if it is behind the desired tag, or is the release commit with stale release rows",
     )
     mode.add_argument(
         "--apply",
@@ -587,8 +610,29 @@ def main(argv: list[str] | None = None) -> int:
         if release_commit(desired) == current:
             # The pin already IS the release's exact commit. Rewriting it to
             # the tag name would trade an immutable install contract for a
-            # movable ref, so both --check and --apply leave it alone.
+            # movable ref, so the pin stays the SHA in both modes. The release
+            # metadata (latest rows, staged note, "release commit" prose) still
+            # has to catch up when the release is tagged on the pinned commit:
+            # --apply rewrites it; --check previews the same rewrite read-only
+            # and exits 2 while it is stale, so the daily workflow runs --apply.
             print("immutable_pin=true")
+            changed = apply_pin(current, dry_run=args.dry_run or args.check, release=desired)
+            if args.check:
+                if changed:
+                    for path in changed:
+                        print(f"stale={path.relative_to(REPO_ROOT)}")
+                    print("release_metadata_stale=true")
+                    print("up_to_date=false")
+                    return 2
+            else:
+                for path in changed:
+                    print(f"updated={path.relative_to(REPO_ROOT)}")
+                print(f"changed={len(changed)} dry_run={args.dry_run}")
+                if changed and args.dry_run:
+                    # Nothing was written, so the metadata is still stale.
+                    print("release_metadata_stale=true")
+                    print("up_to_date=false")
+                    return 0
             print("up_to_date=true")
             return 0
         if not tag_contains_commit(current, desired):

@@ -72,6 +72,13 @@ class RunInfo(_Model):
     mode: Literal["real", "mock", "synthetic"]
     # Must be False for any record used for calibration: GT in state changes routing.
     gt_in_state: bool = False
+    # Selection settings of the sweep that wrote the record (``run_calibration_sweep.py``).
+    # ``--resume`` compares them so it never mixes two samples. ``seed`` and ``per_class`` are
+    # recorded only for the sampled HF corpus (None elsewhere); None also covers records written
+    # before these fields existed, which a resume therefore refuses.
+    seed: int | None = None
+    per_class: int | None = None
+    limit: int | None = None
 
 
 class Gold(_Model):

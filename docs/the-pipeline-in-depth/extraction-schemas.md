@@ -336,7 +336,7 @@ When `chunking.enabled` is true and a document is longer than one window, the sp
 * `confidence`: the maximum across windows;
 * `reasoning`: entries dedupe by `field` (first witness wins) and summaries join in order.
 
-A window that fails to parse is skipped. If every window fails, the result is `{"_parse_error": true}`. Window sizes come from `chunking.chunk_chars` and `chunking.overlap_chars`, capped by the specialist's `max_input_chars`; see [Configuration](../pipeline-reference-llm-mailroom/configuration.md).
+A window that fails to parse is skipped. If every window fails, the result is `{"_parse_error": true}` plus `_n_chunks` and `_failed_chunks` (both the window count), so routing sees the lost windows and review records `chunk_failed`. Window sizes come from `chunking.chunk_chars` and `chunking.overlap_chars`, capped by the specialist's `max_input_chars`; see [Configuration](../pipeline-reference-llm-mailroom/configuration.md).
 
 ### 3. Inventory enrichment
 

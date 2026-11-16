@@ -96,6 +96,8 @@ score-config categories).
 ```bash
 pip install -e ".[dev]"        # install (deps NOT vendored; no venv in repo)
 pip install -e tools/pipeline-diagnostics  # native inspect/check CLI, after parent install
+.venv/bin/mailroom-diagnostics audit --list --json  # read-only audit document discovery
+.venv/bin/mailroom-diagnostics audit DOCUMENT_ID --json  # 0 verified; 1 failed; 2 invalid; 3 incomplete
 docker compose -f src/config/docker/docker-compose.yml up -d postgres clickhouse langfuse-server   # OPTIONAL: only for Langfuse tracing
 PYTHONPATH=src python -m pipeline.watcher   # filesystem watcher (optional when the API embeds it)
 PYTHONPATH=src python -m pipeline.gmail_intake  # Gmail intake poller standalone (debug; normally runs inside the watcher)

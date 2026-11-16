@@ -233,11 +233,17 @@ def sliding_windows(text: str, budget: int, overlap_chars: int) -> list[tuple[st
     """Split ``text`` into overlapping windows, preserving EVERY character.
 
     Paragraph-aware (``\\n\\n`` paragraphs stay intact; a single pathological
-    paragraph larger than the budget is hard-split on ``budget`` boundaries so
-    no window ever exceeds it — nothing is truncated, the SAME text is
+    paragraph larger than the span budget is hard-split on span boundaries so
+    no window ever exceeds ``budget`` — nothing is truncated, the SAME text is
     re-sent). Every window after the first is prepended with the previous
-    window's tail (``overlap_chars``, paragraph-aligned) so content crossing a
-    cut is visible on both sides — the caller's merge dedupes.
+    window's tail (at most ``overlap_chars``, paragraph-aligned) so content
+    crossing a cut is visible on both sides — the caller's merge dedupes.
+
+    The tail counts against the budget: when the text is over budget the
+    spans are packed to ``budget - overlap`` (the overlap is clamped to at
+    most half the budget so a span always keeps room), so
+    ``len(window) <= budget`` holds for EVERY window, tail included. Text
+    within the budget is returned whole as a single window.
 
     Returns ``[(window, window_start)]`` where ``window_start`` is the
     window's first character's position in ``text``. A window after the
@@ -253,6 +259,9 @@ def sliding_windows(text: str, budget: int, overlap_chars: int) -> list[tuple[st
     """
     if not text:
         return []
+    if budget < 1:
+        # A zero or negative span budget never advances the hard split (PR #252 review).
+        raise ValueError(f"sliding_windows budget must be >= 1, got {budget}")
     if len(text) <= budget:
         return [(text, 0)]
     # Every window is a CONTIGUOUS slice of ``text`` (``text[start:end]``), so
@@ -266,17 +275,22 @@ def sliding_windows(text: str, budget: int, overlap_chars: int) -> list[tuple[st
         if para.strip():
             paragraphs.append((pos, pos + len(para)))
         pos += len(para) + 2
+    # The overlap tail is prepended to every later span, so spans are packed
+    # to ``budget`` minus the tail (#243); the clamp keeps ``span_budget``
+    # at least half the budget (callers pass 15%, which is never clamped).
+    overlap = max(0, min(overlap_chars, budget // 2))
+    span_budget = budget - overlap
     spans: list[tuple[int, int]] = []
     current_start: int | None = None
     current_end = 0
     for para_start, para_end in paragraphs:
-        while para_end - para_start > budget:  # pathological single paragraph
+        while para_end - para_start > span_budget:  # pathological single paragraph
             if current_start is not None:
                 spans.append((current_start, current_end))
                 current_start = None
-            spans.append((para_start, para_start + budget))
-            para_start += budget
-        if current_start is not None and para_end - current_start > budget:
+            spans.append((para_start, para_start + span_budget))
+            para_start += span_budget
+        if current_start is not None and para_end - current_start > span_budget:
             spans.append((current_start, current_end))
             current_start = None
         if current_start is None:
@@ -284,16 +298,19 @@ def sliding_windows(text: str, budget: int, overlap_chars: int) -> list[tuple[st
         current_end = para_end
     if current_start is not None:
         spans.append((current_start, current_end))
-    if len(spans) > 1 and overlap_chars > 0:
+    if len(spans) > 1 and overlap > 0:
         overlapped: list[tuple[str, int]] = [(text[spans[0][0] : spans[0][1]], spans[0][0])]
         for i in range(1, len(spans)):
             prev_start, prev_end = spans[i - 1]
-            raw_start = max(prev_start, prev_end - overlap_chars)
+            raw_start = max(prev_start, prev_end - overlap)
             raw_tail = text[raw_start:prev_end]
             trim = 0
             if "\n\n" in raw_tail:
                 trim = raw_tail.find("\n\n") + 2
-            tail_start = raw_start + trim
+            # The separator between the tail and the next span (>= 2 chars on a
+            # paragraph boundary) is part of the window too: shorten the tail,
+            # never the span, so the whole window stays within ``budget``.
+            tail_start = max(raw_start + trim, spans[i][1] - budget)
             overlapped.append((text[tail_start : spans[i][1]], tail_start))
         return overlapped
     return [(text[start:end], start) for start, end in spans]
