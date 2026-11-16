@@ -96,6 +96,18 @@ class TestLimitsUnit:
         assert all(type(i["prompt_tokens"]) is int and type(i["completion_tokens"]) is int
                    for i in _run_usage.get())
 
+    def test_record_usage_keeps_a_zero_input_count_with_positive_output(self):
+        """A cached or empty-prompt call can report ``input_tokens=0``; ``or``
+        treated that as missing, so the valid completion count was dropped."""
+        from pipeline.limits import record_usage, reset_run_usage, usage_summary
+        reset_run_usage()
+        record_usage({"input_tokens": 0, "output_tokens": 50}, model="m")
+        record_usage({"prompt_tokens": 0, "completion_tokens": 7}, model="m")
+        summary = usage_summary()
+        assert summary["calls"] == 2
+        assert summary["prompt_tokens"] == 0
+        assert summary["completion_tokens"] == 57
+
     @pytest.mark.parametrize(
         "prompt,completion",
         [

@@ -1000,9 +1000,11 @@ def build_workbook(rows: pd.DataFrame, out: Path, *, dataset: str, revision: str
 
     def clip(text: str, where: str) -> str:
         text = sanitize_text(text)[0]
-        if len(text) > CELL_MAX:
+        if _utf16_len(text) > CELL_MAX:  # Excel counts UTF-16 units: an astral character is two
             truncated.append(where)
-            return text[:CELL_MAX] + " …[TRUNCATED: full value on the Hub]"
+            # Keep CELL_MAX UTF-16 units; "ignore" drops a surrogate half the cut may split.
+            head = text.encode("utf-16-le")[:CELL_MAX * 2].decode("utf-16-le", errors="ignore")
+            return head + " …[TRUNCATED: full value on the Hub]"
         return text
 
     wb = Workbook()
