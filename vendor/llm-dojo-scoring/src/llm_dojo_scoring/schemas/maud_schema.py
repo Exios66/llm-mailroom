@@ -74,6 +74,7 @@ __all__ = [
     "category_mismatches",
     "consideration_subclass",
     "hub_merger_expected_fields",
+    "hub_merger_skipped_questions",
     "maud_answers_to_clauses",
     "maud_clause_line",
     "maud_clauses_to_answers",
@@ -880,11 +881,21 @@ def _label_answer(question: str, record: object) -> str:
     (:func:`~llm_dojo_scoring.metrics.scorecard_honesty.detect_maud_gt_ambiguity`).
     A list that repeats one answer is that answer.
     """
+    return _label_answer_status(question, record)[0]
+
+
+def _label_answer_status(question: str, record: object) -> tuple[str, bool]:
+    """``(answer text, ambiguous)`` for one Hub label record.
+
+    ``ambiguous`` is ``True`` only for a record that *has* an answer the scorer
+    cannot grade (see :func:`_label_answer`); a blank or ``"nan"`` record is
+    ``("", False)``: it is unanswered, not ambiguous.
+    """
     from ..metrics.scorecard_honesty import detect_maud_gt_ambiguity
 
     mapping = record if isinstance(record, Mapping) else None
     if mapping is not None and (mapping.get("gt_ambiguous") or mapping.get("ambiguous")):
-        return ""
+        return "", True
     answer = parse_json_container(mapping.get("answer") if mapping is not None else record)
     if isinstance(answer, (list, tuple)):
         distinct: dict[str, str] = {}
@@ -892,10 +903,10 @@ def _label_answer(question: str, record: object) -> str:
             if not _blank_answer(item):
                 distinct.setdefault(str(item).strip().casefold(), str(item).strip())
         if len(distinct) > 1:
-            return ""
+            return "", True
         answer = next(iter(distinct.values()), "")
     if _blank_answer(answer):
-        return ""
+        return "", False
     text = str(answer).strip()
     valid = mapping.get("valid_classes") if mapping is not None else None
     if isinstance(valid, str):
@@ -904,8 +915,8 @@ def _label_answer(question: str, record: object) -> str:
     if isinstance(valid, (list, tuple)):
         probe["valid_classes"] = [str(item) for item in valid if not _blank_answer(item)]
     if detect_maud_gt_ambiguity({str(question).strip(): probe}):
-        return ""
-    return text
+        return "", True
+    return text, False
 
 
 def _blank_answer(value: object) -> bool:
@@ -997,6 +1008,29 @@ def hub_merger_expected_fields(
     if token is not None:
         out["merger_consideration"] = token
     return out
+
+
+def hub_merger_skipped_questions(gt_fields: Mapping[str, Any] | str | None) -> frozenset[str]:
+    """Questions of one Hub row that :func:`hub_merger_expected_fields` skips as ambiguous.
+
+    A multi-label or flagged question has an annotation the scorer cannot grade,
+    so it is gold on neither side: the suites leave a prediction for it out of
+    the ``maud_clauses`` precision denominator. A question the Hub leaves blank or
+    ``"nan"`` is *not* returned: it is unanswered, and an answer to it stays an
+    unmatched prediction. Names are stripped but not case-folded; a label map
+    marked absent by ``gt_presence`` returns nothing.
+    """
+    fields = parse_gt_fields(gt_fields if gt_fields is not None else {})
+    labels = parse_json_container(fields.get("maud_clause_labels"))
+    if gt_presence_map(fields).get("maud_clause_labels") in ABSENT_PRESENCE_STATUSES:
+        return frozenset()
+    if not isinstance(labels, Mapping):
+        return frozenset()
+    return frozenset(
+        str(question).strip()
+        for question, record in labels.items()
+        if _label_answer_status(str(question), record)[1]
+    )
 
 
 def _consideration_token(value: object) -> str | None:

@@ -267,6 +267,94 @@ def test_permanent_error_parks_unavailable_without_llm(decision_config, no_llm_r
     assert route_after(st, updates) == ESCALATED
 
 
+def test_permanent_backend_error_is_recorded_not_a_silent_no_answer(
+    decision_config, no_llm_reviewer
+):
+    """#268: a non-transient backend error (403 filter, auth, 4xx, malformed body) must be
+    visible on the document, distinguishable from a reviewer that answered nothing."""
+    long_message = "content filter blocked: " + "x" * 400
+    register_decision_backend(Spy(exc=RuntimeError(long_message)))
+    st = state()
+    updates = review_classify_node(st)
+
+    assert updates["reviewer_causes"] == [REVIEWER_UNAVAILABLE]
+    assert updates["error_message"] == f"decision reviewer error: RuntimeError: {long_message[:200]}"
+    assert "RuntimeError" in updates["escalation_reason"]
+    assert updates["review_route"] == "human_review"
+    assert updates["review_verdict"] == "decision_escalates"
+    assert updates["transient_error"] is False
+    assert "transient_retries_review_classify" not in updates
+    assert "doc_type" not in updates
+    # Never extract, never retried as transient; the cause and error survive into the record.
+    assert route_after(st, updates) == ESCALATED
+    assert REVIEWER_UNAVAILABLE in collect_review_causes({**st, **updates})
+
+
+def test_permanent_backend_error_ends_in_human_review_when_arbiter_fails(
+    decision_config, no_llm_reviewer, monkeypatch
+):
+    import agents.arbiter as arbiter_mod
+    from graph.build_graph import classification_arbiter_node
+    from graph.routing import after_classification_arbiter
+
+    class Down:
+        def arbitrate_classification(self, **kwargs):
+            raise RuntimeError("arbiter down")
+
+    monkeypatch.setattr(arbiter_mod, "ClassificationArbiterAgent", Down)
+    register_decision_backend(Spy(exc=RuntimeError("bad key")))
+    st = state()
+    merged = {**st, **review_classify_node(st)}
+    merged.update(classification_arbiter_node(merged))
+    assert after_classification_arbiter(merged) == "human_review"
+    assert merged["error_message"].startswith("decision reviewer error: RuntimeError")
+    assert REVIEWER_UNAVAILABLE in collect_review_causes(merged)
+
+
+def test_arbiter_acceptance_clears_the_reviewer_error_it_resolved(
+    decision_config, no_llm_reviewer, monkeypatch
+):
+    """An accepted class must not leave the reviewer error to be catalogued as the
+    document's escalation reason (the catalog falls back to ``error_message``)."""
+    import agents.arbiter as arbiter_mod
+    from graph.build_graph import classification_arbiter_node
+
+    class Accepts:
+        def arbitrate_classification(self, **kwargs):
+            return {"decision": "accept_sorter", "confidence": 0.99, "reasoning": "claim form"}
+
+    monkeypatch.setattr(arbiter_mod, "ClassificationArbiterAgent", Accepts)
+    register_decision_backend(Spy(exc=RuntimeError("bad key")))
+    st = state(doc_subclass="carrier")
+    merged = {**st, **review_classify_node(st)}
+    merged.update(classification_arbiter_node(merged))
+    assert merged["classification_arbiter_decision"] == "accept_sorter"
+    assert merged["error_message"] is None
+    assert merged["escalation_reason"] is None
+
+
+def test_arbiter_acceptance_keeps_an_unrelated_error_message(
+    decision_config, monkeypatch
+):
+    import agents.arbiter as arbiter_mod
+    from graph.build_graph import classification_arbiter_node
+
+    class Accepts:
+        def arbitrate_classification(self, **kwargs):
+            return {"decision": "accept_sorter", "confidence": 0.99, "reasoning": "claim form"}
+
+    monkeypatch.setattr(arbiter_mod, "ClassificationArbiterAgent", Accepts)
+    st = state(
+        doc_subclass="carrier",
+        error_message="some other earlier error",
+        reviewer_causes=[REVIEWER_LOW_CONFIDENCE],
+        review_route="human_review",
+    )
+    updates = classification_arbiter_node(st)
+    assert updates["classification_arbiter_decision"] == "accept_sorter"
+    assert "error_message" not in updates
+
+
 def _transient():
     return openai.APIConnectionError(request=httpx.Request("POST", "http://x"))
 

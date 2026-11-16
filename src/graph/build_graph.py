@@ -71,6 +71,9 @@ def _cause(exc: BaseException) -> str:
     return str(exc)[:300] or "no message"
 
 
+# Prefix of the ``error_message`` a failed decision-reviewer backend call leaves (#268).
+_REVIEWER_ERROR_PREFIX = "decision reviewer error:"
+
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
 PDF_EXTENSIONS = {".pdf"}
 # The real intake gate is bins.accepted_extensions(); this aggregate was dead
@@ -1320,7 +1323,12 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     confidence becomes None, and a guard exception is an absent answer; both
     park. Oversized confidences and cutoffs also park. The sorter's label and
     confidence are kept unless the decision accepts, and
-    ``escalation_reason`` uses structured fields rather than model text.
+    ``escalation_reason`` uses structured fields rather than model text, except
+    that a non-transient backend error appends its exception class and the
+    first 200 characters of its message. That error is also recorded as
+    ``error_message`` beside ``reviewer_unavailable``, so it is not
+    mistaken for a reviewer that answered nothing; it never sets
+    ``transient_error``.
     Configuration loading errors propagate.
     """
     from agents.decision_backend import get_decision_backend
@@ -1341,6 +1349,7 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     cutoffs = {k: by_class[k]["cutoff"] for k in eligible if "cutoff" in by_class[k]}
 
     raw = None
+    backend_error: str | None = None
     if has_text:
         backend = get_decision_backend()
         if backend is None:
@@ -1379,6 +1388,13 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
                         "escalation_reason": "transient provider error during decision review",
                     }
                 logger.exception("decision_review_failed", doc_id=state.get("doc_id"))
+                # A backend failure is not a reviewer that answered nothing (#268):
+                # record it so the review record says why the reviewer was
+                # unavailable. decide_review turns the absent answer into
+                # REVIEWER_UNAVAILABLE; this is deliberately not a transient error.
+                backend_error = (
+                    f"{_REVIEWER_ERROR_PREFIX} {type(exc).__name__}: {str(exc)[:200]}"
+                )
                 raw = None
 
     # A malformed answer (wrong type, non-string label or subclass) is no
@@ -1447,6 +1463,8 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     )
     if route.causes:
         reason += f" [{', '.join(route.causes)}] -- routing to human review"
+    if backend_error is not None:
+        reason += f" [{backend_error}]"
     updates: dict[str, Any] = {
         "reviewer_doc_type": reviewer_type,
         "reviewer_contract_subtype": (
@@ -1464,6 +1482,8 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
         "stage": PipelineStage.CLASSIFIED.value,
         "transient_error": False,
     }
+    if backend_error is not None:
+        updates["error_message"] = backend_error
     if route.destination == "extract" and answer is not None:
         updates["doc_type"] = answer.doc_type
         updates["contract_subtype"] = updates["reviewer_contract_subtype"]
@@ -1567,6 +1587,10 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
             "classification_confidence": confidence,
             "escalation_reason": None,
         })
+        # The arbiter resolved the failed review: do not leave its error to be
+        # catalogued as this document's escalation reason (#268).
+        if str(state.get("error_message") or "").startswith(_REVIEWER_ERROR_PREFIX):
+            updates["error_message"] = None
     else:
         updates["escalation_reason"] = (
             f"{base_reason}; classification arbiter: {decision} "
@@ -1629,14 +1653,17 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
             }
         # Reviewer hard-failed: escalate with the sorter's original answer
         # intact (fail-safe — same destination the doc had before this lane).
-        # HUB-043: the exception TEXT rides the reason so the completion echo
-        # can translate the actual cause for the recipient (an opaque
-        # "(RuntimeError)" alone told the sender nothing).
+        # HUB-043: our own free-only guardrail text stays visible so the
+        # completion echo can translate it for the recipient. Any other
+        # exception text (provider detail, paths, inputs) goes behind
+        # ``[cause: ...]``, which the sender echo cuts (#260).
         logger.exception("review_classify_failed", doc_id=state.get("doc_id"))
+        own_guardrail = type(exc) is RuntimeError and str(exc).startswith("MAILROOM_LLM_FREE_ONLY is on:")
+        visible = f"{type(exc).__name__}: {str(exc)[:160]}" if own_guardrail else type(exc).__name__
         return {
             "review_verdict": "reviewer_error",
             "stage": PipelineStage.CLASSIFIED.value,
-            "escalation_reason": f"sorter reviewer failed ({type(exc).__name__}: {str(exc)[:160]}) — routing to human review",
+            "escalation_reason": f"sorter reviewer failed ({visible}) — routing to human review [cause: {_cause(exc)}]",
             "transient_error": False,
         }
 

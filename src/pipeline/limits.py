@@ -116,8 +116,13 @@ def record_usage(
     if usage is None:
         return
     if isinstance(usage, dict):
-        prompt_tokens = usage.get("input_tokens") or usage.get("prompt_tokens")
-        completion_tokens = usage.get("output_tokens") or usage.get("completion_tokens")
+        # A real zero is valid; fall back only for absent/None counts.
+        prompt_tokens = usage.get("input_tokens")
+        if prompt_tokens is None:
+            prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("output_tokens")
+        if completion_tokens is None:
+            completion_tokens = usage.get("completion_tokens")
     else:
         prompt_tokens = getattr(usage, "prompt_tokens", None)
         completion_tokens = getattr(usage, "completion_tokens", None)
