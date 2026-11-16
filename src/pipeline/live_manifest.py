@@ -425,7 +425,11 @@ def write_manifest_csv(rows: list[dict[str, Any]], out: Path, provenance: dict[s
 
 
 def load_manifest(path: Path) -> list[dict[str, Any]]:
-    """Read and validate a manifest CSV; raises ValueError on drift."""
+    """Read and validate a manifest CSV; raises ValueError on drift.
+
+    A blank ``content_sha256`` is allowed here (a present one must be a SHA-256 hex digest), but
+    :func:`fetch_texts` requires the hash and refuses a row without one.
+    """
     from pipeline.config import load_config
 
     path = Path(path)
@@ -484,7 +488,12 @@ def select_smoke_rows(
 
 
 def fetch_texts(rows: list[dict[str, Any]], revision: dict[str, Any]) -> dict[str, str]:
-    """Fetch blind text for selected rows and verify recorded content hashes."""
+    """Fetch blind text for selected rows and verify recorded content hashes.
+
+    Every selected row needs a recorded ``content_sha256``: :func:`load_manifest` accepts a blank
+    one (it only validates a hash that is present), but a fetch fails closed with a ``RuntimeError``
+    rather than return text it cannot verify.
+    """
     sha = revision["sha"]
     tree = _tree(sha)
     release = parse_release_manifest(
@@ -501,6 +510,10 @@ def fetch_texts(rows: list[dict[str, Any]], revision: dict[str, Any]) -> dict[st
                     continue
                 value = str(text or "")
                 expected = wanted[name]["content_sha256"]
+                if not expected:
+                    # ``load_manifest`` tolerates a blank hash (validation-only use), but a fetch
+                    # must verify the text it returns: say so instead of reporting a mismatch.
+                    raise RuntimeError(f"{name}: manifest row has no content_sha256; cannot verify fetched text")
                 if _sha256(value.encode("utf-8")) != expected:
                     raise RuntimeError(f"content_sha256 mismatch for {name}")
                 texts[name] = value

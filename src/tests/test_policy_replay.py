@@ -186,12 +186,18 @@ def test_judge_complete_archives_and_partial_follows_the_arbiter():
     retry = record(
         sorters=[sorter(0.97)],
         extractions=[extract(0.85), extract(0.95, attempt=2)],
-        judges=[judge("partial")],
+        judges=[judge("partial"), judge("complete", attempt=2)],  # #241: the confident retry is re-judged
         arbiters=[arbiter("retry_extraction")],
     )
     out = pr.replay(retry, POLICY)
     assert out.outcome == pr.AUTO
     assert out.path.count("retry_extract") == 1 and "arbiter" in out.path
+    assert out.path.count("judge_verify") == 2
+    unjudged = record(
+        sorters=[sorter(0.97)], extractions=retry.extraction, judges=[judge("partial")],
+        arbiters=[arbiter("retry_extraction")],
+    )
+    assert pr.replay(unjudged, POLICY).reasons == ["judge_not_observed_on_attempt_2"]
 
 
 def test_judge_observation_for_another_attempt_is_not_borrowed():
@@ -386,11 +392,17 @@ def test_paired_delta_detects_a_real_improvement():
 
 
 def test_full_synthetic_corpus_replays_without_unobserved():
+    """Only a wrong-class route is unobserved: synthetic extraction exists for the gold class alone (#245)."""
     from pipeline.synthetic_records import generate_records
 
     recs = generate_records(60, seed=3)
     res = pr.evaluate(recs, None)
-    assert res["n_docs"] == 300 and res["outcomes"][pr.UNOBSERVED] == 0
+    assert res["n_docs"] == 300
+    unobserved = [(r, o) for r in recs if (o := pr.replay(r, None)).outcome == pr.UNOBSERVED]
+    assert len(unobserved) == res["outcomes"][pr.UNOBSERVED]
+    for rec, out in unobserved:
+        assert out.final_class != rec.gold.expected_doc_type
+        assert out.reasons and out.reasons[0].endswith("_not_observed")
     assert all(r.run.mode == "synthetic" and r.observed.full_information for r in recs)
     assert pr.result_for_json(res)["n_docs"] == 300
 
@@ -658,6 +670,54 @@ def test_to_review_record_reports_reviewer_usage_only_when_the_reviewer_ran():
     assert row["cost_usd"] == 0.0 and row["prompt_tokens"] == 10 and row["completion_tokens"] == 2
 
 
+def test_generate_records_types_extraction_judge_and_arbiter_with_the_gold_class():
+    from pipeline.synthetic_records import generate_records
+
+    recs = generate_records(20, seed=2)
+    for rec in recs:
+        gold = rec.gold.expected_doc_type
+        assert all(a.doc_type == gold for a in rec.extraction)
+        assert all(j.doc_type == gold for j in [rec.judge, *rec.judges] if j.ran)
+        assert all(a.doc_type == gold for a in rec.arbiters)
+    assert any(rec.arbiters for rec in recs)
+
+
+def test_wrong_class_route_sees_no_synthetic_extraction_evidence():
+    """#245: untyped synthetic observations matched ANY class, giving a wrong-class route false evidence."""
+    from pipeline.synthetic_records import generate_records
+
+    wrong = [r for r in generate_records(40, seed=3) if r.sorter[0].doc_type != r.gold.expected_doc_type]
+    assert wrong
+    for rec in wrong:
+        # a confident, wrong first attempt routes straight to extraction as the WRONG class
+        rec = rec.model_copy(update={"sorter": [rec.sorter[0].model_copy(update={"confidence": 0.99})]})
+        out = pr.replay(rec, POLICY)
+        assert out.outcome == pr.UNOBSERVED, (rec.doc_id, out.path)
+        assert out.reasons == ["extraction_attempt_1_not_observed"]
+        assert pr.extraction_pairs([rec]) == {}
+
+
+def test_generate_records_rejects_a_test_fraction_outside_zero_one():
+    from pipeline.synthetic_records import generate_records
+
+    for bad in (-0.1, 1.5, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="test_fraction"):
+            generate_records(2, test_fraction=bad)
+    assert {r.run.split for r in generate_records(3, seed=1, test_fraction=0.0)} == {"train"}
+    assert {r.run.split for r in generate_records(3, seed=1, test_fraction=1.0)} == {"test"}
+
+
+def test_synthetic_records_cli_reports_a_bad_test_fraction_as_a_usage_error(tmp_path, capsys):
+    from pipeline import synthetic_records as sr
+
+    for bad in ("1.5", "-1", "nan", "abc"):
+        with pytest.raises(SystemExit) as exc:
+            sr.main(["--out", str(tmp_path / "r.jsonl"), "--n-per-class", "1", "--test-fraction", bad])
+        assert exc.value.code == 2
+        assert "--test-fraction" in capsys.readouterr().err
+    assert not (tmp_path / "r.jsonl").exists()
+
+
 def test_generate_records_rejects_a_single_distinct_class_before_drawing():
     from pipeline.synthetic_records import generate_records
 
@@ -751,6 +811,22 @@ def test_extraction_pairs_pool_every_scored_attempt_of_the_gold_class():
     # a document whose sorter attempt 1 missed the gold class contributes nothing
     wrong_class = record("w", sorters=[sorter(0.97, doc_type="correspondence")], extractions=[extract(0.9)])
     assert pr.extraction_pairs([wrong_class]) == {}
+
+
+def test_extraction_evidence_skips_attempts_routing_always_retries():
+    """#244: schema-invalid, hollow and lost-window attempts can never auto-archive, so they are no evidence."""
+    rec = record(
+        "p",
+        sorters=[sorter(0.97)],
+        extractions=[
+            extract(0.97, attempt=1, score=0.2, schema_valid=False),
+            extract(0.97, attempt=2, score=0.2, hollow=True),
+            extract(0.97, attempt=3, score=0.2, failed_chunks=1),  # a lost window: _chunks_lost retries it
+            extract(0.80, attempt=4, score=0.95, n_chunks=2),  # clean chunked attempt still counts
+        ],
+    )
+    pairs, docs = pr.extraction_evidence([rec])
+    assert pairs == {"contract": [(0.80, True)]} and docs == {"contract": [0]}
 
 
 def test_extraction_evidence_keeps_a_document_index_beside_the_pairs():

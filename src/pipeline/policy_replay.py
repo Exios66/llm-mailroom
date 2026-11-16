@@ -785,10 +785,10 @@ def extraction_evidence(
             conf = _conf(att)
             if att.extraction_score is None or conf is None:
                 continue
-            if att.schema_valid is False or att.hollow:
-                # Routing retries these whatever their confidence (the schema and hollow gates in
-                # ``after_extraction``), so they can never be auto-archived at any cutoff: a poor score
-                # here would only mark a confident, valid retry's cutoff as unearned.
+            if att.schema_valid is False or att.hollow or att.failed_chunks > 0:
+                # Routing retries these whatever their confidence (the schema and hollow gates, and
+                # ``_chunks_lost``, in ``after_extraction``), so they can never be auto-archived at any
+                # cutoff: a poor score here would only mark a confident, valid retry's cutoff as unearned.
                 continue
             pairs.setdefault(gold, []).append((float(conf), att.extraction_score >= field_floor))
             docs.setdefault(gold, []).append(doc)
@@ -803,7 +803,7 @@ def extraction_pairs(
     What is pooled: for each record whose sorter attempt 1 named the gold class (so the pairs
     isolate extraction calibration from classification errors), every extraction attempt of
     the gold class that has both a confidence and an offline score and that routing could
-    archive (not ``schema_valid`` False, not hollow: those are retried at any confidence). A
+    archive (not ``schema_valid`` False, not hollow, no lost window: those are retried at any confidence). A
     document with three scored attempts contributes three pairs; an attempt of another class
     never counts.
 

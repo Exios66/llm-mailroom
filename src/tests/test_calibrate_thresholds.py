@@ -131,7 +131,13 @@ def test_candidate_replays_and_only_calibrated_values_change(corpus, result):
             assert got == want, (cls, key)
     test_split, _ = pr.select_split(corpus, "test")
     res = pr.evaluate(test_split, cand)
-    assert res["outcomes"][pr.UNOBSERVED] == 0  # full-information records replay any candidate
+    # Synthetic extraction exists for the gold class only (#245): a candidate replays every record
+    # whose route reaches the gold class; only a wrong-class route has no extraction to replay.
+    with pr.policy_override(cand):
+        replayed = [(r, pr.replay(r, None)) for r in test_split]
+    unobserved = [(r, o) for r, o in replayed if o.outcome == pr.UNOBSERVED]
+    assert len(unobserved) == res["outcomes"][pr.UNOBSERVED]
+    assert all(o.final_class != r.gold.expected_doc_type for r, o in unobserved)
 
 
 def test_cli_writes_a_loadable_candidate_and_never_touches_the_taxonomy(tmp_path, capsys):
