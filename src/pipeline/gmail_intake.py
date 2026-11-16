@@ -2138,11 +2138,11 @@ def friendly_reason(reason: str) -> tuple[str, str] | None:
             "second-opinion check on classification) failed and the "
             "pipeline failed safe: the document is parked for human review "
             "with the sorter's original answer intact. Nothing was "
-            "archived yet; the underlying error is shown below.",
+            "archived yet; the error type is shown below.",
             "Next steps: resolve from the review queue (The-Mailroom "
             "REVIEW, or POST /v1/review/<doc_id>/resolve) — approval "
-            "resumes the pipeline from extraction; the underlying error "
-            "text below names the exact cause.",
+            "resumes the pipeline from extraction; the full error detail is "
+            "in the review record and audit log.",
         )
     if "exceeds_free_budget" in text:
         return (
