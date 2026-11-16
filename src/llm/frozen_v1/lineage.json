@@ -4,7 +4,7 @@
   "source_repo": "LLM-Mailroom-Services/eval-environment",
   "source_path": "prompts/manifest.json",
   "frozen_at": "2026-09-26T05:09:29+00:00",
-  "notes": "eval-environment frozen v1 specialist stems (issues #4–#8). Sandbox Modal/vLLM specialist evals must inject these exact bytes. source_key is the sandbox stem at commit 303e7f0. Two roles (correspondence, corporate_records) serve the 2026-10-05 dojo-corrected bytes, recorded in eval-environment as correspondence_specialist_v7 / corporate_records_specialist_v6 (mutations; _v1 untouched and still the eval-environment default). Runtime resolution is by content: llm/frozen_v1 serves the record in the pinned llm-dojo-scoring catalog (families production, then production_prompts) whose text hashes to the sha256 below, and fails fast when none does, so a Dojo bump cannot change the served bytes. As of dojo 0.30.0 production holds contracts and merger v2 (not adopted here), production_prompts holds contracts and merger v1 and an unpromoted corporate v7 eval candidate (253559fc…, 5462 chars), and production keeps the corporate bytes recorded here (catalog record production/v1, eval-environment key corporate_records_specialist_v6; fe13501f…, 5865 chars). `derived_from` names the uncorrected v1 bytes that the legacy, unpackaged *.txt files still hold.",
+  "notes": "eval-environment frozen v1 specialist stems (issues #4–#8). Sandbox Modal/vLLM specialist evals must inject these exact bytes. source_key is the sandbox stem at commit 303e7f0. Two roles (correspondence, corporate_records) serve dojo-corrected bytes, recorded in eval-environment as correspondence_specialist_v8 / corporate_records_specialist_v6 (mutations; _v1 untouched and still the eval-environment default). corporate_records is the 2026-10-05 correction. correspondence_specialist_v8 (e3bc920d…, 6316 chars) is the production_prompts correction of v7 (communication_type types the content, not the carrier, llm-mailroom#269; key pending its eval-environment mint); v7 (2b0b81ff…, 6113 chars) stays in the Dojo production family and is no longer served here. Runtime resolution is by content: llm/frozen_v1 serves the record in the pinned llm-dojo-scoring catalog (families production, then production_prompts) whose text hashes to the sha256 below, and fails fast when none does, so a Dojo bump cannot change the served bytes. As of dojo 1dc9a09 (the v0.30.0 merge of the correspondence v8 correction, Dojo PR #166) production holds contracts and merger v2 (not adopted here) and correspondence v7, production_prompts holds contracts and merger v1, correspondence v8 and an unpromoted corporate v7 eval candidate (253559fc…, 5462 chars), and production keeps the corporate bytes recorded here (catalog record production/v1, eval-environment key corporate_records_specialist_v6; fe13501f…, 5865 chars). `derived_from` names the uncorrected v1 bytes that the legacy, unpackaged *.txt files still hold.",
   "specialists": {
     "contracts_specialist": {
       "eval_environment_key": "contracts_specialist_v1",
@@ -29,19 +29,19 @@
       "refrozen_at": "2026-10-05"
     },
     "correspondence_specialist": {
-      "eval_environment_key": "correspondence_specialist_v7",
-      "eval_environment_lineage": "mutation of the v1 default (v1 stays the eval-environment default; corrections frozen as a new record, v1 unchanged)",
+      "eval_environment_key": "correspondence_specialist_v8",
+      "eval_environment_lineage": "mutation of the v1 default (v1 stays the eval-environment default; corrections frozen as a new record, v1 unchanged); v8 is the production_prompts correction of v7 (content-not-carrier communication_type, llm-mailroom#269; key pending its eval-environment mint), and v7 (2b0b81ff…, 6113 chars) stays in the Dojo production family",
       "derived_from": {
         "eval_environment_key": "correspondence_specialist_v1",
         "sha256": "eab63b5afd29906b1ad3aca2d7698bf5c15d4b7f4ce9ade3b744be535d18d4f3",
         "legacy_file": "correspondence_specialist.txt"
       },
       "sandbox_stem": "correspondence_specialist_simplified",
-      "sha256": "2b0b81ff98920b9207627707443e2b023db39212fda5bdcba7bfbded39fa38b6",
-      "chars": 6113,
+      "sha256": "e3bc920d5a99c951ace99e4a726a8cbd85a135ebf0fb81408ec8654c774b4000",
+      "chars": 6316,
       "opening": "You are the correspondence specialist.",
-      "source": "llm-dojo-scoring production",
-      "refrozen_at": "2026-10-05"
+      "source": "llm-dojo-scoring production_prompts",
+      "refrozen_at": "2026-11-16"
     },
     "insurance_claims_specialist": {
       "eval_environment_key": "insurance_claims_specialist_v1",

@@ -50,6 +50,11 @@ dependencies = [
     "pyarrow>=15.0",
     # Unified scoring engine (KANBAN-061): llm_dojo_scoring.field_scoring is
     # the canonical engine since v0.5.0.
+    # Interim pin 116da0b (Dojo v0.30.0 merge of llm-dojo-scoring#169; untagged, not released):
+    # 1dc9a09 plus the llm-dojo-scoring#168 fix (a typed decision is never graded by an untyped score).
+    # Interim pin 1dc9a09 (Dojo v0.30.0 merge of llm-dojo-scoring#166; untagged, not released):
+    # 93eedd8 plus the #163 follow-ups and the correspondence production_prompts v8 correction
+    # (llm-mailroom#269), which llm/frozen_v1 now pins by sha256 (lineage.json).
     # Interim pin 93eedd8 (Dojo v0.30.0 head: the 0.30.0 cut plus llm-dojo-scoring#157; untagged,
     # not released): prompt catalog moved contracts and merger production to v2, which the
     # mailroom does NOT adopt; llm/frozen_v1 pins the specialist prompts by content (lineage.json
@@ -66,7 +71,7 @@ dependencies = [
     # v0.28.1 release (00a2a7f, llm-dojo-scoring#130/#131): the sorter guide files a bylaw
     # amendment under bylaws, never board_resolution (agrees with sorter_condensed_v5).
     # v0.28.0 (cab9768, #124): v10 alignment — Contract/Merger v2 field maps, gt_from_v10_row.
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@93eedd8c3270ce95af56f1e17ce40bae3d03b330",
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@116da0b0f5104165244ec9a4b7f068c1cf0048cf",
 ]
 
 [project.optional-dependencies]

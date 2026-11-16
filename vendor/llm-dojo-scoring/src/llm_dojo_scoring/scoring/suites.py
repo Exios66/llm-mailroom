@@ -455,7 +455,10 @@ def _n_unparsed_maud_entries(lines: Any) -> int:
 
 
 def _score_maud_clauses_by_question(
-    result: ExtractionScoreResult, expected: Any, predicted: Any
+    result: ExtractionScoreResult,
+    expected: Any,
+    predicted: Any,
+    skipped: Iterable[str] = (),
 ) -> None:
     """Rescore a merger ``maud_clauses`` field question by question, in place.
 
@@ -465,11 +468,20 @@ def _score_maud_clauses_by_question(
     ``question -> class`` answer, so the field is scored as the MAUD scorer scores
     it (lines or a ``{question: class}`` object): the share of labelled questions answered with the same class
     (``maud_question_accuracy``), tolerant of bullets, case, quotes and spacing.
-    Precision counts predicted questions that are wrong or unlabelled. The
-    overall score is recomputed. Gold whose lines name no question is left to the
-    generic matcher.
+    Precision counts predicted questions that are wrong or unlabelled, except a
+    question the gold leaves unscored as ambiguous: *skipped* (the Hub row's
+    multi-label or flagged questions, which never became gold lines) and any
+    question whose gold lines conflict. Those are unscored on both sides, so a
+    prediction for one is neither a match nor an unmatched prediction. A question
+    the Hub leaves blank is not ambiguous; an answer to it is still unmatched.
+    The overall score is recomputed. Gold whose lines name no question is left to
+    the generic matcher.
     """
-    from .content_scoring import parse_maud_labels, score_maud_extraction
+    from .content_scoring import (
+        normalize_maud_question_key,
+        parse_maud_labels,
+        score_maud_extraction,
+    )
     from .field_scoring import EntityListScore
 
     if "maud_clauses" not in result.field_scores or not isinstance(expected, dict):
@@ -489,14 +501,25 @@ def _score_maud_clauses_by_question(
     # Both sides are one document each: a list of clause objects must not be read
     # as a batch of documents and paired with the gold lines by position.
     pred_labels = parse_maud_labels(pred_lines)
-    scored = score_maud_extraction(parse_maud_labels(list(exp_lines)), pred_labels)
+    gold_labels = parse_maud_labels(list(exp_lines))
+    scored = score_maud_extraction(gold_labels, pred_labels)
     n_expected = scored.get("n_questions") or 0
     if not n_expected:
         return
     exact = round((scored.get("maud_question_accuracy") or 0.0) * n_expected)
     # A nonempty entry the parser rejects (free text, no question) is a prediction
     # that matched nothing, the same as a wrong answer.
-    n_predicted = len(pred_labels) + _n_unparsed_maud_entries(pred_lines)
+    unscored = {normalize_maud_question_key(question) for question in skipped}
+    conflicting: set[str] = set()
+    for document in scored.get("per_document") or ():
+        conflicting.update(document.get("gt_ambiguous_keys") or ())
+    # A skipped Hub key can share its normalized name with a clean variant that
+    # did become a gold line; that question is scored, so it stays counted.
+    unscored -= set(gold_labels) - conflicting
+    unscored |= conflicting
+    n_predicted = sum(1 for key in pred_labels if key not in unscored) + _n_unparsed_maud_entries(
+        pred_lines
+    )
     precision = exact / n_predicted if n_predicted else 0.0
     recall = exact / n_expected
     f1 = 2 * precision * recall / (precision + recall) if exact else 0.0
@@ -515,6 +538,13 @@ def _score_maud_clauses_by_question(
         result.ambiguous_fields.remove("maud_clauses")
     values = list(result.field_scores.values())
     result.overall_score = round(sum(values) / len(values), 4)
+    from .trace_knobs import confidence_calibration_error, get_trace_knobs
+
+    if isinstance(result.trace, dict) and get_trace_knobs().compute_calibration_error:
+        # The trace was captured against the pre-rescore score (#160 item 4).
+        result.trace["calibration_error"] = confidence_calibration_error(
+            result.trace.get("confidence"), result.overall_score
+        )
 
 
 def _subclass_kwarg(kwargs: Mapping[str, Any]) -> Any:
@@ -933,6 +963,9 @@ class ScoringSuite:
                 return row_subclass_kw[index] if index is not None and index < len(row_subclass_kw) else None
             return row_subclass_kw if index is None else None
 
+        #: Hub merger questions each row's gold skips as ambiguous, by batch row (``None``: one document).
+        skipped_maud: dict[int | None, frozenset[str]] = {}
+
         def _scope_expected_one(value: Any, index: int | None = None) -> Any:
             """Remove annotation keys and pending fields, and blank absent fields, in a GT dictionary.
 
@@ -957,6 +990,9 @@ class ScoringSuite:
                 subclass=_subclass_for(index),
             )
             if doc_class == "merger_agreement":
+                from ..schemas.maud_schema import hub_merger_skipped_questions
+
+                skipped_maud[index] = hub_merger_skipped_questions(value)
                 scoped.update(
                     _merger_gold_from_labels(value, scoped, _subclass_for(index), ftypes)
                 )
@@ -1105,13 +1141,19 @@ class ScoringSuite:
         peeled_pred: list = []
         unscorable_rows: set[int] = set()
 
-        def _run(exp: Any, pred: Any, text: str | None, audit_pred: Any = None):
-            """Score one extraction using this suite's document class and field types."""
+        def _run(
+            exp: Any, pred: Any, text: str | None, audit_pred: Any = None, row: int | None = None
+        ):
+            """Score one extraction using this suite's document class and field types.
+
+            *row* is the batch position (``None`` for one document); it picks the MAUD
+            questions that row's gold skips as ambiguous.
+            """
             result = score_extraction(
                 doc_class, ftypes, pred, exp, doc_text=text, audit_predicted=audit_pred,
             )
             if doc_class == "merger_agreement":
-                _score_maud_clauses_by_question(result, exp, pred)
+                _score_maud_clauses_by_question(result, exp, pred, skipped_maud.get(row, ()))
             return result
 
         def _prf_one(exp: Any, pred: Any, result: ExtractionScoreResult) -> dict[str, Any]:
@@ -1257,7 +1299,7 @@ class ScoringSuite:
                         audit_predictions[idx]
                         if isinstance(audit_predictions, list) else None
                     )
-                    extraction.append(_run(exp, pred, text, audit_pred))
+                    extraction.append(_run(exp, pred, text, audit_pred, idx))
             if saw_topic and topic_e is None:
                 topic_e, topic_p = topics_e, topics_p
             if saw_sent and sent_e is None:
