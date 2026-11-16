@@ -76,6 +76,17 @@ class _Parser(argparse.ArgumentParser):
         raise SystemExit(1)
 
 
+def _folds(value: str) -> int:
+    """``--folds``: cross-fitting needs at least two folds (one fold has nothing to train on)."""
+    try:
+        folds = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid int value: {value!r}") from None
+    if folds < 2:
+        raise argparse.ArgumentTypeError(f"--folds must be >= 2 (got {folds}): cross-fitting needs a held-out fold")
+    return folds
+
+
 def _ceil3(x: float) -> float:
     return math.ceil(x * 1000.0 - 1e-9) / 1000.0
 
@@ -579,7 +590,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--split", default="train", choices=pr.SPLITS)
     ap.add_argument("--c-human", type=float, default=1.0)
     ap.add_argument("--c-error", type=float, default=20.0)
-    ap.add_argument("--folds", type=int, default=5)
+    ap.add_argument("--folds", type=_folds, default=5)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--risk", type=float, default=0.02, help="wrong-auto ceiling for the sample-size gate")
     ap.add_argument("--field-floor", type=float, default=0.80)
