@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Ground-truth workbook: read corporate-record field types from the public Dojo schema registry after the 0.30 prerequisite upgrade.
+
 ### Changed
 
 - **llm-dojo-scoring pin `93eedd8` (Dojo `v0.30.0` head: the 0.30.0 cut plus llm-dojo-scoring#157; untagged, not released). No prompt, routing or graph change; merger extraction scores move.** Replaces the interim `74b532a` pin and refreshes the vendored fallback (`vendor/llm-dojo-scoring/`) to the same commit; the snapshot's file list and blobs equal that commit's `llm_dojo_scoring/` tree, and `.gitignore` now re-includes the new package data (`ml/data/`, `prompts/data/`). The metric registry only gained metrics, the public root surface changed only its version, and the Dojo's dependencies are unchanged. Measured on the pin: the full suite, `export_contract.py --check`, the mock pilot and the experiment gate come out unchanged, which shows no routing, graph, span or contract change and nothing more: the mock LLM returns each sample's gold, so those gates cannot see a scoring change. The prompt catalog change is covered by the next entry. Downstream: the sandbox vendor snapshot and Digital-Mailroom's import need their own refresh to pick this pin up.
