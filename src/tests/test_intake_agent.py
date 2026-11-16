@@ -8,6 +8,8 @@ budget (so the vendored HEAD+TAIL truncation can never fire).
 
 import json
 
+import pytest
+
 from unittest.mock import MagicMock
 
 from agents.intake import (
@@ -203,6 +205,27 @@ def test_sliding_windows_hard_splits_pathological_paragraph():
     assert "".join(c for c, _ in windows).count("A") >= 5000
 
 
+@pytest.mark.parametrize(
+    ("budget", "overlap"),
+    [(100, 10), (100, 15), (300, 45), (1200, 180), (1200, 600), (1200, 5000), (64, 0), (50, 1)],
+)
+def test_sliding_windows_never_exceed_budget_with_overlap(budget, overlap):
+    """#243: the overlap tail counts against the budget; coverage and slice invariants hold."""
+    paragraphs = "\n\n".join(f"Paragraph {i} " + "w" * (30 + i % 40) for i in range(120))
+    one_huge = "H" * (budget * 7 + 13)
+    mixed = "\n\n".join([paragraphs, one_huge, "tail paragraph " * 5])
+    for text in (paragraphs, one_huge, mixed):
+        windows = sliding_windows(text, budget, overlap)
+        assert len(windows) > 1
+        covered = set()
+        for window, start in windows:
+            assert len(window) <= budget
+            assert text[start : start + len(window)] == window
+            covered.update(range(start, start + len(window)))
+        # every non-separator character is read
+        assert all(i in covered for i, ch in enumerate(text) if ch != "\n")
+
+
 def _offset_text():
     """Paragraphs, a pathological (hard-split) paragraph, irregular separators."""
     parts = [f"Paragraph {i} " + "x" * 60 for i in range(6)]
@@ -235,8 +258,10 @@ def test_sliding_windows_are_exact_contiguous_source_slices():
 def test_sliding_windows_hard_split_has_no_joiner_between_pieces():
     text = "A" * 100 + "B" * 100 + "C" * 100
     windows = sliding_windows(text, 100, 10)
-    assert [start for _w, start in windows] == [0, 90, 190]
-    assert [w for w, _s in windows] == [text[:100], text[90:200], text[190:300]]
+    # spans are packed to budget - overlap (#243), so each window stays within 100
+    assert [start for _w, start in windows] == [0, 80, 170, 260]
+    assert [w for w, _s in windows] == [text[:90], text[80:180], text[170:270], text[260:300]]
+    assert all(len(w) <= 100 for w, _s in windows)
 
 
 def test_intake_run_translates_section_offsets_across_hard_split(monkeypatch):
