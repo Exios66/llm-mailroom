@@ -470,3 +470,14 @@ def test_default_taxonomy_fields_are_claim_lists_only():
                             "merger_sub", "financial_advisors", "legal_counsel",
                             "additional_recipients", "supporting_documents"):
         assert entity_or_label not in fields
+
+
+@pytest.mark.parametrize("field", ["action_items", "denial_reasons"])
+def test_free_text_colon_prefix_must_also_be_in_source(field):
+    from langchain_agents.specialist_agents import merge_windows_by_evidence
+
+    source = "the Seller shall not compete with the Buyer for five years"
+    claim = "Invented obligation imposed on the insurer: " + source
+    merged = merge_windows_by_evidence([({field: [claim], "confidence": 0.9}, source)])
+    assert merged[field] == []
+    assert merged["_unsupported_chunk_claims"][field] == [claim]

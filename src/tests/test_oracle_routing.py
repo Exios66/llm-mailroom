@@ -318,3 +318,26 @@ def test_warn_once_registry_is_bounded(monkeypatch):
     for i in range(bg._ORACLE_ROUTING_WARNED_MAX * 3):
         bg._warn_oracle_routing_once(f"run-{i}")
     assert len(bg._ORACLE_ROUTING_WARNED) <= bg._ORACLE_ROUTING_WARNED_MAX
+
+
+def test_run_freezes_oracle_routing_before_trace_opens(monkeypatch, tmp_path):
+    import contextlib
+    import observability.tracing as tracing
+    import graph.build_graph as bg
+
+    monkeypatch.setenv(ENV, "0")
+
+    @contextlib.contextmanager
+    def changing_environment(**kwargs):
+        assert kwargs["metadata"]["oracle_routing"] is False
+        monkeypatch.setenv(ENV, "1")
+        assert pconfig.oracle_routing_enabled() is False
+        raise RuntimeError("stop before graph invocation")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(tracing, "pipeline_trace", changing_environment)
+    path = tmp_path / "doc.txt"
+    path.write_text("synthetic document")
+    with pytest.raises(RuntimeError, match="stop before graph invocation"):
+        bg.run_pipeline(path)
+    assert pconfig.oracle_routing_enabled() is True  # run override is restored

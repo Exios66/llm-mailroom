@@ -2421,7 +2421,7 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
         logger.exception("arbiter_failed", doc_id=state.get("doc_id"))
         return {
             "arbiter_decision": "human_review",
-            "arbiter_reasoning": f"arbiter failed ({type(exc).__name__}): {_cause(exc)}",
+            "arbiter_reasoning": f"arbiter failed ({type(exc).__name__})",
             "escalation_reason": f"arbitration failed ({type(exc).__name__}) — routing to human review "
             f"[cause: {_cause(exc)}]",
             "transient_error": False,
@@ -4373,7 +4373,7 @@ def _execute_run(
     trace_metadata.update(dataset_trace_metadata(dataset))
     # #207: say whether routing was allowed to read the ground truth, so a result
     # set states if it was oracle-assisted. Recorded on every run (a live run is False).
-    from pipeline.config import oracle_routing_enabled
+    from pipeline.config import oracle_routing_enabled, oracle_routing_override
 
     oracle_routing = oracle_routing_enabled()
     trace_metadata["oracle_routing"] = oracle_routing
@@ -4412,7 +4412,7 @@ def _execute_run(
         # run without changing graph behavior or tracing semantics.
         config["callbacks"] = [*config.get("callbacks", []), run_events]
 
-    with tracing.pipeline_trace(
+    with oracle_routing_override(oracle_routing), tracing.pipeline_trace(
         seed=seed,  # deterministic trace id -> correlates with our doc
         session_id=session_id or initial_state.get("matter_id") or "DEFAULT",  # groups documents of a matter/run
         name="document-pipeline",
