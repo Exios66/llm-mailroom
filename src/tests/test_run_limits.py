@@ -79,6 +79,55 @@ class TestLimitsUnit:
         assert usage_summary()["calls"] == 0
         assert usage_summary()["total"] == 0
 
+    def test_record_usage_accepts_integral_floats(self):
+        """#188: JSON usage often decodes counts as floats (128.0); they are
+        real counts and must not vanish from the run's token accounting."""
+        from pipeline.limits import record_usage, reset_run_usage, usage_summary
+        reset_run_usage()
+        record_usage({"prompt_tokens": 128.0, "completion_tokens": 64.0}, model="m")
+        record_usage({"input_tokens": 10.0, "output_tokens": 5}, model="m")
+        record_usage(MagicMock(prompt_tokens=7.0, completion_tokens=3.0), model="m")
+        summary = usage_summary()
+        assert summary["calls"] == 3
+        assert summary["prompt_tokens"] == 145
+        assert summary["completion_tokens"] == 72
+        # stored as real ints, not floats, so downstream sums and JSON stay integral
+        from pipeline.limits import _run_usage
+        assert all(type(i["prompt_tokens"]) is int and type(i["completion_tokens"]) is int
+                   for i in _run_usage.get())
+
+    @pytest.mark.parametrize(
+        "prompt,completion",
+        [
+            (1.5, 10),
+            (10, 2.25),
+            (float("nan"), 10),
+            (10, float("inf")),
+            (-1, 10),
+            (10, -3.0),
+            (True, 10),
+            (10, False),
+            ("128", 10),
+        ],
+    )
+    def test_record_usage_drops_invalid_counts(self, prompt, completion):
+        from pipeline.limits import record_usage, reset_run_usage, usage_summary
+        reset_run_usage()
+        record_usage({"prompt_tokens": prompt, "completion_tokens": completion})
+        record_usage(MagicMock(prompt_tokens=prompt, completion_tokens=completion))
+        assert usage_summary()["calls"] == 0
+
+    def test_record_usage_logs_dropped_numeric_counts(self):
+        import structlog
+
+        from pipeline.limits import record_usage, reset_run_usage
+        reset_run_usage()
+        with structlog.testing.capture_logs() as logs:
+            record_usage({"prompt_tokens": 1.5, "completion_tokens": 10}, model="m", agent="sorter")
+        dropped = [e for e in logs if e["event"] == "usage_dropped_invalid_counts"]
+        assert len(dropped) == 1
+        assert dropped[0]["agent"] == "sorter"
+
     def test_usage_summary_aggregates(self):
         from pipeline.limits import record_usage, reset_run_usage, usage_summary
         reset_run_usage()
