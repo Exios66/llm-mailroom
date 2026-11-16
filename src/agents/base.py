@@ -259,8 +259,9 @@ class BaseAgent(ABC):
         Documents that fit in one window take the plain ``extract`` path so
         chunking never changes small-document output. Longer documents are
         split on paragraph boundaries (vendored ``_SpecialistBase`` splitter),
-        each window extracted, and merged (list union + first-non-null scalar
-        + MIN confidence). A transient provider error is re-raised so the
+        each window extracted, and merged (default policy ``union``: list union
+        + first-non-null scalar + MIN confidence; opt-in ``evidence`` policy:
+        ``chunking.merge`` in the taxonomy). A transient provider error is re-raised so the
         node's transient routing retries; a chunk that fails to parse (or
         raises a non-transient error) is counted in ``_failed_chunks`` and caps
         the merged confidence below the class ``low`` threshold.
@@ -268,7 +269,11 @@ class BaseAgent(ABC):
         Page images attach to the first window only (additive vision, bounded
         cost). ``handoff_context`` is prefixed onto every window.
         """
-        from langchain_agents.specialist_agents import _SpecialistBase, finalize_chunked_merge
+        from langchain_agents.specialist_agents import (
+            _SpecialistBase,
+            finalize_chunked_merge,
+            merge_chunk_windows,
+        )
         from llm.retry import is_transient_error
 
         if handoff_context is None:
@@ -279,7 +284,7 @@ class BaseAgent(ABC):
             return self.extract(  # type: ignore[attr-defined]
                 doc_text, pages=pages, handoff_context=handoff_context
             )
-        merged: dict | None = None
+        windows: list[tuple[dict, str | None]] = []
         failed = 0
         for index, chunk in enumerate(chunks, start=1):
             header = (
@@ -309,11 +314,9 @@ class BaseAgent(ABC):
             if result.get("_parse_error"):
                 failed += 1
                 continue
-            merged = (
-                result
-                if merged is None
-                else _SpecialistBase._merge_extractions(merged, result)
-            )
+            windows.append((result, chunk))
+        # Merge policy (taxonomy ``chunking.merge``): ``union`` (default) or ``evidence``.
+        merged = merge_chunk_windows(windows, agent_name=self.agent_name)
         self._last_chunked = True
         self._last_failed_chunks = failed
         if merged is None:

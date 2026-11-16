@@ -203,7 +203,7 @@ Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `
 
 * **Unknown / retired / empty `doc_type`**: human review immediately (never extract)
 * **Confidence >= `high` (0.97 global; per-class `by_class` overrides — e.g. contract/merger/insurance 0.98, correspondence 0.95)** on a live class: straight to extraction
-* **Ground-truth class miss** (pilot runs with labels): Lane A (`review_classify`) even at high stated confidence
+* **Ground-truth class miss** (oracle routing only: pilot runs with labels **and** `routing.use_ground_truth` / `MAILROOM_ORACLE_ROUTING=1`; off by default, so a run that carries `ground_truth` for scoring routes like production, #207): Lane A (`review_classify`) even at high stated confidence
 * **`low` (0.88 global) <= Confidence < `high`**: `retry_classify` (while `attempts <= retry_max`), then Lane A (`review_classify`) if still medium
 * **Confidence < `low`**: retry (`retry_classify`) while `attempts <= retry_max`, then human review
 * **Lane A reviewer** may also emit `unknown`; `after_review_classify` only extracts a live taxonomy class at high confidence

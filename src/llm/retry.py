@@ -8,6 +8,9 @@ semantics. Only errors that are safe to retry are retried:
   - `openai.APITimeoutError`
   - `openai.RateLimitError`
   - `openai.APIStatusError` with `status >= 500` (server-side errors)
+  - `EmptyChoicesError`: an HTTP 200 whose body has no usable `choices`
+    (OpenRouter answers this way when the upstream provider fails
+    mid-generation, with an `error` body) — #260
 
 Client errors (4xx) and auth errors are never retried — with one narrow,
 documented exception: Alibaba/Qwen's `json_object` gate. OpenRouter routes
@@ -32,6 +35,80 @@ from openai import APIConnectionError, APITimeoutError, RateLimitError, APIStatu
 logger = structlog.get_logger(__name__)
 
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+
+class EmptyChoicesError(RuntimeError):
+    """A 200 response that carries no usable completion (#260).
+
+    OpenRouter returns HTTP 200 with ``choices: null`` and an ``error`` body
+    when an upstream provider fails mid-generation. That is a provider-side
+    transient failure, not a malformed request: it is retried like a 5xx and,
+    once the budget is spent, reaches the nodes' transient path instead of
+    crashing on ``choices[0]``.
+
+    ``status_code`` carries the provider's error code when it is an int, so
+    health recording and the rate-limit breaker see the real status.
+    """
+
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+_MISSING = object()
+
+
+def _provider_error(response) -> tuple[int | None, str]:
+    """``(code, message)`` from a response's ``error`` body, tolerant of the
+    SDK model (extra fields), plain dicts and objects."""
+    err = getattr(response, "error", None)
+    if err is None:
+        extra = getattr(response, "model_extra", None)
+        if isinstance(extra, dict):
+            err = extra.get("error")
+    if err is None:
+        return None, ""
+    if isinstance(err, dict):
+        code, message = err.get("code"), err.get("message")
+    else:
+        code, message = getattr(err, "code", None), getattr(err, "message", None)
+    if isinstance(code, str) and code.isdigit():
+        code = int(code)
+    code = code if isinstance(code, int) and not isinstance(code, bool) else None
+    text = str(message) if message not in (None, "") else (str(err) if not isinstance(err, dict) else "")
+    return code, text[:300]
+
+
+def validate_completion(response) -> None:
+    """Raise :class:`EmptyChoicesError` when ``response`` has no usable choice.
+
+    Unusable means ``choices`` is ``None`` or an empty list/tuple, or the first
+    choice has no ``message`` (absent or ``None``). Anything else (including
+    objects without a ``choices`` attribute) is left to the caller.
+    """
+    choices = getattr(response, "choices", _MISSING)
+    if choices is _MISSING:
+        return
+    problem = None
+    if choices is None:
+        problem = "choices is null"
+    elif isinstance(choices, (list, tuple)):
+        if not choices:
+            problem = "choices is empty"
+        elif getattr(choices[0], "message", None) is None:
+            problem = "first choice has no message"
+    if problem is None:
+        return
+    code, message = _provider_error(response)
+    detail = f"provider error {code}: {message}" if code is not None else (
+        f"provider error: {message}" if message else "no error body"
+    )
+    model = getattr(response, "model", None)
+    model_text = f" model={model}" if isinstance(model, str) and model else ""
+    raise EmptyChoicesError(
+        f"LLM response had no usable completion ({problem}; {detail}){model_text}",
+        status_code=code,
+    )
 
 
 def _status_code(exc: Exception) -> int | None:
@@ -147,6 +224,12 @@ def _is_retryable(exc: Exception) -> bool:
         return True
     if isinstance(exc, RateLimitError):
         return True
+    if isinstance(exc, EmptyChoicesError):
+        # A provider code in the 200 body that names a client-side failure
+        # (bad request, auth, payment, not found) will not heal on retry: fail
+        # fast. No code, 408 or a retryable/5xx code is a transient upstream blip.
+        code = exc.status_code
+        return code is None or code == 408 or code in _RETRYABLE_STATUS or code >= 500
     if isinstance(exc, APIStatusError):
         if exc.status_code in _RETRYABLE_STATUS:
             return True
@@ -285,6 +368,7 @@ def retry_chat_completion(
         started = time.monotonic()
         try:
             response = client.chat.completions.create(**kwargs, timeout=timeout)
+            validate_completion(response)
             record_llm_outcome(health_url, kwargs.get("model"), ok=True, status=200,
                                latency_s=time.monotonic() - started)
             if breaker is not None:

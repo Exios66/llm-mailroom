@@ -41,6 +41,7 @@ REPO_ROOT = SRC_DIR.parent
 sys.path.insert(0, str(SRC_DIR))
 
 from langfuse import Evaluation  # noqa: E402
+from pipeline.config import oracle_routing_enabled  # noqa: E402
 
 MANIFEST = REPO_ROOT / "docs" / "examples" / "samples" / "manifest.csv"
 GATED_METRICS = ("class_accuracy", "macro_class_accuracy", "macro_f1", "stage_accuracy")
@@ -380,6 +381,7 @@ def main(argv: list[str] | None = None) -> int:
     public = {
         "dataset": args.dataset,
         "mode": "mock" if args.mock else "real",
+        "oracle_routing": oracle_routing_enabled(),  # #207: True = routing read ground truth
         "n_items": summary["n_items"],
         "n_errors": summary["n_errors"],
         "metrics": summary["metrics"],
