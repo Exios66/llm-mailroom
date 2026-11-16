@@ -19,6 +19,8 @@ _W3 = "GAMMA recital: this Agreement is effective as of March 5, 2021. " + "GAMM
 _DOC = "\n\n".join(p[:300] for p in (_W1, _W2, _W3))
 
 _NONCOMPETE = "Non-Compete: the Seller shall not compete with the Buyer for five years"
+# Long enough to be checkable, and in no window's text.
+_FABRICATED = "Exclusivity: Supplier grants Buyer worldwide exclusive distribution rights in perpetuity"
 
 
 def _config(monkeypatch, **merge):
@@ -159,14 +161,14 @@ def test_bare_field_level_reasoning_entry_does_not_evidence_every_item(mock_open
     # says nothing about an individual item.
     _config(monkeypatch, policy="evidence", min_windows=2)
     agent = _contracts(mock_openai_client, [
-        _window(cuad_clauses=["Exclusivity: made up"],
+        _window(cuad_clauses=[_FABRICATED],
                 entries=[{"field": "cuad_clauses", "evidence": "see section 3"}]),
         _window(),
         _window(),
     ])
     result = _run(agent)
     assert result["cuad_clauses"] == []
-    assert result["_unsupported_chunk_claims"]["cuad_clauses"] == ["Exclusivity: made up"]
+    assert result["_unsupported_chunk_claims"]["cuad_clauses"] == [_FABRICATED]
 
 
 @pytest.mark.parametrize("min_windows,kept", [(2, True), (3, False)])
@@ -228,7 +230,7 @@ def test_by_agent_override_selects_policy_per_specialist(mock_openai_client, mon
     _config(monkeypatch, policy="union", min_windows=2,
             by_agent={"contracts_specialist": {"policy": "evidence"}})
     contracts = _contracts(mock_openai_client, [
-        _window(cuad_clauses=["Exclusivity: made up"]), _window(), _window(),
+        _window(cuad_clauses=[_FABRICATED]), _window(), _window(),
     ])
     assert _run(contracts)["cuad_clauses"] == []
 
@@ -264,9 +266,9 @@ def test_evidence_policy_on_the_pipeline_agent_path(mock_openai_client, monkeypa
 def test_unknown_policy_falls_back_to_union(mock_openai_client, monkeypatch):
     _config(monkeypatch, policy="bogus", min_windows=2)
     agent = _contracts(mock_openai_client, [
-        _window(cuad_clauses=["Exclusivity: made up"]), _window(), _window(),
+        _window(cuad_clauses=[_FABRICATED]), _window(), _window(),
     ])
-    assert _run(agent)["cuad_clauses"] == ["Exclusivity: made up"]
+    assert _run(agent)["cuad_clauses"] == [_FABRICATED]
 
 
 def test_unsupported_claims_never_reach_the_judge():
@@ -277,3 +279,168 @@ def test_unsupported_claims_never_reach_the_judge():
         "_chunk_merge_policy": "evidence",
     })
     assert cleaned == {"cuad_clauses": []}
+
+
+# --- scope, unverifiable items, tolerant matching (review of the first cut) ---
+
+
+def _run_text(agent, doc, **kw):
+    return agent.extract_chunked(doc, chunk_chars=400, overlap_chars=0, **kw)
+
+
+def test_entity_and_label_lists_survive_evidence_policy(mock_openai_client, monkeypatch):
+    # Window 1's text names the parties, but the 12-char span rule used to wipe
+    # ``parties`` (and every short label list) under ``evidence``.
+    _config(monkeypatch, policy="evidence", min_windows=2)
+    doc = "\n\n".join([
+        "This agreement is made between Acme Inc and Beta LLC. " + "ALPHA " * 40,
+        "BETA " * 50,
+        "GAMMA " * 50,
+    ])
+    agent = _contracts(mock_openai_client, [
+        _window(parties=["Acme Inc", "Beta LLC"], party_roles=["Acme Inc: licensor"],
+                signatories=["Jane Roe"], keywords=["exclusivity", "indemnity"],
+                maud_clauses=["No-Shop: Yes"]),
+        _window(parties=["Gamma Corp invented"], keywords=["unseen keyword here"]),
+        _window(),
+    ])
+    result = _run_text(agent, doc)
+    assert result["parties"] == ["Acme Inc", "Beta LLC", "Gamma Corp invented"]
+    assert result["party_roles"] == ["Acme Inc: licensor"]
+    assert result["signatories"] == ["Jane Roe"]
+    assert result["keywords"] == ["exclusivity", "indemnity", "unseen keyword here"]
+    assert result["maud_clauses"] == ["No-Shop: Yes"]
+    assert "_unsupported_chunk_claims" not in result
+
+
+def test_other_specialists_entity_lists_survive(mock_openai_client, monkeypatch):
+    _config(monkeypatch, policy="evidence", min_windows=2)
+    from agents.correspondence_specialist import CorrespondenceSpecialist
+
+    agent = CorrespondenceSpecialist()
+    agent.client = mock_openai_client
+    agent.model = "test-model"
+    queue = [
+        {"additional_recipients": ["Carol Ng"], "keywords": ["renewal notice"],
+         "action_items": ["fabricated action nobody wrote down"], "confidence": 0.9},
+        {"confidence": 0.9},
+        {"confidence": 0.9},
+    ]
+    agent.extract = lambda *a, **k: queue.pop(0)
+    result = agent.extract_chunked(_DOC, chunk_chars=400, overlap_chars=0)
+    assert result["additional_recipients"] == ["Carol Ng"]
+    assert result["keywords"] == ["renewal notice"]
+    assert result["action_items"] == []  # in scope and checkable: still filtered
+    assert result["_unsupported_chunk_claims"] == {
+        "action_items": ["fabricated action nobody wrote down"]
+    }
+
+
+def test_curly_quotes_dashes_and_apostrophes_match_straight_ones(mock_openai_client, monkeypatch):
+    _config(monkeypatch, policy="evidence", min_windows=2)
+    doc = "\n\n".join([
+        "ALPHA " * 40,
+        "Exclusivity: the Seller\u2019s obligation is \u201cexclusive\u201d \u2014 during the term. " + "BETA " * 30,
+        "GAMMA " * 40,
+    ])
+    straight = 'Exclusivity: the Seller\'s obligation is "exclusive" - during the term'
+    agent = _contracts(mock_openai_client, [_window(), _window(cuad_clauses=[straight]), _window()])
+    result = _run_text(agent, doc)
+    assert result["cuad_clauses"] == [straight]
+    assert "_unsupported_chunk_claims" not in result
+
+
+def test_straight_window_text_matches_curly_item(mock_openai_client, monkeypatch):
+    _config(monkeypatch, policy="evidence", min_windows=2)
+    doc = "\n\n".join([
+        "ALPHA " * 40,
+        'The Seller\'s obligation is "exclusive" for the whole term. ' + "BETA " * 30,
+        "GAMMA " * 40,
+    ])
+    curly = "Exclusivity: the Seller\u2019s obligation is \u201cexclusive\u201d for the whole term"
+    agent = _contracts(mock_openai_client, [_window(), _window(cuad_clauses=[curly]), _window()])
+    assert _run_text(agent, doc)["cuad_clauses"] == [curly]
+
+
+def test_short_unverifiable_in_scope_item_survives(mock_openai_client, monkeypatch):
+    # No fragment reaches _MIN_SPAN_CHARS, so there is nothing to check: keep it.
+    _config(monkeypatch, policy="evidence", min_windows=2)
+    agent = _contracts(mock_openai_client, [
+        _window(cuad_clauses=["Governing Law: Delaware", "Audit Rights: yes"]),
+        _window(),
+        _window(),
+    ])
+    result = _run(agent)
+    assert result["cuad_clauses"] == ["Governing Law: Delaware", "Audit Rights: yes"]
+    assert "_unsupported_chunk_claims" not in result
+
+
+def test_long_fabricated_in_scope_item_is_still_filtered(mock_openai_client, monkeypatch):
+    _config(monkeypatch, policy="evidence", min_windows=2)
+    agent = _contracts(mock_openai_client, [
+        _window(cuad_clauses=["Governing Law: Delaware", _FABRICATED]), _window(), _window(),
+    ])
+    result = _run(agent)
+    assert result["cuad_clauses"] == ["Governing Law: Delaware"]
+    assert result["_unsupported_chunk_claims"] == {"cuad_clauses": [_FABRICATED]}
+
+
+def test_fields_allow_list_widens_the_scope(mock_openai_client, monkeypatch):
+    # Opting ``keywords`` in puts it under the verbatim check; ``cuad_clauses`` is no
+    # longer in the list, so its fabricated item passes through.
+    _config(monkeypatch, policy="evidence", min_windows=2, fields=["keywords"])
+    agent = _contracts(mock_openai_client, [
+        _window(keywords=["an unquoted invented keyword"], cuad_clauses=[_FABRICATED]),
+        _window(),
+        _window(),
+    ])
+    result = _run(agent)
+    assert result["keywords"] == []
+    assert result["cuad_clauses"] == [_FABRICATED]
+    assert result["_unsupported_chunk_claims"] == {"keywords": ["an unquoted invented keyword"]}
+
+
+def test_empty_fields_list_filters_nothing(mock_openai_client, monkeypatch):
+    _config(monkeypatch, policy="evidence", min_windows=2, fields=[])
+    agent = _contracts(mock_openai_client, [_window(cuad_clauses=[_FABRICATED]), _window(), _window()])
+    result = _run(agent)
+    assert result["cuad_clauses"] == [_FABRICATED]
+    assert "_unsupported_chunk_claims" not in result
+    assert result["_chunk_merge_policy"] == "evidence"  # scalars still use the evidence pick
+
+
+def test_by_agent_fields_override(mock_openai_client, monkeypatch):
+    from langchain_agents.specialist_agents import chunk_merge_settings
+
+    _config(monkeypatch, policy="evidence", min_windows=2, fields=["cuad_clauses"],
+            by_agent={"contracts_specialist": {"fields": ["keywords"]}})
+    assert chunk_merge_settings("contracts_specialist").fields == frozenset({"keywords"})
+    assert chunk_merge_settings("merger_agreement_specialist").fields == frozenset({"cuad_clauses"})
+    agent = _contracts(mock_openai_client, [
+        _window(keywords=["an unquoted invented keyword"], cuad_clauses=[_FABRICATED]),
+        _window(),
+        _window(),
+    ])
+    result = _run(agent)
+    assert result["keywords"] == []
+    assert result["cuad_clauses"] == [_FABRICATED]
+
+
+def test_fields_default_when_unset_or_malformed(monkeypatch):
+    from langchain_agents.specialist_agents import _DEFAULT_EVIDENCE_FIELDS, chunk_merge_settings
+
+    _config(monkeypatch, policy="evidence", min_windows=2)  # no ``fields`` key
+    assert chunk_merge_settings("contracts_specialist").fields == frozenset(_DEFAULT_EVIDENCE_FIELDS)
+    _config(monkeypatch, policy="evidence", min_windows=2, fields="cuad_clauses")  # not a list
+    assert chunk_merge_settings("contracts_specialist").fields == frozenset(_DEFAULT_EVIDENCE_FIELDS)
+
+
+def test_default_taxonomy_fields_are_claim_lists_only():
+    from pipeline.config import load_config
+
+    fields = set(load_config()["chunking"]["merge"]["fields"])
+    assert fields == {"cuad_clauses", "claim_checklist", "action_items", "denial_reasons"}
+    for entity_or_label in ("parties", "party_roles", "signatories", "keywords", "maud_clauses",
+                            "merger_sub", "financial_advisors", "legal_counsel",
+                            "additional_recipients", "supporting_documents"):
+        assert entity_or_label not in fields
