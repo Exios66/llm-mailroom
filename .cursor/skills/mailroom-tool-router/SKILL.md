@@ -23,7 +23,7 @@ already fits.
 | Hosted experiment / auto-improve loop | Braintrust | [braintrust](../braintrust/SKILL.md) | Braintrust as the default live sink |
 | Hub class/subtype corpora | `run_hf_pilot.py` + `hf_corpora.py` | [huggingface](../huggingface/SKILL.md) | Invented stand-in class texts; loading all 247k Enron rows by default |
 | Graph nodes, routing, HITL | LangGraph in `graph/` | [langgraph](../langgraph/SKILL.md) | A second orchestrator |
-| Extraction / class KPIs | `llm-dojo-scoring @1dc9a09e42de88789723ffefbdc5f0ce52bc03dc` | [dojo-scoring](../dojo-scoring/SKILL.md) | Inventing `SCORE_CONFIG` names not in the registry |
+| Extraction / class KPIs | `llm-dojo-scoring @116da0b0f5104165244ec9a4b7f068c1cf0048cf` | [dojo-scoring](../dojo-scoring/SKILL.md) | Inventing `SCORE_CONFIG` names not in the registry |
 | LegalBench QA / family class | `python -m legalbench.cli` | [legalbench](../legalbench/SKILL.md) | Treating `legalbench-full` as pipeline ingest |
 
 ## Observability precedence (`OBSERVABILITY_PROVIDER`)
