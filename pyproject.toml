@@ -50,6 +50,9 @@ dependencies = [
     "pyarrow>=15.0",
     # Unified scoring engine (KANBAN-061): llm_dojo_scoring.field_scoring is
     # the canonical engine since v0.5.0.
+    # Interim pin 1dc9a09 (Dojo v0.30.0 merge of llm-dojo-scoring#166; untagged, not released):
+    # 93eedd8 plus the #163 follow-ups and the correspondence production_prompts v8 correction
+    # (llm-mailroom#269), which llm/frozen_v1 now pins by sha256 (lineage.json).
     # Interim pin 93eedd8 (Dojo v0.30.0 head: the 0.30.0 cut plus llm-dojo-scoring#157; untagged,
     # not released): prompt catalog moved contracts and merger production to v2, which the
     # mailroom does NOT adopt; llm/frozen_v1 pins the specialist prompts by content (lineage.json
