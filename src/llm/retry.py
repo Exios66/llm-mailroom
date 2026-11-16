@@ -225,7 +225,11 @@ def _is_retryable(exc: Exception) -> bool:
     if isinstance(exc, RateLimitError):
         return True
     if isinstance(exc, EmptyChoicesError):
-        return True
+        # A provider code in the 200 body that names a client-side failure
+        # (bad request, auth, payment, not found) will not heal on retry: fail
+        # fast. No code, 408 or a retryable/5xx code is a transient upstream blip.
+        code = exc.status_code
+        return code is None or code == 408 or code in _RETRYABLE_STATUS or code >= 500
     if isinstance(exc, APIStatusError):
         if exc.status_code in _RETRYABLE_STATUS:
             return True
