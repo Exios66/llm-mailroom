@@ -139,6 +139,16 @@ class DocumentState(TypedDict, total=False):
     # Completeness-judge invocations on this document (Lane B). Capped by
     # confidence.judge_max_passes (= 1 + arbiter_retry_max).
     judge_pass_count: int
+    # #254: every extraction attempt (initial extract and each retry), in order:
+    # attempt_no, kind, extracted_data, extraction_confidence, guardrail,
+    # schema_valid, gate_ok, judge_verdict / judge_score / judge_findings (filled
+    # by judge_verify_node for the attempt it judged). Always recorded; carried
+    # on the result and the manifest so offline scoring can score each attempt.
+    extraction_attempt_history: list[dict[str, Any]]
+    # Which attempt compile_report / the review handoff used, and why. With
+    # ``confidence.keep_best_attempt`` off (default) it is the latest attempt.
+    selected_attempt: int | None
+    selected_attempt_reason: str | None
     # Ground truth (pilot / HF eval). Live runs omit this; routing only
     # consults it when present so overconfident misses cannot auto-archive.
     ground_truth: dict[str, Any]

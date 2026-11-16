@@ -479,6 +479,20 @@ def retry_rejudge_due(state: Mapping[str, Any]) -> bool:
     return _judge_can_review(state)
 
 
+def keep_best_attempt_enabled(state: Mapping[str, Any]) -> bool:
+    """#254: keep the best-judged extraction attempt instead of the latest. Off by default.
+
+    ``extraction_attempt_history`` is always recorded; this knob only decides
+    whether ``compile_report`` and the review handoff use the best-ranked
+    attempt (``graph/attempts.py``: ``complete`` > ``partial`` > ``incomplete``,
+    then confidence, ties keep the latest). It ships ``false`` for the same
+    reason as ``judge_rejudge_retry``: the ranking trusts the judge, which is not
+    calibrated yet (#242). Taxonomy ``confidence.keep_best_attempt``, per class
+    overridable under ``by_class``. Routing decisions never read it.
+    """
+    return bool(_thresholds_for(state).get("keep_best_attempt", False))
+
+
 def after_extraction_gated(state: dict) -> Literal[
     "extract", "retry_extract", "compile_report", "judge_verify", "human_review", "boss_escalation"
 ]:
