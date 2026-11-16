@@ -1362,7 +1362,8 @@ def test_extract_attachments_keeps_a_forwarded_eml_part_as_bytes():
     assert b"Subject: the forwarded original" in attachments[0][1]
 
 
-def test_extract_attachments_reports_a_part_with_no_body():
+@pytest.mark.parametrize("force_none", [False, True])
+def test_extract_attachments_reports_a_part_with_no_body(force_none):
     msg = email.message.EmailMessage()
     msg.set_content("see attached")
     msg.add_attachment(b"%PDF-1.4 real", maintype="application", subtype="pdf", filename="ok.pdf")
@@ -1372,9 +1373,10 @@ def test_extract_attachments_reports_a_part_with_no_body():
     msg.attach(empty)
     msg = email.message_from_bytes(msg.as_bytes())
     # as_bytes() of a payload-less part serialises it empty; force the None case
-    for part in msg.walk():
-        if part.get_filename() == "empty.pdf":
-            part._payload = None
+    if force_none:
+        for part in msg.walk():
+            if part.get_filename() == "empty.pdf":
+                part._payload = None
 
     rejected: list[tuple[str, str]] = []
     attachments = gmail_intake.extract_attachments(msg, rejected)

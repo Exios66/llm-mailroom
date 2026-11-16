@@ -61,6 +61,7 @@ from llm_dojo_scoring.schemas.corporate_record_schema import (
     subclass_schema,
 )
 from llm_dojo_scoring.schemas.corpus import cms_source_table, normalize_corpus_subclass
+from llm_dojo_scoring.schemas.gt_metadata import is_empty_value
 from llm_dojo_scoring.schemas.cuad_schema import CUAD_CATEGORIES
 from llm_dojo_scoring.schemas.extraction_schemas import extraction_schema, extraction_subtypes
 
@@ -190,7 +191,7 @@ def date_flag(span: str, status: str, parts_fn: Callable[[Any], Any]) -> tuple[s
 
 
 def _json(value: Any) -> Any:
-    if isinstance(value, str) and value[:1] in "{[":
+    if isinstance(value, str) and value.lstrip()[:1] in "{[":
         try:
             return json.loads(value)
         except ValueError:
@@ -208,8 +209,7 @@ def render(value: Any) -> str:
 
 
 def is_empty(value: Any) -> bool:
-    value = _json(value)
-    return value is None or (isinstance(value, (str, list, dict)) and len(value) == 0)
+    return is_empty_value(value)
 
 
 _CUAD_FIELD = {c.field: c.name for c in CUAD_CATEGORIES if getattr(c, "field", None)}
@@ -502,7 +502,9 @@ class _Lists:
             ws.cell(row=1, column=i, value=name).font = BOLD
             ws.column_dimensions[letter].width = max(16, len(name) + 2)
             for r, v in enumerate(values, start=2):
-                ws.cell(row=r, column=i, value=v).font = FONT
+                cell = ws.cell(row=r, column=i)
+                _set_str(cell, v)
+                cell.font = FONT
             wb.defined_names[name] = DefinedName(name, attr_text=f"Lists!${letter}$2:${letter}${len(values) + 1}")
         ws.sheet_state = "hidden"
 

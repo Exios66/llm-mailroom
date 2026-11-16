@@ -830,3 +830,26 @@ def test_readme_names_documents_with_no_default_text(tool, label_rows, tmp_path)
     assert stats["empty_texts"] == 1
     readme = " ".join(str(c.value) for c in wb["README"]["A"] if c.value)
     assert "1 listed document(s) have no text in the dataset's 'default' config" in readme
+
+
+@pytest.mark.parametrize("value", ["nan", "None", "   ", float("nan")])
+def test_absence_values_match_the_scoring_contract(tool, value):
+    assert tool.is_empty(value)
+
+
+def test_json_containers_accept_leading_whitespace(tool):
+    assert tool._json(' \n{"Deal Size":"Yes"}') == {"Deal Size": "Yes"}
+    assert tool._json(' \n["span"]') == ["span"]
+    assert tool._json(" ordinary prose") == " ordinary prose"
+
+
+def test_hidden_vocabulary_keeps_formula_like_subclass_literal(tool):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    lists = tool._Lists()
+    lists.add("synthetic_subclasses", ["=1+1"])
+    lists.write(wb)
+    cell = wb["Lists"].cell(2, 1)
+    assert cell.value == "=1+1"
+    assert cell.data_type == "s"
