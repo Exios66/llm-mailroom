@@ -281,7 +281,7 @@ def test_confident_retry_is_rejudged_when_judge_rejudge_retry_is_on(run_graph, m
         "fields_to_fix": ["governing_law"],
     })
     order, states, final, _ = run_graph()
-    assert order == ["intake", "classify", "extract", "judge_verify", "arbiter", "retry_extract", "judge_verify", "compile_report", "catalog_write", "archive"]
+    assert order == ["intake", "classify", "extract", "judge_verify", "arbiter", "retry_extract", "judge_verify", "compile_report", "score_common", "score_contract", "catalog_write", "archive"]
     assert judge.call_args_list[0].kwargs == {"doc_type": "contract", "extracted": {**first, "cuad_family": None, "cuad_clauses": [], "maud_clauses": [], "merger_consideration": None}, "doc_text": CLEAN}
     assert arbiter.call_args.kwargs["extracted"] == {**first, "cuad_family": None, "cuad_clauses": [], "maud_clauses": [], "merger_consideration": None}
     assert arbiter.call_args.kwargs["judge_findings"] == ["governing_law contradicts source"]
