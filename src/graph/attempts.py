@@ -186,7 +186,7 @@ def select_attempt(state: Mapping[str, Any], *, enabled: bool) -> dict[str, Any]
     if chosen is not latest:
         for field in _RESTORED_FIELDS:
             source = "guardrail" if field == "extraction_guardrail" else field
-            if source in chosen or field == "extraction_gate":
-                # The advisory gate answer is per attempt: an attempt without one clears the latest's.
-                updates[field] = deepcopy(chosen.get(source))
+            # Missing per-attempt evidence clears the latest's evidence too;
+            # otherwise it could incorrectly certify a different extraction.
+            updates[field] = deepcopy(chosen.get(source))
     return updates

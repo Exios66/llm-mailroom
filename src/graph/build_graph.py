@@ -2635,7 +2635,7 @@ def _restart_review_clock(doc_id: str) -> None:
         logger.warning("review_clock_restart_failed", doc_id=doc_id, exc_info=True)
 
 
-def _attempt_selection(state: Mapping[str, Any]) -> dict[str, Any]:
+def _attempt_selection(state: Mapping[str, Any], *, for_archive: bool = False) -> dict[str, Any]:
     """State updates choosing the attempt to report or review (#254); ``{}`` on any failure.
 
     Always records ``selected_attempt``; restores an earlier attempt's fields only
@@ -2643,7 +2643,22 @@ def _attempt_selection(state: Mapping[str, Any]) -> dict[str, Any]:
     fail a document, so a problem keeps the latest attempt as it is.
     """
     try:
-        return attempt_history.select_attempt(state, enabled=keep_best_attempt_enabled(state))
+        selection = attempt_history.select_attempt(state, enabled=keep_best_attempt_enabled(state))
+        if for_archive and "extracted_data" in selection:
+            from graph.routing import _extraction_still_unsure
+            from pipeline.reconsideration import coverage_below_floor, routing_expected_fields
+
+            selected = {**state, **selection}
+            expected, sources = routing_expected_fields(selected)
+            if _extraction_still_unsure(selected) or coverage_below_floor(
+                selected.get("extracted_data") or {}, expected,
+                doc_type=selected.get("doc_type"), sources=sources,
+            ):
+                # The current routing decision approved the latest attempt, not
+                # an earlier low-confidence or coverage-deficient payload.
+                selection = attempt_history.select_attempt(state, enabled=False)
+                selection["selected_attempt_reason"] = "earlier_attempt_requires_review"
+        return selection
     except Exception:
         logger.exception("attempt_selection_failed", doc_id=state.get("doc_id"))
         return {}
@@ -2713,7 +2728,8 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
 
     # #254: a reviewer is handed the selected attempt (the latest unless
     # keep_best_attempt is on). Recomputed from the history on every replay.
-    state = _with_selected_attempt(state)  # type: ignore[assignment]
+    selection = _attempt_selection(state)
+    state = {**state, **selection}  # type: ignore[assignment]
     file_path_str = state.get("file_path", "")
     esc_reason = state.get("escalation_reason", "Unknown reason")
     doc_id = state.get("doc_id", "")
@@ -2881,6 +2897,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
         logger.info("human_review_fields_applied", doc_id=doc_id, resolution=resolution)
         _restart_review_clock(doc_id)
         return {
+            **selection,
             "stage": PipelineStage.CLASSIFIED.value,
             "escalation_reason": None,
             "review_causes": causes,
@@ -2948,6 +2965,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
         human_label=human_label,
     )
     return {
+        **selection,
         "stage": PipelineStage.FAILED.value,
         "escalation_reason": esc_reason,
         "review_causes": causes,
@@ -3162,7 +3180,7 @@ def compile_report_node(state: DocumentState) -> dict[str, Any]:
     from agents.reporter import compile_matter_record
 
     # #254: report the selected attempt (the latest unless keep_best_attempt is on).
-    selection = _attempt_selection(state)
+    selection = _attempt_selection(state, for_archive=True)
     state = {**state, **selection}  # type: ignore[assignment]
     extracted = state.get("extracted_data") or {}
     if not isinstance(extracted, dict):
