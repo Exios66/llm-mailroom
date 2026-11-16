@@ -394,18 +394,18 @@ def _recorded_file_in(manifest, base: Path) -> Path | None:
     original = Path(str(getattr(manifest, "original_filename", "") or ""))
     if not original.name:
         return None
-    name = path.name
-    if name != original.name:
-        if name == _review_name(manifest):
-            pass  # this manifest's own review-file name is trusted
-        elif not re.fullmatch(
-            r"%s--\d+%s" % (re.escape(original.stem), re.escape(original.suffix)),
-            name,
-        ):
-            # A numbered collision fallback (``<stem>--<n><suffix>``) is also
-            # this document's own move's product; anything else — notably
-            # another document's ``<stem>--<doc_id>`` name — is not.
-            return None
+    # The move keeps its SOURCE name, so the source may be the original name
+    # or this document's review-file name (human completion archives straight
+    # from review). ``_no_clobber_move_to_dir`` then tries ``<name>``,
+    # ``<stem>--<doc_id>`` and ``<stem>--<n>`` (PR #252 review).
+    doc_id = re.escape(str(getattr(manifest, "doc_id", "") or ""))
+    stems = {original.stem, Path(_review_name(manifest)).stem}
+    tail = r"(?:--(?:%s|\d+))?" % doc_id if doc_id else r"(?:--\d+)?"
+    pattern = r"(?:%s)%s%s" % ("|".join(re.escape(s) for s in stems), tail, re.escape(original.suffix))
+    if not re.fullmatch(pattern, path.name):
+        # Anything else — notably another document's ``<stem>--<its doc_id>``
+        # name — is not this document's own move's product.
+        return None
     try:
         if path.parent.resolve() == base.resolve() and path.is_file():
             return path

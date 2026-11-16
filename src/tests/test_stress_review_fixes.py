@@ -292,3 +292,10 @@ def test_supports_cap_env_probes_behavior_not_watcher_source(st, monkeypatch):
     assert st._supports_cap_env(watcher) is True
     assert os.environ["MAILROOM_MAX_CONCURRENT_DOCS"] == "3"  # restored
     assert st._supports_cap_env(SimpleNamespace()) is False  # an older checkout without the getter
+
+
+def test_bedrock_bearer_token_is_treated_as_a_secret():
+    """PR #252 review: the name matches no suffix rule, so it is listed explicitly."""
+    from scripts import stress_test
+
+    assert stress_test._is_secret_env("AWS_BEARER_TOKEN_BEDROCK")

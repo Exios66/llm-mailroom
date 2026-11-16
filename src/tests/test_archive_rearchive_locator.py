@@ -96,3 +96,23 @@ def test_archive_document_records_and_persists_the_location(temp_base_dir):
     stored = bins.load_manifest("my-doc")
     assert stored.file_location == str(path)
     assert bins.archived_file_path(stored).read_bytes() == b"second archive"
+
+
+def test_recorded_rearchive_from_a_review_named_source_is_trusted(tmp_path):
+    """PR #252 review: human completion archives the review file, whose stem is ``<stem>--<doc_id>``."""
+    from pipeline import bins
+    from schemas.manifest import DocumentManifest
+
+    m = DocumentManifest(doc_id="D1", matter_id="m", original_filename="my-doc.pdf", doc_type="contract")
+    base = tmp_path / "archive"
+    base.mkdir()
+    review_stem = Path(bins._review_name(m)).stem
+    for name in (f"{review_stem}--D1.pdf", f"{review_stem}--3.pdf"):
+        f = base / name
+        f.write_bytes(b"new")
+        m.file_location = str(f)
+        assert bins._recorded_file_in(m, base) == f
+    other = base / "my-doc--OTHER.pdf"
+    other.write_bytes(b"x")
+    m.file_location = str(other)
+    assert bins._recorded_file_in(m, base) is None

@@ -166,6 +166,7 @@ DOC_CLASSES = (
 MARKER_RE = re.compile(r"\[\[stress id=(\S+) cls=(\S+) conf=([0-9.]+) kind=(\w+)\]\]")
 
 SECRET_ENV = (
+    "AWS_BEARER_TOKEN_BEDROCK",
     "LANGFUSE_SECRET_KEY",
     "LANGFUSE_PUBLIC_KEY",
     "LANGFUSE_HOST",
