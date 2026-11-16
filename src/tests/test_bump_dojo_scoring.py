@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
@@ -883,3 +884,72 @@ def test_documented_apply_command_with_missing_release_flag_is_rewritten():
     assert _rewrite_text(cmd.format(ref=STAGED_SHA), "v0.30.0") == (
         "PYTHONPATH=src python src/scripts/bump_dojo_scoring.py --apply --tag v0.30.0"
     )
+
+
+# --- #240: release-state notes that go stale when a tag lands on the pin -----------------
+
+INTERIM_COMMENT = (
+    "    # Interim pin 74b532a (llm-dojo-scoring#139, unreleased): older history.\n"
+    "    # Interim pin 93eedd8 (Dojo v0.30.0 head: the 0.30.0 cut plus llm-dojo-scoring#157; untagged,\n"
+    "    # not released): prompt catalog moved contracts to v2, which the mailroom does NOT adopt.\n"
+    "    # v0.28.1 release (00a2a7f, llm-dojo-scoring#130): the sorter guide files a bylaw.\n"
+)
+
+
+def test_tag_landing_on_the_pinned_commit_retires_its_interim_comment():
+    """#240: the pyproject "Interim pin <sha> (... untagged, not released)" note follows the tag.
+
+    Only the block for the pinned commit is rewritten; older interim blocks are history
+    about other commits and stay as written.
+    """
+    out = _rewrite_text(INTERIM_COMMENT, STAGED_SHA, release="v0.30.0")
+    assert "untagged" not in out and "not released" not in out
+    assert "Interim pin 93eedd8" not in out
+    assert (
+        "    # v0.30.0 release commit 93eedd8 (Dojo v0.30.0 head: the 0.30.0 cut plus "
+        "llm-dojo-scoring#157): prompt catalog moved contracts to v2"
+    ) in out
+    # History for other commits is untouched, and so is the rest of the comment.
+    assert "# Interim pin 74b532a (llm-dojo-scoring#139, unreleased): older history." in out
+    assert "# v0.28.1 release (00a2a7f" in out
+    # Idempotent: nothing left to rewrite.
+    assert _rewrite_text(out, STAGED_SHA, release="v0.30.0") == out
+
+
+def test_interim_comment_is_kept_while_the_pinned_commit_is_untagged():
+    """No release label (an interim SHA pin) or another commit leaves the note true."""
+    assert _rewrite_text(INTERIM_COMMENT, STAGED_SHA) == INTERIM_COMMENT
+    assert _rewrite_text(INTERIM_COMMENT, NEXT_SHA, release="v0.30.0") == INTERIM_COMMENT
+
+
+def test_main_apply_retires_the_interim_comment_when_the_tag_lands_on_the_pinned_commit(
+    staged_release_cli, capsys
+):
+    """#240 end to end: --check sees the stale comment, --apply fixes it, the pin stays."""
+    pyproject = staged_release_cli / "pyproject.toml"
+    stale = INTERIM_COMMENT.replace("93eedd8", SHA[:7]).replace("74b532a", "1234567")
+    pyproject.write_text(stale + pyproject.read_text(encoding="utf-8"), encoding="utf-8")
+    for rel in STAGED_ROWS:  # leave only the pyproject note stale
+        (staged_release_cli / rel).unlink()
+
+    assert B.main(["--check", "--tag", "v0.30.0"]) == 2
+    assert "stale=pyproject.toml" in capsys.readouterr().out
+
+    assert B.main(["--apply", "--tag", "v0.30.0"]) == 0
+    text = pyproject.read_text(encoding="utf-8")
+    assert "untagged" not in text and "not released" not in text
+    assert f"v0.30.0 release commit {SHA[:7]}" in text
+    assert current_pin(staged_release_cli) == SHA
+
+    assert B.main(["--check", "--tag", "v0.30.0"]) == 0
+
+
+def test_vendor_note_carries_no_release_state():
+    """#240: VENDOR.md is regenerated, never patched, so it must not claim a release state.
+
+    "untagged" there goes stale the moment a tag lands on the unchanged commit and nothing
+    regenerates the file. The pyproject pin comment owns that fact (the bump script keeps it).
+    """
+    vendor_md = B.REPO_ROOT / "vendor" / "llm-dojo-scoring" / "VENDOR.md"
+    text = vendor_md.read_text(encoding="utf-8")
+    assert not re.search(r"untagged|unreleased|no GitHub release", text, re.IGNORECASE)
