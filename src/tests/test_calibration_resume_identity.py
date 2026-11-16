@@ -126,6 +126,59 @@ def test_legacy_rows_without_the_selection_fields_are_refused():
         assert f"{key}: not recorded in the saved records" in why
 
 
+def test_allow_legacy_waives_only_the_missing_selection_fields():
+    assert sw.resume_mismatch([_row()], [], _CURRENT, allow_legacy=True) is None
+    # a recorded value that differs is still a mismatch
+    why = sw.resume_mismatch([_row(seed=2)], [], _CURRENT, allow_legacy=True)
+    assert why is not None and "seed: saved 2, now 1" in why
+    # every other identity check still applies
+    why = sw.resume_mismatch([_row(taxonomy_sha256="other")], [], _CURRENT, allow_legacy=True)
+    assert why is not None and "taxonomy_sha256" in why
+    legacy_missing_diag = {**_row(), "diagnostics": {}}
+    why = sw.resume_mismatch([legacy_missing_diag], [], _CURRENT, allow_legacy=True)
+    assert why is not None and "judge_attempts: not recorded" in why
+    assert sw.legacy_rows([_row(), _row(seed=1, per_class=5, limit=None)]) == 1
+
+
+def _strip_selection(path: Path) -> None:
+    """Rewrite a sweep file as a pre-#247 checkout would have written it."""
+    rows = _lines(path)
+    for row in rows:
+        for key in sw.LEGACY_RUN_KEYS:
+            row["run"].pop(key, None)
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+
+
+def test_legacy_file_resume_is_refused_by_default_with_a_hint(tmp_path, capsys, temp_base_dir):
+    out = tmp_path / "rec.jsonl"
+    base = ["--dataset", "mailroom-fixtures", "--mock", "--out", str(out)]
+    assert _run([*base, "--limit", "2"], capsys)[0] == 0
+    _strip_selection(out)
+    before = out.read_text()
+    code, cap = _run([*base, "--limit", "3", "--resume"], capsys)
+    assert code == 2 and "--allow-legacy-resume" in cap.err
+    assert out.read_text() == before
+
+
+def test_legacy_file_resumes_with_the_flag_and_warns(tmp_path, capsys, temp_base_dir):
+    out = tmp_path / "rec.jsonl"
+    base = ["--dataset", "mailroom-fixtures", "--mock", "--out", str(out)]
+    assert _run([*base, "--limit", "2"], capsys)[0] == 0
+    _strip_selection(out)
+    code, cap = _run([*base, "--limit", "3", "--resume", "--allow-legacy-resume"], capsys)
+    assert code == 0
+    assert "warning: --allow-legacy-resume: 2 saved record(s)" in cap.err
+    assert "1 document(s) (2 already done)" in cap.out
+    rows = _lines(out)
+    assert len(rows) == 3 and rows[-1]["run"]["limit"] == 3  # new rows record the selection
+
+
+def test_allow_legacy_resume_needs_resume(tmp_path, capsys):
+    code, cap = _run(["--dataset", "mailroom-fixtures", "--mock", "--out", str(tmp_path / "r.jsonl"),
+                      "--allow-legacy-resume"], capsys)
+    assert code == 2 and "needs --resume" in cap.err
+
+
 def test_resume_mismatch_accepts_a_matching_selection():
     row = _row(seed=1, per_class=5, limit=None)
     assert sw.resume_mismatch([row], [], _CURRENT) is None
