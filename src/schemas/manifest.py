@@ -42,6 +42,11 @@ class DocumentManifest(BaseModel):
     judge_verdict: str | None = None
     judge_score: float | None = None
     judge_findings: list[str] | None = None
+    # #254: every extraction attempt with its judge verdict (None on older
+    # manifests), and which one the manifest's extraction came from.
+    extraction_attempt_history: list[dict] | None = None
+    selected_attempt: int | None = None
+    selected_attempt_reason: str | None = None
     # Lane A reviewer evidence — durable on the parked manifest so a human sees
     # both opinions. A decision model writes no reasoning, so these structured
     # fields are the whole record. None on older manifests and when the

@@ -268,6 +268,15 @@ confidence:
   # default until the judge is calibrated (#242): false keeps the band-only gate.
   # Per-class overridable under by_class.
   judge_rejudge_retry: false
+  # Keep the best-judged extraction attempt instead of the latest (#254). Every
+  # attempt is always recorded in extraction_attempt_history; this only decides
+  # which one compile_report and the review handoff use: ranked complete >
+  # partial > incomplete, then extraction confidence, ties keep the latest, and
+  # only judged attempts that passed the schema/quality gate compete. Off by
+  # default for the same reason as judge_rejudge_retry (the ranking trusts the
+  # uncalibrated judge, #242). Per-class overridable under by_class. Routing
+  # never reads it.
+  keep_best_attempt: false
   # Unused routing knob (kept for config-file compatibility). Matter conflicts
   # escalate via deterministic same-class field comparison in
   # graph/build_graph.py:_detect_conflict — not an extraction-confidence gap.

@@ -51,6 +51,7 @@ Controls the branching logic in `graph/routing.py`. Tunable without code changes
 | `arbiter_retry_max`  | 2                      | Max arbiter-approved re-extract loops (approval-inclusive)                                                                                                                                                          |
 | `judge_max_passes`   | 3                      | `1 + arbiter_retry_max` — one completeness judge per extraction attempt                                                                                                                                             |
 | `judge_rejudge_retry` | false | Opt-in (#241): `true` (global or per class) sends a retry whose earlier attempt was judged back to `judge_verify` whatever its confidence, while `judge_pass_count < judge_max_passes`. Off until the judge is calibrated (#242), so a confident retry archives unjudged |
+| `keep_best_attempt` | false | Opt-in (#254): `true` (global or per class) makes `compile_report` and the review handoff use the best-judged extraction attempt instead of the latest: `complete` > `partial` > `incomplete`, then `extraction_confidence`, ties keep the latest; only judged attempts that passed the schema/quality gate compete, and a matter conflict pins the latest. Every attempt is recorded in `extraction_attempt_history` whatever the knob says, and `selected_attempt` names the one used. Off until the judge is calibrated (#242). Routing never reads it |
 | `conflict_threshold` | 0.3                    | **Unused routing knob** (kept for config-file compatibility). Matter conflicts escalate via deterministic same-class field comparison in `graph/build_graph.py:_detect_conflict`, not an extraction-confidence gap. |
 | `by_class`           | (severity map)         | Per-class `high` / `low` / `judge_band_high` for critical contracts/mergers/insurance, high compliance, elevated corporate, standard correspondence                                                                 |
 
@@ -63,6 +64,7 @@ confidence:
   arbiter_retry_max: 2
   judge_max_passes: 3
   judge_rejudge_retry: false
+  keep_best_attempt: false
   conflict_threshold: 0.3  # unused; conflicts are field-value comparison
   by_class:
     contract: { severity: critical, high: 0.98, low: 0.90, judge_band_high: 0.97 }
