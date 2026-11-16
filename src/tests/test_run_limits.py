@@ -117,16 +117,27 @@ class TestLimitsUnit:
         record_usage(MagicMock(prompt_tokens=prompt, completion_tokens=completion))
         assert usage_summary()["calls"] == 0
 
-    def test_record_usage_logs_dropped_numeric_counts(self):
-        import structlog
-
+    def test_record_usage_logs_dropped_numeric_counts(self, monkeypatch):
+        from pipeline import limits
         from pipeline.limits import record_usage, reset_run_usage
+
+        # Record on a stub logger, not structlog.testing.capture_logs: once
+        # another test has run setup_logging(), the configured level filter and
+        # the logger cached on first use hide the event, so the old form
+        # depended on collection order.
+        calls: list[tuple[str, tuple, dict]] = []
+
+        class _Recorder:
+            def __getattr__(self, level):
+                return lambda *a, **kw: calls.append((level, a, kw))
+
+        monkeypatch.setattr(limits, "logger", _Recorder())
         reset_run_usage()
-        with structlog.testing.capture_logs() as logs:
-            record_usage({"prompt_tokens": 1.5, "completion_tokens": 10}, model="m", agent="sorter")
-        dropped = [e for e in logs if e["event"] == "usage_dropped_invalid_counts"]
+        record_usage({"prompt_tokens": 1.5, "completion_tokens": 10}, model="m", agent="sorter")
+        dropped = [c for c in calls if c[1] and c[1][0] == "usage_dropped_invalid_counts"]
         assert len(dropped) == 1
-        assert dropped[0]["agent"] == "sorter"
+        assert dropped[0][0] == "warning"
+        assert dropped[0][2]["agent"] == "sorter"
 
     def test_usage_summary_aggregates(self):
         from pipeline.limits import record_usage, reset_run_usage, usage_summary
