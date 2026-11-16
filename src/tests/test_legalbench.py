@@ -420,6 +420,21 @@ class TestLangfuseTracingAttach:
 
         self._assert_only_row_one_counted(self._run_with_agent(monkeypatch, Agent()))
 
+    def test_runner_reads_usage_exposed_as_a_dict_attribute(self, monkeypatch):
+        """#251: ``row_usage`` only called ``usage`` when callable, so an injected agent
+        exposing a dict attribute reported no tokens or cost."""
+
+        class Agent:
+            def __init__(self):
+                self.usage = {}  # dict attribute, mutated in place per call
+
+            def answer_binary(self, question, text):
+                self.usage.clear()
+                self.usage.update({"total_tokens": 111, "cost": 0.5})
+                return {"answer": "yes"}
+
+        self._assert_only_row_one_counted(self._run_with_agent(monkeypatch, Agent()))
+
     def test_legalbench_agent_usage_is_empty_until_a_call_reports_usage(self):
         from legalbench.agent import LegalBenchAgent
 

@@ -95,8 +95,11 @@ class _RowUsageScope:
         if not self._called:
             return {}
         reader = getattr(self._agent, "usage", None)
-        usage = reader() if callable(reader) else {}
-        return usage if isinstance(usage, dict) else {}
+        # ``usage`` is a method on our agents, but an injected agent may expose a
+        # plain dict attribute (or property) instead (#251); copy it so a dict the
+        # agent mutates in place cannot change this row's usage afterwards.
+        usage = reader() if callable(reader) else reader
+        return dict(usage) if isinstance(usage, dict) else {}
 
 
 def _model_name(model: Any, fallback: str) -> str:
