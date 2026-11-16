@@ -517,8 +517,13 @@ def complete_human_extraction(
     save_manifest(manifest)
 
     archived = move_to_archive(
-        review_file, manifest.matter_id, manifest.doc_type, doc_id=manifest.doc_id
+        review_file,
+        manifest.matter_id,
+        manifest.doc_type,
+        doc_id=manifest.doc_id,
+        manifest=manifest,
     )
+    save_manifest(manifest)  # persist file_location (a numbered re-archive copy, #250)
 
     logger.info(
         "review_completed_by_human",
