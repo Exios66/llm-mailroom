@@ -3879,6 +3879,25 @@ def _write_catalog_record(state: dict, manifest: DocumentManifest):
 PIPELINE_RESULT_TEXT_LIMIT = 100_000
 
 
+_ORACLE_ROUTING_WARNED: set[str] = set()
+_ORACLE_ROUTING_WARNED_MAX = 1024  # a long-lived watcher sees a new run_id per run
+
+
+def _warn_oracle_routing_once(run_id: str | None) -> None:
+    """Log once per run (``run_id``; once per process without one) that routing reads ground truth (#207)."""
+    key = run_id or ""
+    if key in _ORACLE_ROUTING_WARNED:
+        return
+    if len(_ORACLE_ROUTING_WARNED) >= _ORACLE_ROUTING_WARNED_MAX:
+        _ORACLE_ROUTING_WARNED.clear()  # bounded: at worst one extra warning per run
+    _ORACLE_ROUTING_WARNED.add(key)
+    logger.warning(
+        "oracle_routing_enabled",
+        run_id=run_id,
+        note="routing reads ground_truth; automation and accuracy numbers do not transfer to production",
+    )
+
+
 def _public_ground_truth(ground_truth: dict | None) -> dict:
     """Trace-safe ground truth (no expected_fields payloads / document text).
 
@@ -4162,6 +4181,14 @@ def _execute_run(
     if run_id:
         trace_metadata["run_id"] = run_id
     trace_metadata.update(dataset_trace_metadata(dataset))
+    # #207: say whether routing was allowed to read the ground truth, so a result
+    # set states if it was oracle-assisted. Recorded on every run (a live run is False).
+    from pipeline.config import oracle_routing_enabled, oracle_routing_override
+
+    oracle_routing = oracle_routing_enabled()
+    trace_metadata["oracle_routing"] = oracle_routing
+    if oracle_routing and ground_truth:
+        _warn_oracle_routing_once(run_id)
     public_gt = _public_ground_truth(ground_truth)
     for key, value in public_gt.items():
         trace_metadata[key] = value
@@ -4195,7 +4222,7 @@ def _execute_run(
         # run without changing graph behavior or tracing semantics.
         config["callbacks"] = [*config.get("callbacks", []), run_events]
 
-    with tracing.pipeline_trace(
+    with oracle_routing_override(oracle_routing), tracing.pipeline_trace(
         seed=seed,  # deterministic trace id -> correlates with our doc
         session_id=session_id or initial_state.get("matter_id") or "DEFAULT",  # groups documents of a matter/run
         name="document-pipeline",
