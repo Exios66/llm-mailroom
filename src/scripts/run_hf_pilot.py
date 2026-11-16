@@ -189,6 +189,9 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
         "maud_clauses": flatten_maud_clause_labels(maud_raw),
         "chars": len(str(text)),
     }
+    expected_stage = str(gt.get("expected_stage") or row.get("expected_stage") or "").strip()
+    if expected_stage:
+        sample["expected_stage"] = expected_stage
     for key in INSURANCE_GT_KEYS:
         raw = gt.get(key)
         if raw in (None, ""):
@@ -598,6 +601,19 @@ def expected_fields_meta(sample: dict) -> dict:
     return meta
 
 
+def labelled_fields(expected_fields: dict | None, sources: dict | None) -> dict:
+    """The dataset-labelled subset of *expected_fields*: the gold for scoring.
+
+    Post-hoc regex fills (source ``"posthoc"``) are kept on the row for routing
+    coverage but are not ground truth. Without a *sources* map every field counts.
+    """
+    from observability.extraction_gt import labelled_expected_fields
+
+    return labelled_expected_fields(
+        {"expected_fields": expected_fields or {}, "expected_fields_sources": sources}
+    )
+
+
 def score_row_extraction(extracted: dict | None, expected_fields: dict | None, doc_class: str) -> dict | None:
     """Deterministic field score via the dedicated specialist suite."""
     if not expected_fields or not extracted:
@@ -722,6 +738,7 @@ def enrich_sample_row(row: dict) -> dict:
             extracted=extracted if isinstance(extracted, dict) else {},
         )
     expected_fields = out.get("expected_fields")
+    sources = out.get("expected_fields_sources")
     if not isinstance(expected_fields, dict) or not expected_fields:
         payload = {
             "expected_hf_class": out.get("expected"),
@@ -736,12 +753,13 @@ def enrich_sample_row(row: dict) -> dict:
         }
         expected_fields = expected_fields_for_sample(payload)
         meta = expected_fields_meta(payload)
+        sources = meta.get("sources")
         out["extraction_gt_n_fields"] = meta.get("n_fields")
         out["extraction_gt_n_posthoc"] = meta.get("n_posthoc")
         out["specialist"] = meta.get("specialist")
     scored = score_row_extraction(
         extracted if isinstance(extracted, dict) else {},
-        expected_fields,
+        labelled_fields(expected_fields, sources if isinstance(sources, dict) else None),
         str(out.get("expected") or out.get("expected_doc_class") or ""),
     )
     if scored:
@@ -1261,6 +1279,7 @@ def load_ground_truth_labels(*, split: str, max_scan: int) -> dict[str, dict]:
             "maud_clause_labels": row.get("maud_clause_labels"),
             "content_topic": row.get("content_topic"),
             "sentiment_label": row.get("sentiment_label"),
+            "expected_stage": str(row.get("expected_stage") or "").strip(),
         }
         for key in (*INSURANCE_GT_KEYS, *CORPORATE_GT_KEYS, *CORRESPONDENCE_GT_KEYS):
             if row.get(key) not in (None, ""):
@@ -1508,6 +1527,9 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
     }
     if sample.get("expected_subclass"):
         ground_truth["expected_subclass"] = sample["expected_subclass"]
+    if sample.get("expected_stage"):
+        # Routing gold: lets the run emit ``stage_correct``.
+        ground_truth["expected_stage"] = sample["expected_stage"]
     expected_fields = expected_fields_for_sample(sample)
     gt_meta = expected_fields_meta(sample)
     if expected_fields:
@@ -1553,7 +1575,9 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
         hf_class, sample.get("expected_subclass") or "",
         predicted_subtype=subtype, extracted=extracted,
     )
-    extraction = score_row_extraction(extracted, expected_fields, hf_class)
+    extraction = score_row_extraction(
+        extracted, labelled_fields(expected_fields, gt_meta.get("sources")), hf_class
+    )
     row = {
         "trace_id": result.get("trace_id"),
         "doc_id": result.get("doc_id"),
@@ -1577,6 +1601,7 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
         "subclass_ok": subclass,
         "specialist": gt_meta.get("specialist"),
         "expected_fields": expected_fields,
+        "expected_fields_sources": gt_meta.get("sources") or {},
         "extraction_gt_n_fields": gt_meta.get("n_fields"),
         "extraction_gt_n_posthoc": gt_meta.get("n_posthoc"),
         "extraction_gt_coverage": gt_meta.get("coverage"),

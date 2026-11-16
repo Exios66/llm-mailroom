@@ -33,6 +33,11 @@ def _set_test_env():
     # LLM-assisted intake (HUB-038) is also opt-in-able; tests stay on the
     # deterministic clerk unless a case opts in (patched gate + mock client).
     os.environ["MAILROOM_LLM_INTAKE"] = "0"
+    # Unified-audit migration is an explicit operator step; a developer's .env
+    # may have MAILROOM_AUDIT_MIGRATE=1, which would migrate every test database
+    # under the suite. Force it off here; the deliberate migration tests
+    # (test_audit_migrate.py, test_audit_log.py, ...) override it themselves.
+    os.environ["MAILROOM_AUDIT_MIGRATE"] = "0"
     # Passive provider health (pager input) writes <base_dir>/provider_health.json
     # on every LLM attempt; test_provider_health.py opts back in.
     os.environ["MAILROOM_PROVIDER_HEALTH"] = "0"
@@ -102,6 +107,30 @@ def temp_base_dir():
             pass
         yield Path(tmpdir)
         os.environ.pop("MAILROOM_BASE_DIR", None)
+
+
+@pytest.fixture
+def broken_specialist_pin():
+    """Point one specialist's ``lineage.json`` sha256 at bytes no catalog record has.
+
+    ``load_specialist_v1`` is ``lru_cache``d, so the cache is cleared on the way in
+    (the broken pin is read) and on the way out (later tests resolve the real pin
+    again). Uses its own ``MonkeyPatch`` so the undo runs before the final clear.
+    """
+    import copy
+
+    import llm.frozen_v1 as frozen
+
+    mp = pytest.MonkeyPatch()
+    broken = copy.deepcopy(frozen.lineage())
+    broken["specialists"]["corporate_records_specialist"]["sha256"] = "0" * 64
+    mp.setattr(frozen, "lineage", lambda: broken)
+    frozen.load_specialist_v1.cache_clear()
+    try:
+        yield frozen
+    finally:
+        mp.undo()
+        frozen.load_specialist_v1.cache_clear()
 
 
 @pytest.fixture(autouse=True)

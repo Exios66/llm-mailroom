@@ -97,14 +97,21 @@ def _subclass(value: Any) -> str | None:
     return str(value).strip() or None if value is not None else None
 
 
-def _subclass_edited(label: dict[str, Any], snap: dict[str, Any]) -> bool:
-    """A person set, changed or cleared the subclass the model proposed.
+_SUBCLASS_KEYS = ("doc_subclass", "contract_subtype")
 
-    Snapshots written before ``doc_subclass`` was captured carry no such key; they say nothing.
+
+def _subclass_edited(label: dict[str, Any], snap: dict[str, Any]) -> bool | None:
+    """Did a person set, change or clear the subclass or contract subtype the model proposed?
+
+    ``True`` (edited), ``False`` (compared and unchanged) or ``None`` (unknown). Snapshots written
+    before either key was captured carry neither, so they cannot show that nothing was edited:
+    callers that need "not edited" must test ``is False``, not falsiness. A snapshot that carries
+    only one of the keys is compared on that one.
     """
-    if "doc_subclass" not in snap:
-        return False
-    return _subclass(label.get("doc_subclass")) != _subclass(snap.get("doc_subclass"))
+    known = [key for key in _SUBCLASS_KEYS if key in snap]
+    if not known:
+        return None
+    return any(_subclass(label.get(key)) != _subclass(snap.get(key)) for key in known)
 
 
 def is_corrected(label: dict[str, Any]) -> bool:
@@ -116,7 +123,7 @@ def is_corrected(label: dict[str, Any]) -> bool:
     human_class = label.get("doc_type")
     if human_class and snap.get("doc_type") and human_class != snap.get("doc_type"):
         return True
-    return _subclass_edited(label, snap)
+    return _subclass_edited(label, snap) is True
 
 
 def is_wasted(label: dict[str, Any]) -> bool:
@@ -128,7 +135,7 @@ def is_wasted(label: dict[str, Any]) -> bool:
         and label.get("resolution") == "approve_as_is"
         and human_class
         and human_class == snap.get("doc_type")
-        and not _subclass_edited(label, snap)
+        and _subclass_edited(label, snap) is False
         and not label.get("field_corrections")
     )
 
@@ -197,8 +204,13 @@ def _reviewer_decision(manifest: dict[str, Any]) -> dict[str, Any]:
 
 
 def _class_confirmed(label: dict[str, Any], snap: dict[str, Any]) -> bool:
-    """A person named the class: an explicit override, or a class other than the model's guess."""
-    if label.get("class_override"):
+    """A person named the class: an override that carries ``doc_type``, or a class other than the model's guess.
+
+    ``class_override`` also records subclass-only and subtype-only overrides (the resolve API writes
+    ``doc_type``, ``doc_subclass`` and ``contract_subtype``); those leave the class where it was.
+    """
+    override = label.get("class_override")
+    if isinstance(override, dict) and override.get("doc_type"):
         return True
     human_class = label.get("doc_type")
     return bool(human_class and snap.get("doc_type") and human_class != snap.get("doc_type"))

@@ -1,13 +1,13 @@
 ---
 name: dojo-scoring
-description: llm-dojo-scoring pin and mailroom scoring suites (f95c3188a1a634a9a2354afd5351edd8dd152a89). Use when adding scores, specialist suites, class match, field types, or SCORE_CONFIG names — never invent metrics absent from the installed registry.
+description: llm-dojo-scoring pin and mailroom scoring suites (93eedd8c3270ce95af56f1e17ce40bae3d03b330). Use when adding scores, specialist suites, class match, field types, or SCORE_CONFIG names — never invent metrics absent from the installed registry.
 ---
 
 # llm-dojo-scoring (pinned engine)
 
 **When:** Extraction/classification KPIs, specialist suites, field types,
 honesty gaps, Langfuse score configs.  
-Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@f95c3188a1a634a9a2354afd5351edd8dd152a89`
+Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@93eedd8c3270ce95af56f1e17ce40bae3d03b330`
 
 ## Rules
 
@@ -16,9 +16,11 @@ Pin: `llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@f95
 2. **Registry only** — `SCORE_CONFIGS` / `ensure_score_configs()`. Do not
    emit a new Langfuse score name that is not in the installed dojo registry
    (`field_presence` stays unemitted).
-3. **Suites** — `observability/specialist_suites.py` `get_suite(doc_class)`.
-   One suite per live extract class. `merger_agreement` shares the
-   `contracts_specialist` *agent* but uses the rebound MAUD suite.
+3. **Suites** — `llm_dojo_scoring.get_suite(doc_class)` (the Dojo root export, not
+   a mailroom module); `observability/specialist_suites.py` holds the mailroom's
+   registry of live extract classes and calls it. One suite per live extract
+   class. `merger_agreement` is extracted by its own
+   `merger_agreement_specialist` *agent* and scored by the MAUD suite.
 4. **GT** — Hub labels win; post-hoc fills remaining schema fields
    (`observability/posthoc_gt.py`) with provenance. Never bill post-hoc as
    official Hub gold.

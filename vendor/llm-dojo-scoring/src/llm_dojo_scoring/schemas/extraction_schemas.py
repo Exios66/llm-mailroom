@@ -26,8 +26,10 @@ Field status is read from the mailroom-dataset v9 lineage
 ``derived``
     Truth comes from a label source, not from ``gt_fields``: CUAD clause labels
     (contract metadata fields), MAUD clause labels, or the subtype itself
-    (``cuad_family``, ``merger_consideration``, ``record_type``,
-    ``communication_type``, ``cms_source_table``).
+    (``cuad_family``, ``record_type``, ``communication_type``, ``cms_source_table``).
+    Merger ``maud_clauses`` and ``merger_consideration`` are converted from the MAUD
+    labels (``maud_schema.hub_merger_expected_fields``): the ``Type of Consideration``
+    answer gives the token, falling back to the subtype (hence source ``subtype``).
 ``documented_absent``
     The schema documents the field as absent for this subtype: an empty answer
     is right and a stated value is a false positive (CMS ``adjuster``).
@@ -56,6 +58,7 @@ from types import MappingProxyType
 from typing import Any
 
 from .corpus import DOC_TYPE_SUBCLASSES, normalize_corpus_subclass
+from . import doc_classes
 
 __all__ = [
     "MAILROOM_DOC_TYPES",
@@ -68,20 +71,13 @@ __all__ = [
     "extraction_subtypes",
     "iter_extraction_schemas",
     "schema_coverage",
+    "scoreable_fields",
     "registry_violations",
 ]
 
-#: The five classes the mailroom routes and scores (mailroom-dataset v9+).
-#: Equal to ``pipeline.mailroom.LIVE_DOC_TYPES`` (checked by
-#: :func:`registry_violations`; not imported here to keep ``schemas`` below
-#: ``pipeline``).
-MAILROOM_DOC_TYPES: tuple[str, ...] = (
-    "contract",
-    "merger_agreement",
-    "corporate_record",
-    "correspondence",
-    "insurance_claim",
-)
+#: The five classes the mailroom routes and scores (mailroom-dataset v9+): the live
+#: classes of the document-class registry (``schemas/doc_classes.py``).
+MAILROOM_DOC_TYPES: tuple[str, ...] = doc_classes.LIVE_DOC_TYPES
 
 FIELD_STATUSES: tuple[str, ...] = (
     "scored",
@@ -110,6 +106,13 @@ _CUAD_DERIVED: dict[str, str] = {
     "term_length": "Expiration Date",
     "renewal_terms": "Renewal Term",
     "cuad_clauses": "all CUAD categories",
+}
+
+#: How the merger gold is converted from the MAUD labels
+#: (``maud_schema.hub_merger_expected_fields``).
+_MAUD_NOTES: dict[str, str] = {
+    "maud_clauses": "one '<Question>: <Hub class>' line per answered question",
+    "merger_consideration": "the Type of Consideration answer, else the row's subtype",
 }
 
 #: Fields whose truth is the row's subtype itself.
@@ -328,10 +331,8 @@ def _label_status(counts: Mapping[str, int] | None, rows: int) -> tuple[str, flo
 
 
 def _live_types(doc_type: str) -> dict[str, str]:
-    """The class's live field map (``DEFAULT_FIELD_TYPES``)."""
-    from ..scoring.suites import DEFAULT_FIELD_TYPES
-
-    return dict(DEFAULT_FIELD_TYPES[doc_type])
+    """The class's live field map (the document-class registry's ``field_types``)."""
+    return doc_classes.field_types(doc_type)
 
 
 def _subtype_overlay(doc_type: str, subtype: str | None) -> tuple[dict[str, str], tuple[str, ...], tuple[str, ...]]:
@@ -405,13 +406,15 @@ def _build(doc_type: str, subtype: str | None) -> ExtractionSchema:
             continue
         if doc_type == "merger_agreement" and name == "maud_clauses":
             status, coverage = _label_status(counts.get("maud_clause_labels"), rows)
-            fields[name] = FieldSchema(name, field_type, status, "maud_clause_labels", coverage)
+            fields[name] = FieldSchema(name, field_type, status, "maud_clause_labels", coverage,
+                                       note=_MAUD_NOTES[name])
             continue
         if _SUBTYPE_DERIVED.get(doc_type) == name or (
             doc_type == "insurance_claim" and name == "cms_source_table"
         ):
+            note = _MAUD_NOTES.get(name) if doc_type == "merger_agreement" else None
             fields[name] = FieldSchema(name, field_type, "derived", "subtype", 1.0 if rows else None,
-                                       note="truth is the row's subtype"
+                                       note=note or "truth is the row's subtype"
                                        + (" (CMS tables only)" if name == "cms_source_table" else ""))
             continue
         status, coverage = _classify(counts.get(name), rows)
@@ -465,6 +468,21 @@ def extraction_schema(doc_type: str, subtype: Any = None) -> ExtractionSchema:
     if key not in extraction_subtypes(doc_type):
         raise KeyError(f"unknown {doc_type} subtype {subtype!r}")
     return _cached(doc_type, key)
+
+
+def scoreable_fields(doc_type: str, subtype: Any = None) -> tuple[str, ...]:
+    """The fields whose frozen dataset status makes them eligible to score, for a class or subtype.
+
+    This is status reporting, not a scoring gate: ``score_extraction`` does not consult
+    it and scores whatever ``expected`` carries. Eligible means a status in
+    :data:`SCORED_STATUSES` (``scored``, ``partial``, ``derived``, ``documented_absent``),
+    in schema order: the dataset's ground truth decides, there are no quality tiers.
+    This is the rule :func:`schema_coverage` applies row by row, so the two cannot
+    disagree. A
+    class-level schema also lists derived and label-task fields the registry does
+    not (``cms_source_table``, ``content_topic``); they follow the same status rule.
+    """
+    return extraction_schema(doc_type, subtype).scored_fields
 
 
 def iter_extraction_schemas(*, include_doc_types: bool = True) -> Iterator[ExtractionSchema]:
@@ -532,14 +550,19 @@ def schema_coverage(
 
 def registry_violations() -> list[str]:
     """Drift between the registry, the taxonomy and the live field maps (empty = OK)."""
-    from ..pipeline.mailroom import LIVE_DOC_TYPES
+    from ..pipeline import mailroom
 
     problems: list[str] = []
-    if tuple(LIVE_DOC_TYPES) != MAILROOM_DOC_TYPES:
-        problems.append(f"MAILROOM_DOC_TYPES {MAILROOM_DOC_TYPES} != LIVE_DOC_TYPES {tuple(LIVE_DOC_TYPES)}")
+    if tuple(mailroom.LIVE_DOC_TYPES) != MAILROOM_DOC_TYPES:
+        problems.append(
+            f"MAILROOM_DOC_TYPES {MAILROOM_DOC_TYPES} != pipeline LIVE_DOC_TYPES {tuple(mailroom.LIVE_DOC_TYPES)}"
+        )
     data = _status_data()
-    if set(data["doc_types"]) != set(MAILROOM_DOC_TYPES):
-        problems.append(f"status data classes {sorted(data['doc_types'])} != the five mailroom classes")
+    with_rows = {t for t in MAILROOM_DOC_TYPES if doc_classes.DOC_CLASSES[t].in_corpus}
+    if set(data["doc_types"]) != with_rows:
+        problems.append(
+            f"status data classes {sorted(data['doc_types'])} != the live classes with dataset rows {sorted(with_rows)}"
+        )
     for doc_type in MAILROOM_DOC_TYPES:
         live = _live_types(doc_type)
         base = extraction_schema(doc_type)

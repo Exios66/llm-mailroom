@@ -15,7 +15,7 @@ from observability.scores import SCORE_CONFIGS, registry_score_meta
 from observability.suite_scoring import SUITE_EXTRA_SCORE_NAMES
 
 
-def test_installed_dojo_is_v0280():
+def test_pyproject_pins_the_expected_dojo_commit_and_installed_version_floor():
     # Release contract = the git pin in pyproject.toml. Monorepo dev resolves
     # the pin to the workspace member via [tool.uv.sources], so the installed
     # version may be newer than the pin (>= 0.12 required; the floor stays at
@@ -23,7 +23,7 @@ def test_installed_dojo_is_v0280():
     pin = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(
         encoding="utf-8"
     )
-    assert "llm-dojo-scoring.git@f95c3188a1a634a9a2354afd5351edd8dd152a89" in pin
+    assert "llm-dojo-scoring.git@93eedd8c3270ce95af56f1e17ce40bae3d03b330" in pin
     version = re.match(r"(\d+)\.(\d+)", llm_dojo_scoring.__version__)
     assert version is not None
     assert tuple(map(int, version.groups())) >= (0, 12)
