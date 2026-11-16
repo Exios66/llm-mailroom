@@ -368,3 +368,26 @@ def test_terminal_fetch_by_doc_ids_applies_since_and_orders_by_updated_at(
     )
     assert [r.doc_id for r in chunked] == ["d-doc", "c-doc", "a-doc"]
 
+
+
+def test_terminal_fetch_orders_legacy_null_timestamps_last(monkeypatch):
+    import asyncio
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from storage import db
+    from storage.warehouse import fetch_terminal_documents
+
+    records = [SimpleNamespace(doc_id="old-null", updated_at=None),
+               SimpleNamespace(doc_id="recent", updated_at=datetime(2026, 1, 1))]
+
+    async def execute(query):
+        return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: records))
+
+    @asynccontextmanager
+    async def session():
+        yield SimpleNamespace(execute=execute)
+
+    monkeypatch.setattr(db, "ensure_schema", lambda: None)
+    monkeypatch.setattr(db, "async_session", session)
+    rows = asyncio.run(fetch_terminal_documents(doc_ids=["old-null", "recent"]))
+    assert [r.doc_id for r in rows] == ["recent", "old-null"]
