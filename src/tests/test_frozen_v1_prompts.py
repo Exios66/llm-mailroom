@@ -25,7 +25,7 @@ def test_frozen_v1_sha256_matches_lineage_catalog():
     expected = {
         "contracts_specialist": ("d91de3967cc3b12cbd222cc5a4ae167b39578125abc83be7422498dc5024fd24", 9882),
         "corporate_records_specialist": ("fe13501f667fcd9f64f7dfbf8b0f124f81d9dd039f4109288b43f106f82b1399", 5865),
-        "correspondence_specialist": ("2b0b81ff98920b9207627707443e2b023db39212fda5bdcba7bfbded39fa38b6", 6113),
+        "correspondence_specialist": ("e3bc920d5a99c951ace99e4a726a8cbd85a135ebf0fb81408ec8654c774b4000", 6316),
         "insurance_claims_specialist": ("6c2776bcbe00091200aecbcfd21c99f197398d929143dd0c7c722811fa100034", 6277),
         "merger_agreement_specialist": ("003232584d6890054d956398135f439b86692a1123683f58914c0393b5e1a00b", 6116),
     }
@@ -74,7 +74,8 @@ def test_pinned_bytes_live_in_known_dojo_families():
 
     contracts and merger: v1 left ``production`` (now v2) and stay in ``production_prompts``.
     corporate: the pinned v6 stays in ``production``; ``production_prompts`` holds the
-    unpromoted v7 eval candidate. correspondence and insurance: identical in both.
+    unpromoted v7 eval candidate. correspondence: the pinned v8 is only in
+    ``production_prompts``; ``production`` still serves v7 (2b0b81ff…). insurance: identical in both.
     """
     from llm_dojo_scoring.prompts import get_prompt, get_prompt_version
 
@@ -83,7 +84,7 @@ def test_pinned_bytes_live_in_known_dojo_families():
         "contracts_specialist": {"production_prompts"},
         "merger_agreement_specialist": {"production_prompts"},
         "corporate_records_specialist": {"production"},
-        "correspondence_specialist": {"production", "production_prompts"},
+        "correspondence_specialist": {"production_prompts"},
         "insurance_claims_specialist": {"production", "production_prompts"},
     }
     assert set(expected_families) == set(SPECIALIST_AGENTS)
@@ -264,10 +265,22 @@ def test_build_graph_refuses_to_start_when_a_specialist_pin_does_not_resolve(mon
 def test_corrected_records_are_served():
     """Pin the corrected specialist prompt bytes by their known hash prefixes."""
     # 2026-10-05 dojo corrections: communication_type -> null (not "other");
-    # filing_number null unless an official number.
+    # filing_number null unless an official number. correspondence is the v8 correction
+    # (content-not-carrier communication_type, #269), served from production_prompts.
     assert specialist_sha256("corporate_records_specialist").startswith("fe13501f")
-    assert specialist_sha256("correspondence_specialist").startswith("2b0b81ff")
+    assert specialist_sha256("correspondence_specialist").startswith("e3bc920d")
     assert specialist_sha256("contracts_specialist").startswith("d91de396")
+
+
+def test_correspondence_types_the_content_not_the_carrier():
+    """llm-mailroom#269: correspondence_specialist_v8 replaces the Enron-inbox-to-email rule.
+
+    The old v7 line filed every inbox item as ``email``; v8 types the document's form and
+    keeps ``email`` for ordinary email correspondence only.
+    """
+    text = load_specialist_v1("correspondence_specialist")
+    assert "Enron-style inbox → email" not in text
+    assert "Type the content, not the carrier" in text
 
 
 def test_corrected_roles_record_their_eval_environment_mutation_keys():
@@ -279,7 +292,7 @@ def test_corrected_roles_record_their_eval_environment_mutation_keys():
     import llm.frozen_v1 as F
 
     expected = {
-        "correspondence_specialist": "correspondence_specialist_v7",
+        "correspondence_specialist": "correspondence_specialist_v8",
         "corporate_records_specialist": "corporate_records_specialist_v6",
     }
     catalog = lineage()["specialists"]
