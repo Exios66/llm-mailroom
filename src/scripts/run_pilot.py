@@ -903,7 +903,7 @@ def diff_report(new: dict, baseline: dict) -> dict:
 
 def print_rows(rows: list[dict]) -> None:
     id_w = max([24] + [len(str(r["id"])) + 1 for r in rows])  # corpus ids can be long
-    header = f"{'id':<{id_w}}{'class':<18}{'exp_stage':<10}{'stage':<10}{'exp_class':<18}{'act_class':<18}{'conf':<5}{'calls':<6}{'time_s':<8}"
+    header = f"{'id':<{id_w}}{'exp_stage':<10}{'stage':<10}{'exp_class':<18}{'act_class':<18}{'conf':<5}{'calls':<6}{'time_s':<8}"
     print(header)
     print("-" * len(header))
     for r in rows:
@@ -911,7 +911,7 @@ def print_rows(rows: list[dict]) -> None:
             print(f"{str(r.get('id')):<{id_w}}ERROR {r.get('error')}")
             continue
         print(
-            f"{r['id']:<{id_w}}{str(r['actual_doc_class']):<18}{r['expected_stage']:<10}{str(r['stage']):<10}"
+            f"{r['id']:<{id_w}}{r['expected_stage']:<10}{str(r['stage']):<10}"
             f"{r['expected_doc_class']:<18}{str(r['actual_doc_class']):<18}"
             f"{str(r['classification_confidence']):<5}{r['llm_calls']:<6}{r['wall_time_s']:<8}"
         )

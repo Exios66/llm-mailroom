@@ -357,10 +357,12 @@ def test_progress_cost_includes_billed_error_rows(monkeypatch):
     assert run_pilot.summarize([ok, err])["total_cost_usd"] == 0.75
 
 
-def test_print_rows_class_column_is_the_predicted_class(capsys):
+def test_print_rows_shows_each_class_once(capsys):
     row = {"id": "a", "expected_doc_class": "contract", "expected_stage": "archived", "stage": "archived",
            "actual_doc_class": "correspondence", "class_match": False, "classification_confidence": 0.9,
            "llm_calls": 2, "wall_time_s": 1.0}
     run_pilot.print_rows([row])
-    body = capsys.readouterr().out.splitlines()[2]
-    assert body.split()[:2] == ["a", "correspondence"]
+    header, _, body = capsys.readouterr().out.splitlines()[:3]
+    # #251 row 8: the old leading ``class`` column repeated ``exp_class``.
+    assert header.split()[:5] == ["id", "exp_stage", "stage", "exp_class", "act_class"]
+    assert body.split()[:5] == ["a", "archived", "archived", "contract", "correspondence"]
