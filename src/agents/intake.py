@@ -259,6 +259,9 @@ def sliding_windows(text: str, budget: int, overlap_chars: int) -> list[tuple[st
     """
     if not text:
         return []
+    if budget < 1:
+        # A zero or negative span budget never advances the hard split (PR #252 review).
+        raise ValueError(f"sliding_windows budget must be >= 1, got {budget}")
     if len(text) <= budget:
         return [(text, 0)]
     # Every window is a CONTIGUOUS slice of ``text`` (``text[start:end]``), so

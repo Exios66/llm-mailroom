@@ -559,3 +559,13 @@ def test_intake_node_llm_intake_disabled_stays_deterministic(temp_base_dir, mock
     assert result["intake_prep"] is None
     assert "agreement" in result["doc_text"]
     assert intake_mod.llm_intake_enabled() is False
+
+def test_sliding_windows_rejects_a_non_positive_budget():
+    """PR #252 review: budget 0 never advanced the hard split."""
+    import pytest
+
+    from agents.intake import sliding_windows
+
+    for bad in (0, -5):
+        with pytest.raises(ValueError, match="budget must be >= 1"):
+            sliding_windows("abc\n\ndef", bad, 0)

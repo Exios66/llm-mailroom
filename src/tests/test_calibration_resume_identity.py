@@ -205,3 +205,11 @@ def test_folds_two_is_accepted_by_the_parser(tmp_path, capsys):
     recs.write_text("")
     assert ct.main(["--records", str(recs), "--out", str(tmp_path / "o.yaml"), "--folds", "2"]) == 1
     assert "no records" in capsys.readouterr().err
+
+
+def test_negative_limit_is_a_usage_error_and_a_saved_negative_limit_is_refused(tmp_path, capsys):
+    with pytest.raises(SystemExit) as exc:
+        sw.main(["--dataset", "mailroom-fixtures", "--mock", "--out", str(tmp_path / "r.jsonl"), "--limit", "-1"])
+    assert exc.value.code == 2
+    why = sw.resume_mismatch([_row(seed=1, per_class=5, limit=-1)], [], {**_CURRENT, "limit": 1})
+    assert why is not None and "limit: saved -1 is not a valid limit" in why

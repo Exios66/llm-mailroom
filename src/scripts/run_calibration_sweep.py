@@ -1133,7 +1133,9 @@ def resume_mismatch(
                 diffs.setdefault("limit", "not recorded in the saved records")
         else:
             saved_limit, new_limit = run["limit"], current.get("limit")
-            if new_limit is not None and (saved_limit is None or new_limit < saved_limit):
+            if saved_limit is not None and (not isinstance(saved_limit, int) or saved_limit < 0):
+                diffs.setdefault("limit", f"saved {saved_limit!r} is not a valid limit")
+            elif new_limit is not None and (saved_limit is None or new_limit < saved_limit):
                 diffs.setdefault("limit", f"saved {saved_limit!r}, now {new_limit!r} (it can only be raised)")
         if "judge_attempts" not in diag:
             diffs.setdefault("judge_attempts", "not recorded in the saved records")
@@ -1252,6 +1254,13 @@ def real_guard(env: dict | None = None) -> str | None:
 # --------------------------------------------------------------------------------------
 
 
+def _nonneg_int(value: str) -> int:
+    n = int(value)
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {n}")
+    return n
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     src = p.add_mutually_exclusive_group(required=True)
@@ -1265,7 +1274,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--per-class", type=int, default=5, help="HF: documents per class.")
     p.add_argument("--seed", type=int, default=0, help="HF: sampling seed.")
     p.add_argument("--samples-dir", type=Path, default=None, help="Manifest: root for sample files.")
-    p.add_argument("--limit", type=int, default=None, help="Sweep only the first N documents.")
+    p.add_argument("--limit", type=_nonneg_int, default=None, help="Sweep only the first N documents.")
     p.add_argument("--resume", action="store_true", help="Skip doc_ids already in --out.")
     p.add_argument("--retry-errors", action="store_true", help="With --resume: drop errored records and re-run them.")
     p.add_argument(
