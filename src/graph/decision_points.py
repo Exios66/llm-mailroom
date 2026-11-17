@@ -422,16 +422,25 @@ def normalize_outcome(raw: Any) -> DecisionOutcome:
     any other answer. Never raises. It reads the backend's object (a lazy
     mapping, an iterator), so :func:`consult` runs it inside the bounded call.
     """
+    return _normalize_answer(raw)[0]
+
+
+def _normalize_answer(raw: Any) -> "tuple[DecisionOutcome, bool]":
+    """:func:`normalize_outcome`, plus whether the outcome is our own ``malformed_answer`` verdict.
+
+    The flag is what lets :func:`consult` keep our evidence and drop the backend's: a backend
+    can return ``status="invalid"`` with an evidence ``reason`` that imitates ours.
+    """
     try:
         if isinstance(raw, DecisionOutcome):
             # Always rebuilt, even an exact DecisionOutcome: its ``evidence`` dict stays
             # mutable after validation, and the backend still holds it.
-            return DecisionOutcome(**{k: getattr(raw, k) for k in _OUTCOME_KEYS})
+            return DecisionOutcome(**{k: getattr(raw, k) for k in _OUTCOME_KEYS}), False
         if not isinstance(raw, Mapping):
-            return _failure("invalid", "malformed_answer", answer_type=type(raw).__name__)
-        return DecisionOutcome(**{k: raw[k] for k in _OUTCOME_KEYS if k in raw})
+            return _failure("invalid", "malformed_answer", answer_type=type(raw).__name__), True
+        return DecisionOutcome(**{k: raw[k] for k in _OUTCOME_KEYS if k in raw}), False
     except Exception as exc:  # ValueError from validation; anything a hostile object raises
-        return _failure("invalid", "malformed_answer", detail=_safe_detail(exc))
+        return _failure("invalid", "malformed_answer", detail=_safe_detail(exc)), True
 
 
 #: Every message ``DecisionOutcome`` validation raises (pinned by a test). A backend can
@@ -564,8 +573,27 @@ class SlotPolicy:
         False for a record-only slot (empty ``allow`` for every class) and for one that may
         only park: ``max_overrides`` never matters to it.
         """
-        lists = [self.allow] + [o.allow for o in self.by_class.values() if o.allow is not None]
+        # Only the allow lists that are in force count: the slot-wide one when the slot is
+        # enabled (it covers every class without an override), and each enabled class's own.
+        lists = [frozenset(self.allow)] if self.enabled else []
+        for doc_type in self.by_class:
+            effective = self.resolve(doc_type)
+            if effective.enabled:
+                lists.append(effective.allow)
         return any(dest != PARK for dests in lists for dest in dests)
+
+    def loggable_hint(self, hint: Any) -> "str | None":
+        """``hint`` when it names a destination this slot configures (or the park), else a marker.
+
+        A backend's ``route_hint`` is free text up to 64 characters and could quote the
+        document; logs and traces only ever carry a name the operator wrote in taxonomy.
+        """
+        if hint is None:
+            return None
+        known = {PARK, *self.allow}
+        for override in self.by_class.values():
+            known.update(override.allow or ())
+        return hint if hint in known else "<unlisted>"
 
     @property
     def active(self) -> bool:
@@ -938,7 +966,7 @@ def consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
         log(
             "decision_point_consulted",
             slot=policy.slot, node=policy.node, backend=policy.backend, doc_id=inp.doc_id,
-            status=outcome.status, route_hint=outcome.route_hint,
+            status=outcome.status, route_hint=policy.loggable_hint(outcome.route_hint),
             label_length=len(outcome.label) if outcome.label is not None else None,
             confidence=outcome.confidence, causes=list(outcome.causes), latency_ms=latency_ms,
             reason=outcome.evidence.get("reason") if outcome.status != "ok" else None,
@@ -947,7 +975,8 @@ def consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
             try:
                 span.update(
                     output={
-                        "status": outcome.status, "route_hint": outcome.route_hint,
+                        "status": outcome.status,
+                        "route_hint": policy.loggable_hint(outcome.route_hint),
                         "label_length": len(outcome.label) if outcome.label is not None else None,
                         "confidence": outcome.confidence,
                         "causes": list(outcome.causes), "model": outcome.model,
@@ -976,8 +1005,8 @@ def _consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
     try:
         # The answer is normalised inside the bounded call: reading a lazy mapping or an
         # iterator of causes is the backend's time too, and the bound returns a plain outcome.
-        outcome = run_bounded(
-            lambda: normalize_outcome(backend(inp)),
+        outcome, own_verdict = run_bounded(
+            lambda: _normalize_answer(backend(inp)),
             name=f"decision-point-{policy.slot}",
             abandoned=_abandoned_threads,
             max_abandoned=_MAX_ABANDONED_DECISION_POINT_THREADS,
@@ -1001,13 +1030,17 @@ def _consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
         raise
     except BaseException as exc:  # noqa: BLE001 - SystemExit, GeneratorExit...: never leave the consultation
         return _failed_outcome(policy, "invalid", "backend_error", error=type(exc).__name__)
-    if outcome.status != "ok":
-        # Declared by the backend itself ("unavailable") or found malformed ("invalid"):
-        # the backend's own hint is not trusted; on_failure decides.
+    if own_verdict:
+        # Found malformed by normalisation: our own reason and detail tokens are kept.
         return _failed_outcome(
-            policy, outcome.status, str(outcome.evidence.get("reason") or "backend_declined"),
-            **{k: v for k, v in outcome.evidence.items() if k in ("detail", "answer_type", "error")},
+            policy, outcome.status, str(outcome.evidence["reason"]),
+            **{k: v for k, v in outcome.evidence.items() if k in ("detail", "answer_type")},
         )
+    if outcome.status != "ok":
+        # Declared by the backend itself ("unavailable" / "invalid"): its hint is not trusted,
+        # and on_failure decides. Nor is its evidence: a backend-written reason or detail is
+        # free text that could quote the document, so only our own token is recorded.
+        return _failed_outcome(policy, outcome.status, "backend_declined")
     return outcome
 
 
