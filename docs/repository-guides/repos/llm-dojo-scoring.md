@@ -28,14 +28,21 @@ An optional embedding similarity "rescues" names and free text that are worded d
 
 ```bash
 pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@025400f3d703531c5e1a76093e4b803ccc6fb576"
-pip install -e ".[embeddings]"   # optional extras: embeddings, tracing, dev, all
+# optional extras (embeddings, tracing, dev, all) come from the same pinned source, not a local path:
+# pip install "llm-dojo-scoring[embeddings] @ git+https://github.com/Exios66/llm-dojo-scoring.git@025400f3d703531c5e1a76093e4b803ccc6fb576"
 ```
 
 ```python
 import llm_dojo_scoring as dojo
 
 suite = dojo.get_suite("insurance_claims_specialist")   # one suite per pipeline agent
+expected_fields = {"claim_number": "CLM-2024-001", "insurer": "Acme Mutual",
+                   "claimed_amount": "$12,500.00", "date_filed": "2024-03-02"}
+predicted_fields = {"claim_number": "CLM-2024-001", "insurer": "Acme Mutual Insurance",
+                    "claimed_amount": "12500", "date_filed": "2024-03-20"}
 result = suite.score(expected_fields, predicted_fields)
+print(result.field_scores)    # {'claim_number': 1.0, 'insurer': 1.0, 'claimed_amount': 1.0, 'date_filed': 0.67}
+print(result.overall_score)   # 0.9175 (run against the pinned Dojo, package 0.30.1)
 
 ci = dojo.bootstrap_ci([1.0, 0.0, 1.0, 1.0])
 ```

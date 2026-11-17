@@ -102,8 +102,24 @@ pip install "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.
 ```python
 import llm_dojo_scoring as dojo
 suite = dojo.get_suite("insurance_claims_specialist")
+expected_fields = {
+    "claim_number": "CLM-2024-001",
+    "insurer": "Acme Mutual",
+    "claimed_amount": "$12,500.00",
+    "date_filed": "2024-03-02",
+}
+predicted_fields = {
+    "claim_number": "CLM-2024-001",
+    "insurer": "Acme Mutual Insurance",   # name match: still 1.0
+    "claimed_amount": "12500",            # money: compared within one cent
+    "date_filed": "2024-03-20",           # same month, wrong day: partial credit
+}
 result = suite.score(expected_fields, predicted_fields)
+print(result.field_scores)    # {'claim_number': 1.0, 'insurer': 1.0, 'claimed_amount': 1.0, 'date_filed': 0.67}
+print(result.overall_score)   # 0.9175
 ```
+
+Those two printed values come from running this snippet against the pinned Dojo (package 0.30.1, commit `025400f`). `suite.score` takes two plain dicts keyed by field name and returns an `ExtractionScoreResult`; `date_filed` is also listed in `result.ambiguous_fields`.
 
 Next: [llm-dojo-scoring guide](repos/llm-dojo-scoring.md).
 
