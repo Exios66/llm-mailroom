@@ -9,7 +9,7 @@ One page per repository: what it does, where it fits, how to start, and where it
 
 ## Pipeline and libraries
 
-- [llm-mailroom](llm-mailroom.md) — the 13-node document pipeline
+- [llm-mailroom](llm-mailroom.md) — the 14-node document pipeline
 - [llm-dojo-scoring](llm-dojo-scoring.md) — the shared scoring library
 - [eval-environment](eval-environment.md) — per-node evals and calibration
 - [mailroom-ml](mailroom-ml.md) — the ModernBERT intake classifier

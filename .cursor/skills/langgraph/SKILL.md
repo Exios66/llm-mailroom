@@ -1,6 +1,6 @@
 ---
 name: langgraph
-description: LangGraph pipeline topology for llm-mailroom (13 nodes, routing, HITL, checkpointer). Use when adding/changing graph nodes, conditional edges, review resume, or persistence — invoke before writing graph/agent code.
+description: LangGraph pipeline topology for llm-mailroom (14 nodes, routing, HITL, checkpointer). Use when adding/changing graph nodes, conditional edges, review resume, or persistence — invoke before writing graph/agent code.
 ---
 
 # LangGraph (pipeline state machine)
@@ -13,9 +13,9 @@ Do not introduce a second orchestrator.
 
 - One graph run per document. Node signature:
   `node(state: DocumentState) -> dict[str, Any]` (partial updates).
-- 13 nodes: `intake`, `classify`, `retry_classify`, `review_classify`,
-  `extract`, `retry_extract`, `judge_verify`, `arbiter`, `human_review`,
-  `boss_escalation`, `compile_report`, `catalog_write`, `archive`.
+- 14 nodes: `intake`, `classify`, `retry_classify`, `review_classify`,
+  `classification_arbiter`, `extract`, `retry_extract`, `judge_verify`, `arbiter`,
+  `human_review`, `boss_escalation`, `compile_report`, `catalog_write`, `archive`.
 - Conditional edges live in `graph/routing.py` only.
 - Files move through `pipeline/bins.py` — never `os.rename` / `shutil.move`
   in node code.

@@ -8,7 +8,7 @@
 <br/>
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
-[![LangGraph 13 nodes](https://img.shields.io/badge/LangGraph-13_nodes-22C55E?style=for-the-badge)](src/graph/build_graph.py)
+[![LangGraph 14 nodes](https://img.shields.io/badge/LangGraph-14_nodes-22C55E?style=for-the-badge)](src/graph/build_graph.py)
 [![SQLite first](https://img.shields.io/badge/storage-SQLite_first-6C63FF?style=for-the-badge)](docs/pipeline-reference-llm-mailroom/configuration.md)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
@@ -90,7 +90,7 @@ and [documentation home](docs/README.md).
 <div align="center">
 <picture>
   <source media="(max-width: 640px)" srcset="docs/assets/readme/stats-mobile.svg"/>
-  <img src="docs/assets/readme/stats.svg" alt="By the numbers: 13 graph nodes, five document classes, a SQLite default catalog with no database server, a hash-chained audit trail and a FastAPI upload, status and audit API" width="100%"/>
+  <img src="docs/assets/readme/stats.svg" alt="By the numbers: 14 graph nodes, five document classes, a SQLite default catalog with no database server, a hash-chained audit trail and a FastAPI upload, status and audit API" width="100%"/>
 </picture>
 </div>
 
@@ -100,7 +100,7 @@ and [documentation home](docs/README.md).
 
 | ✅ Reach for it when… | ↪️ Look elsewhere when… |
 | :--- | :--- |
-| You need legal documents sorted into five classes and turned into validated, structured matter records | You want a free-form chat agent. Orchestration here is an explicit 13-node state machine, and agents do not negotiate |
+| You need legal documents sorted into five classes and turned into validated, structured matter records | You want a free-form chat agent. Orchestration here is an explicit 14-node state machine, and agents do not negotiate |
 | Every decision must be auditable: a trace per document and a SHA-256 hash-chained audit trail per archive | Your documents fall outside the five classes. Court opinions and due-diligence memos classify as `unknown` and go to human review |
 | You want to run on OpenRouter today and move agents to local models later with a config change | You only need scoring or a viewer. Use [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) or [The-Mailroom](https://github.com/Exios66/The-Mailroom) on their own |
 
@@ -118,13 +118,13 @@ and [documentation home](docs/README.md).
 | | Phase | Graph node(s) | What happens |
 | :---: | :--- | :--- | :--- |
 | 📥 | **Intake** | `intake-document` | The ingest specialist claims the file, transcribes it, cleans it and writes its manifest |
-| 🏷️ | **Classify** | `classify-document`, `(retry)`, `(reviewer)` | `SorterAgent` picks one of the five classes with a confidence score. High confidence goes to extraction, medium confidence gets a retry and a reviewer's second opinion, and low or unknown confidence goes to a human |
+| 🏷️ | **Classify** | `classify-document`, `(retry)`, `(reviewer)`, `arbitrate-classification` | `SorterAgent` picks one of the five classes with a confidence score. High confidence goes to extraction. Medium confidence gets a retry (a retry that reaches high confidence goes straight to extraction) and, if it stays medium, a reviewer's second opinion, with the arbiter stepping in when that review fails. Low or unknown confidence goes to a human |
 | 🔍 | **Extract** | `extract-fields`, `(retry)` | The class specialist fills a Pydantic schema, gated on schema validity, confidence, factuality and completeness |
 | ⚖️ | **Quality** | `judge-verify`, `arbitrate-verdict`, `adjudicate-conflict` | The Judge checks ambiguous completeness. The Arbiter lets the verdict stand, orders a re-extraction or escalates. The Boss adjudicates matter conflicts |
 | 🧑‍⚖️ | **Human review** | `route-for-review` | The governance boundary: a person approves, rejects or requeues. A rejection ends in `FAILED` |
 | 🗂️ | **Compile → Catalog → Archive** | `compile-report`, `write-catalog`, `archive-document` | Procedural matter-record assembly, SQLite persistence, and a SHA-256 hash-chained audit archive |
 
-That is **13 nodes** in all. Two auxiliary flows run outside the graph: the
+That is **14 nodes** in all. Two auxiliary flows run outside the graph: the
 Gmail triage lane and the post-archive relations clerk (details below).
 
 <a id="at-a-glance"></a>
@@ -132,7 +132,7 @@ Gmail triage lane and the post-archive relations clerk (details below).
 ## 📟 At a glance
 
 <div align="center">
-<img src="docs/assets/readme/tui.svg" alt="Terminal dashboard: 13 graph nodes, MemorySaver checkpoints, SQLite first, a hash-chained audit trail and FastAPI, with routing notes: the review band 0.88 to 0.97 and unknown types go to the human review bin" width="90%"/>
+<img src="docs/assets/readme/tui.svg" alt="Terminal dashboard: 14 graph nodes, MemorySaver checkpoints, SQLite first, a hash-chained audit trail and FastAPI, with routing notes: the review band 0.88 to 0.97 and unknown types go to the human review bin" width="90%"/>
 </div>
 
 <a id="where-it-fits"></a>
@@ -273,14 +273,14 @@ when the extra is absent.
 
 <a id="architecture"></a>
 
-One **LangGraph state machine run per document** — 13 nodes, MemorySaver-checkpointed by default (opt-in `SqliteSaver` for resume-across-restart experiments), crash-safe via manifest-driven re-invocation. Files move through filesystem bins (`inbox → processing → archive | review | failed`); every decision is a named node with a deterministic trace in the configured observability backend.
+One **LangGraph state machine run per document** — 14 nodes, MemorySaver-checkpointed by default (opt-in `SqliteSaver` for resume-across-restart experiments), crash-safe via manifest-driven re-invocation. Files move through filesystem bins (`inbox → processing → archive | review | failed`); every decision is a named node with a deterministic trace in the configured observability backend.
 
 ### LangGraph state machine
 
-The core pipeline is a **13-node LangGraph state machine** executed once per document. Two auxiliary flows operate outside the graph: the **Gmail triage lane** (free model swarm for single-document emails) and the **relations clerk** (post-archive association scanning).
+The core pipeline is a **14-node LangGraph state machine** executed once per document. Two auxiliary flows operate outside the graph: the **Gmail triage lane** (free model swarm for single-document emails) and the **relations clerk** (post-archive association scanning; the diagram below draws it after `archive` for orientation only, since it is dispatched on a daemon thread and is not one of the 14 nodes).
 
 <details>
-<summary><b>🗺️ The full 13-node state machine (Mermaid)</b></summary>
+<summary><b>🗺️ The full 14-node state machine (Mermaid)</b></summary>
 
 ```mermaid
 flowchart TD
@@ -290,6 +290,7 @@ flowchart TD
     CLASSIFY["classify-document<br/>SorterAgent"]
     RETRY_CLASS["classify-document (retry)<br/>SorterAgent re-evaluation"]
     REVIEW_CLASS["classify-document (reviewer)<br/>agent second opinion (Lane A)"]
+    CLASS_ARBITER["arbitrate-classification<br/>ClassificationArbiterAgent"]
     EXTRACT["extract-fields<br/>specialist dispatch"]
     RETRY_EXTRACT["extract-fields (retry)<br/>specialist re-extraction"]
     JUDGE["judge-verify<br/>gated completeness check (Lane B)"]
@@ -299,7 +300,7 @@ flowchart TD
     REPORT["compile-report<br/>(procedural)"]
     CATALOG["write-catalog<br/>SQLite documents + matters"]
     ARCHIVE["archive-document<br/>archivist + hash-chained audit log"]
-    RELATIONS["relations scan<br/>post-archive association clerk"]
+    RELATIONS["relations scan<br/>post-archive association clerk<br/>(outside the graph)"]
     FAILED["FAILED"]
     ENDX([END])
 
@@ -314,7 +315,10 @@ flowchart TD
     RETRY_CLASS -- "medium band exhausted (Lane A)" --> REVIEW_CLASS
     RETRY_CLASS -- "medium or still low confidence" --> REVIEW
     REVIEW_CLASS -- "high-confidence reviewer verdict" --> EXTRACT
+    REVIEW_CLASS -- "decision-model result not extract, or review exhausted / failed" --> CLASS_ARBITER
     REVIEW_CLASS -- "anything else" --> REVIEW
+    CLASS_ARBITER -- "accepted class (no ground-truth class miss)" --> EXTRACT
+    CLASS_ARBITER -- "anything else" --> REVIEW
 
     EXTRACT -- "confidence >= low" --> REPORT
     EXTRACT -- "low confidence, attempts <= retry_max" --> RETRY_EXTRACT
@@ -344,7 +348,7 @@ flowchart TD
 
 Thresholds (`confidence.low`, `confidence.high`, `retry_max`) are config in `config/taxonomy.yaml`, never hardcoded.
 
-**Auxiliary flows (outside the 13-node graph):**
+**Auxiliary flows (outside the 14-node graph):**
 
 - **Gmail triage lane** (`agents/gmail_triage.py`): the free OpenRouter lane runs on the Free Models Router (`openrouter/free` — auto-selects the best free model per request) handling single-document Gmail uploads through classification + key extraction + auditable-hash archive without calling paid agents. Multi-document emails and documents exceeding the free budget route to the full pipeline.
 - **Relations clerk** (`pipeline/relations.py`): post-archive deterministic association scanning (same-matter, keyword Jaccard, party overlap, embedding cosine) with an optional LLM judgment pass for ambiguous near-misses. Dispatched off the document path at every terminal manifest.
@@ -366,6 +370,7 @@ flowchart TB
     subgraph CLASSIFY["Classification"]
         SORTER["SorterAgent<br/>5 live doc classes + 25 CUAD contract subtypes<br/>(vendored LangChain agent, prompt lineage v0–v14)"]
         REVIEWER["SorterReviewerAgent<br/>second opinion on medium-confidence<br/>classifications (Lane A)"]
+        CLASS_ARBITER["ClassificationArbiterAgent<br/>arbitrates a parked or failed decision<br/>review before a person sees it"]
     end
 
     subgraph SPECIALISTS["Extraction Specialists — one per document class"]
@@ -400,6 +405,7 @@ flowchart TB
     GMAIL -.->|free lane| SORTER
     SORTER -- "class + subtype + confidence" --> SPECIALISTS
     REVIEWER -. "Lane A: medium band" .-> SORTER
+    REVIEWER -. "parked or failed review" .-> CLASS_ARBITER
     SPECIALISTS -- "extraction + confidence" --> JUDGE
     JUDGE -. "Lane B: partial" .-> ARBITER
     SPECIALISTS -- "conflict" --> BOSS
@@ -940,7 +946,7 @@ The pipeline is assembled from these open-source projects:
 
 | Project | What it does here |
 | :--- | :--- |
-| [LangGraph](https://github.com/langchain-ai/langgraph) · [LangChain](https://github.com/langchain-ai/langchain) | The 13-node state machine, checkpoints and the vendored agents |
+| [LangGraph](https://github.com/langchain-ai/langgraph) · [LangChain](https://github.com/langchain-ai/langchain) | The 14-node state machine, checkpoints and the vendored agents |
 | [Pydantic](https://github.com/pydantic/pydantic) | Extraction schemas, manifests and matter records |
 | [FastAPI](https://github.com/fastapi/fastapi) · [Uvicorn](https://github.com/encode/uvicorn) · [watchdog](https://github.com/gorakhargosh/watchdog) | The upload, review, status and audit API and the inbox watcher |
 | [SQLAlchemy](https://www.sqlalchemy.org/) · SQLite | The async ORM over the default SQLite store: catalog, hash-chained audit log and the relations clerk |

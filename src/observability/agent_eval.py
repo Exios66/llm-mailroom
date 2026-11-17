@@ -2,7 +2,7 @@
 
 Live Langfuse evaluators remain pipeline-level (``pipeline-result``) by
 design. This module is the local methodology for scoring a single agent
-without running the 13-node graph.
+without running the 14-node graph.
 
 Cases come from test fixtures, local eval packs, and the live manifest.
 ``--real`` is gated by ``prepare_samples.is_real_sample`` the same way

@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command, interrupt
 
@@ -19,27 +19,19 @@ from graph.state import DocumentState
 # field scoring / judge gating run on package defaults, not the calibrated map.
 import observability.scoring_wiring  # noqa: F401,E402
 from graph.routing import (
+    entry_route,  # noqa: F401  (re-export: callers import it from graph.build_graph)
     after_classify,
-    after_retry_classify,
-    after_review_classify,
     after_extraction,
-    after_extraction_gated,
     after_retry_extraction,
-    after_retry_extraction_gated,
-    after_judge,
-    after_arbiter,
-    after_classification_arbiter,
-    after_boss,
     conflict_fingerprint,
-    after_human_review,
     human_fields_applied,
     HUMAN_APPLIED,
-    after_report,
     judge_gate,
     judge_should_run,
     keep_best_attempt_enabled,
 )
 from graph import attempts as attempt_history
+from graph.route_spec import wire_edges
 from observability.tracing import pipeline_trace, traced_node, observation
 from schemas.manifest import DocumentManifest, PipelineStage
 from pipeline.config import get_confidence_thresholds, UNKNOWN_DOC_TYPE
@@ -275,36 +267,6 @@ def _extract_text_from_pdf(file_path: Path) -> tuple[str, bool]:
     except Exception:
         logger.exception("pdf_fallback_failed")
     return (f"[PDF file: {file_path.name} — transcription failed]", False)
-
-
-def entry_route(state: dict) -> str:
-    """Entry router: a review-resume re-invocation starts at fresh extraction
-    (doc_type already known from the manifest); everything else goes through
-    normal intake → classify.
-
-    The `review_decision == "approved"` guard is deliberate: only the
-    resume-from-review path sets it, so a crashed/partial run can never be
-    mistaken for a resume and skip classification (pilot: correspondence_01
-    ended with output=null when a degraded second run took the extract branch
-    without a real classification).
-    """
-    if (
-        state.get("resume_extraction")
-        and state.get("review_decision") == "approved"
-        and state.get("doc_type")
-    ):
-        return "extract"
-    # Stateless fallback for a human-applied review (the interrupt checkpoint
-    # is gone after a restart): the reviewer's fields enter the same tail the
-    # live interrupt resume reaches. Guarded by the explicit token + provenance,
-    # like the "approved" branch above.
-    if (
-        state.get("resume_extraction")
-        and state.get("doc_type")
-        and human_fields_applied(state)
-    ):
-        return "compile_report"
-    return "intake"
 
 
 def _build_handoff_context(state: DocumentState) -> str | None:
@@ -3807,92 +3769,9 @@ def build_graph(checkpointer=None):
     workflow.add_node("catalog_write", traced_node("write-catalog")(_bounded(catalog_write_node)))
     workflow.add_node("archive", traced_node("archive-document")(_bounded(archive_node)))
 
-    workflow.add_conditional_edges(START, entry_route, {
-        "intake": "intake",
-        "extract": "extract",
-        "compile_report": "compile_report",  # stateless human-applied review
-    })
-    workflow.add_edge("intake", "classify")
-
-    workflow.add_conditional_edges("classify", after_classify, {
-        "classify": "classify",  # transient-error self-loop (same node, LLM-level retry)
-        "retry_classify": "retry_classify",
-        "review_classify": "review_classify",  # GT class miss even at 0.99
-        "extract": "extract",
-        "human_review": "human_review",
-    })
-
-    workflow.add_conditional_edges("retry_classify", after_retry_classify, {
-        "retry_classify": "retry_classify",  # transient self-loop (own per-node budget)
-        "review_classify": "review_classify",
-        "extract": "extract",
-        "human_review": "human_review",
-    })
-
-    # KANBAN-062 (Lane A): agent second opinion. High-confidence reviewer →
-    # extract (label applied by the node); anything else → human review.
-    workflow.add_conditional_edges("review_classify", after_review_classify, {
-        "review_classify": "review_classify",  # transient self-loop (own per-node budget)
-        "extract": "extract",
-        "classification_arbiter": "classification_arbiter",
-        "human_review": "human_review",
-    })
-    workflow.add_conditional_edges("classification_arbiter", after_classification_arbiter, {
-        "extract": "extract",
-        "human_review": "human_review",
-    })
-
-    workflow.add_conditional_edges("extract", after_extraction_gated, {
-        "extract": "extract",  # transient-error self-loop (same node, LLM-level retry)
-        "retry_extract": "retry_extract",
-        "compile_report": "compile_report",
-        "judge_verify": "judge_verify",
-        "human_review": "human_review",
-        "boss_escalation": "boss_escalation",
-    })
-
-    workflow.add_conditional_edges("retry_extract", after_retry_extraction_gated, {
-        "retry_extract": "retry_extract",  # transient self-loop (own per-node budget)
-        "compile_report": "compile_report",
-        "judge_verify": "judge_verify",
-        "human_review": "human_review",
-        "boss_escalation": "boss_escalation",
-    })
-
-    # KANBAN-063 (Lane B): judge verdict routing — complete/skipped proceeds;
-    # partial/incomplete goes to the arbiter; hard failure escalates fail-safe.
-    workflow.add_conditional_edges("judge_verify", after_judge, {
-        "judge_verify": "judge_verify",  # transient self-loop (own per-node budget)
-        "compile_report": "compile_report",
-        "arbiter": "arbiter",
-        "human_review": "human_review",
-    })
-
-    workflow.add_conditional_edges("arbiter", after_arbiter, {
-        "arbiter": "arbiter",  # transient self-loop (own per-node budget)
-        "compile_report": "compile_report",
-        "retry_extract": "retry_extract",
-        "human_review": "human_review",
-    })
-
-    workflow.add_conditional_edges("boss_escalation", after_boss, {
-        "boss_escalation": "boss_escalation",  # transient self-loop (own per-node budget)
-        "compile_report": "compile_report",
-        "human_review": "human_review",
-    })
-
-    workflow.add_conditional_edges("human_review", after_human_review, {
-        "extract": "extract",
-        "compile_report": "compile_report",  # reviewer's fields, no LLM
-        "failed": END,
-    })
-
-    workflow.add_conditional_edges("compile_report", after_report, {
-        "catalog_write": "catalog_write",
-        "human_review": "human_review",
-    })
-    workflow.add_edge("catalog_write", "archive")
-    workflow.add_edge("archive", END)
+    # Edge topology is declared once, in graph/route_spec.py (ROUTE_SPECS / PLAIN_EDGES):
+    # validated against the nodes above, then wired. Routers keep their names and logic.
+    wire_edges(workflow)
 
     return workflow.compile(checkpointer=checkpointer)
 

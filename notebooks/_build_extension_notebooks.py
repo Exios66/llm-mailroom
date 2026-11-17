@@ -403,7 +403,7 @@ def nb12() -> None:
         md("""# 12 · LegalBench — the evaluation suite beside the pipeline
 
 LegalBench is a **second lens** on model quality: it does not sit inside the
-13-node graph. Two task families run against locally mirrored CUAD corpora
+14-node graph. Two task families run against locally mirrored CUAD corpora
 (or, here, a miniature fixture so the notebook is network-free).
 
 **What you'll see:** the live task registry, a mock `contract_qa` run, a mock
