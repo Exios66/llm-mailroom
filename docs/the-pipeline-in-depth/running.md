@@ -264,7 +264,7 @@ PYTHONPATH=src python src/scripts/run_hf_pilot.py --real --per-class 1
 | Script | What it does | Main flags |
 | --- | --- | --- |
 | `run_quality_judges.py` | LLM-as-a-judge over a pilot report: classification, completeness, correctness | `--mock` or `--real`, `--judges LIST`, `--report PATH` (default `{MAILROOM_BASE_DIR}/pilot_report.json`), `--hf-report PATH` (repeatable), `--hf-latest N`, `--on-existing-traces`, `--new-judge-traces` |
-| `run_agent_eval.py` | Evaluates one agent in isolation (no 13-node graph) | `--list`, `--agent NAME\|all`, `--mock`, `--real`, `--n N`, `--self-check`, `--json` |
+| `run_agent_eval.py` | Evaluates one agent in isolation (no 14-node graph) | `--list`, `--agent NAME\|all`, `--mock`, `--real`, `--n N`, `--self-check`, `--json` |
 | `run_vision_sweep.py` | Runs the same documents as text-only, vision-10 and vision-all (each a separate `run_pilot.py` process) | `--real` or `--mock`, `--include`, `--source`, `--max-docs N` (default 3), `--configs`, `--dry-run` |
 | `write_pilot_report.py` | Renders the vision-tradeoff pilot report from `data/vision_sweep/*.json` | `--out PATH`, `--dry-run` |
 | `calibrate_field_scoring.py` | Reports per-field-type score separation and calibrated `field_scoring.type_bands` cutoffs | `--band LOW HIGH`, `--json`, `--seed`, `--max-fields` |

@@ -10,7 +10,7 @@
 #   │  watchdog ─────► heartbeat on the shared /data volume (app's PID namespace)    │
 #   └────────────────────────────────────────────────────────────────────────────────┘
 #
-# The LangGraph pipeline runs IN the app process (all 13 nodes): nodes hand a
+# The LangGraph pipeline runs IN the app process (all 14 nodes): nodes hand a
 # DocumentState to each other in memory and documents move through the
 # filesystem bins on the shared `mailroom_data` volume (inbox → processing →
 # archive/review/failed). Only LLM calls leave the host — through the gateway,

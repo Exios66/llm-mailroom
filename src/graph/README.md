@@ -13,18 +13,22 @@ intake → classify → (extract | retry_classify | human_review) → extract �
 
 At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **confidence score** and decides what happens next: proceed, retry with a stronger prompt, send to the Boss, or route to a human.
 
-## The 11 nodes (in `build_graph.py`)
+## The 14 nodes (in `build_graph.py`)
 
 | Node | What it does |
 |---|---|
 | `intake` | Reads the file, deterministic `normalize-intake`, gated LLM triage/clean/prepare, creates the manifest, moves file to `processing/` |
 | `classify` | Sorter LLM decides `doc_type` + confidence |
 | `retry_classify` | Re-classify with a "re-evaluate" prompt when confidence was low |
+| `review_classify` | Lane A: an independent reviewer agent classifies a medium-band document without seeing the sorter's answer; agreement or a high-confidence override can proceed, anything else keeps the sorter label for human review |
+| `classification_arbiter` | Arbitrates a parked or failed decision review before a person sees it: picks the sorter's class, the reviewer's class or human review, and continues only above the calibrated arbiter cutoff |
 | `extract` | Routes to the right specialist LLM, stores `extracted_data` |
 | `retry_extract` | Re-extract with the previous attempt included as context |
+| `judge_verify` | Lane B: gated completeness judge on the specialist's extraction (`complete` proceeds; `partial` / `incomplete` go to `arbiter`) |
+| `arbiter` | Lane B: bounded decision on a failed judge verdict (`accept_with_caveats`, retry with a fix list, or `human_review`) |
 | `human_review` | Parks the file in `review/` (idempotent upsert) and pauses the graph with LangGraph `interrupt()` until a human `Command(resume=...)` |
 | `boss_escalation` | Boss LLM adjudicates conflicts / repeated failures |
-| `compile_report` | Reporter LLM writes the matter-record summary |
+| `compile_report` | Procedural reporter assembles the matter-record summary (no LLM) |
 | `catalog_write` | Writes the document + matter to the database (best-effort) |
 | `archive` | Moves file to `archive/<matter_id>/<type>/`, writes audit entry |
 
@@ -36,9 +40,9 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
 - `build_graph.py` also handles:
   - Text extraction for images/PDFs (`_read_file_text` → `agents/image_extractor.py`, `agents/pdf_transcriber.py`).
   - Deterministic intake normalize (`agents/intake.py` → `llm_dojo_scoring.intake`) after transcription; nested span `normalize-intake` (The-Mailroom maps it to INGEST). Scored via `get_suite("intake")`.
-  - Specialist dispatch via `_build_specialist_dispatch()` — **config-driven**: it walks `doc_classes` in `config/taxonomy.yaml` and maps each `specialist:` name to its extraction function (5 configured classes / 4 specialists: contracts also covers MAUD `merger_agreement`, plus corporate records, correspondence, insurance claims). Graph construction asserts dispatch keys equal taxonomy keys; a missing arm fails fast instead of silently stub-extracting. `unknown` is a sorter routing token, not a dispatch key. Adding an agent means adding a taxonomy entry + dispatch case.
+  - Specialist dispatch via `_build_specialist_dispatch()` — **config-driven**: it walks `doc_classes` in `config/taxonomy.yaml` and maps each `specialist:` name to its extraction function (5 configured classes, 5 specialists: `contract` → `contracts_specialist`, `merger_agreement` (MAUD) → `merger_agreement_specialist`, `corporate_record` → `corporate_records_specialist`, `correspondence` → `correspondence_specialist`, `insurance_claim` → `insurance_claims_specialist`). Graph construction asserts dispatch keys equal taxonomy keys; a missing arm fails fast instead of silently stub-extracting. `unknown` is a sorter routing token, not a dispatch key. Adding an agent means adding a taxonomy entry + dispatch case.
   - The **checkpointer** (`_build_checkpointer`): **MemorySaver by default**, held on a process-level compiled graph (`get_compiled_graph`) so `interrupt()` HITL can resume in-process. Filesystem `review/` is the durable park; `resume_from_review` uses `Command(resume=...)` when a checkpoint exists, else re-invokes from extract. `MAILROOM_CHECKPOINTER=sqlite` opts into on-disk `SqliteSaver` at `data/checkpoints.db`.
-  - **Chunked extraction** (`_run_chunked_extraction`): every live specialist (contracts, corporate records, correspondence, insurance). Window size is capped at the agent's `max_input_chars`.
+  - **Chunked extraction** (`_run_chunked_extraction`): every live specialist (contracts, merger agreements, corporate records, correspondence, insurance). Window size is capped at the agent's `max_input_chars`.
   - `run_pipeline(file_path, matter_id)` — convenience entrypoint that reuses the process-level graph and runs one document.
   - **Judge gating**: for grounded runs with deterministic field scoring, `_emit_pipeline_result` suppresses the `pipeline-result` generation when the verdict is unambiguous (see `field_scoring.type_bands` in `taxonomy.yaml`) — saving both LLM-as-judge evaluator calls.
 - Conditional edges are declared once in `route_spec.py` (`ROUTE_SPECS`: each node's router from `routing.py` and its destination map; `PLAIN_EDGES`), and `wire_edges` adds them after checking that every destination exists and each router's `Literal` return annotation matches its map. For example `after_classify` can return `"classify"` (transient self-loop), `"retry_classify"`, `"review_classify"`, `"extract"` or `"human_review"`. `add_route_rule` lets a rule refine a node's route; see the module docstring for the contract.

@@ -252,7 +252,7 @@ PYTHONPATH=src python -m legalbench.cli --task family_classification --n 20 --mo
 ## Source ownership and Digital-Mailroom integration
 
 This standalone repository is the authoritative source for the pipeline:
-its 13-node graph, agents, storage, API, and production prompt selection.
+its 14-node graph, agents, storage, API, and production prompt selection.
 Develop and validate changes here, then commit them upstream before importing
 that committed source into Digital-Mailroom. Do not copy hub package trees or
 export hub patches into this repository.

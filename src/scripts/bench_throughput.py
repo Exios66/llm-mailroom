@@ -31,6 +31,10 @@ include time queued behind the thread pool. All numbers are mock-LLM numbers: ab
 values are NOT production numbers, only the shape across concurrency levels and the
 overhead that is independent of provider latency are meaningful.
 
+Provenance (commit, ``tree_clean``, machine notes including the load average) is captured
+before the first level and HEAD/cleanliness is re-checked after the last; the report carries
+``provenance_changed`` (and ``provenance_after``) when they differ.
+
 Retry backoff sleeps are shortened through the taxonomy ``llm_retry`` block (mutated in the
 worker process only, via ``--retry-base-delay-ms``); both retry layers
 (``llm/retry.py`` and the LangChain agents) read that block.
@@ -51,6 +55,7 @@ import collections
 import contextvars
 import functools
 import json
+import math
 import os
 import platform
 import shutil
@@ -70,6 +75,7 @@ sys.path.insert(0, str(SRC_DIR))
 from scripts.stress_test import ScaleMock, _u, _worker_env, make_corpus  # noqa: E402
 
 SCHEMA_VERSION = 1
+_ERROR_TEXT_CHARS = 120  # failure text kept per document: enough to group causes, never document text
 DEFAULT_LEVELS = (1, 4, 16, 64)
 #: Closed local port: if a seam were ever missed, a request fails fast on this machine
 #: instead of reaching a hosted provider.
@@ -297,6 +303,14 @@ def render_markdown(report: dict) -> str:
         f"Mock LLM, {cfg['docs']} documents per level, {cfg['latency_ms']:g} ms injected per LLM call, "
         f"rate-limit fraction {cfg['rate_limit_rate']:g}. Not production numbers.",
     ]
+    if report.get("provenance_changed"):
+        after = report.get("provenance_after") or {}
+        lines += [
+            "",
+            f"Provenance changed during the run: measured at {report.get('commit') or '?'} "
+            f"(clean tree: {report.get('tree_clean')}), HEAD afterwards {after.get('commit') or '?'} "
+            f"(clean tree: {after.get('tree_clean')}). Do not cite these numbers for one commit.",
+        ]
     return "\n".join(lines) + "\n"
 
 
@@ -519,8 +533,11 @@ def _run_documents(bins, corpus, concurrency: int, run_pipeline, recorder: Recor
             claimed = bins.claim_file(bins.inbox_dir() / name, f"bench{index}")
             result = run_pipeline(claimed, matters[index % len(matters)])
             stage = result.get("stage")
+            if stage == "failed":  # run_pipeline reports an aborted run by returning it, not raising
+                message = result.get("error_message")
+                error = str(message)[:_ERROR_TEXT_CHARS] if message else None
         except Exception as exc:  # noqa: BLE001 - a raising document is a result, not a crash
-            stage, error = "raised", f"{type(exc).__name__}: {str(exc)[:120]}"
+            stage, error = "raised", f"{type(exc).__name__}: {str(exc)[:_ERROR_TEXT_CHARS]}"
         finally:
             latency = time.perf_counter() - t0
             _DOC.reset(token)
@@ -602,6 +619,16 @@ def _git(*args: str) -> str:
         return ""
 
 
+def git_state() -> dict:
+    """The commit and cleanliness the benchmark is measuring."""
+    return {"commit": _git("rev-parse", "HEAD"), "tree_clean": _git("status", "--porcelain") == ""}
+
+
+def provenance_changed(before: dict, after: dict) -> bool:
+    """True when HEAD or the working tree moved while the levels ran."""
+    return before.get("commit") != after.get("commit") or before.get("tree_clean") != after.get("tree_clean")
+
+
 def machine_notes() -> dict:
     load = None
     try:
@@ -677,6 +704,32 @@ def unit_fraction(text: str) -> float:
     return value
 
 
+def _finite_float(text: str, flag_hint: str) -> float:
+    try:
+        value = float(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected {flag_hint}, got {text!r}") from exc
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(f"expected {flag_hint}, got {text!r}")
+    return value
+
+
+def non_negative_float(text: str) -> float:
+    """A finite number >= 0 (latency and backoff milliseconds; 0 disables the sleep)."""
+    value = _finite_float(text, "a finite number >= 0")
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"expected a finite number >= 0, got {text!r}")
+    return value
+
+
+def positive_float(text: str) -> float:
+    """A finite number > 0 (the per-level timeout in seconds)."""
+    value = _finite_float(text, "a finite number > 0")
+    if value <= 0:
+        raise argparse.ArgumentTypeError(f"expected a finite number > 0, got {text!r}")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter
@@ -684,10 +737,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--levels", type=positive_int_list, default=list(DEFAULT_LEVELS),
                     help="comma-separated concurrency levels (default 1,4,16,64)")
     ap.add_argument("--docs", type=int, default=128, help="documents per level (default 128)")
-    ap.add_argument("--latency-ms", type=float, default=200.0, help="injected latency per LLM call (default 200)")
+    ap.add_argument("--latency-ms", type=non_negative_float, default=200.0, help="injected latency per LLM call (default 200)")
     ap.add_argument("--rate-limit-rate", type=unit_fraction, default=0.0,
                     help="fraction of LLM calls answered with an injected 429 (default 0)")
-    ap.add_argument("--retry-base-delay-ms", type=float, default=50.0,
+    ap.add_argument("--retry-base-delay-ms", type=non_negative_float, default=50.0,
                     help="retry backoff base used instead of the taxonomy 1 s / 8 s (default 50)")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--clean", action="store_true",
@@ -696,7 +749,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--warmup-docs", type=int, default=1, help="documents run and discarded before measuring (default 1)")
     ap.add_argument("--json-out", default=None, help="write the full report as JSON")
     ap.add_argument("--md-out", default=None, help="write the markdown tables")
-    ap.add_argument("--timeout", type=float, default=900.0, help="per-level timeout in seconds (default 900)")
+    ap.add_argument("--timeout", type=positive_float, default=900.0, help="per-level timeout in seconds (default 900)")
     ap.add_argument("--workdir", default=None, help="parent directory for scratch dirs (default system temp)")
     ap.add_argument("--keep", action="store_true", help="keep scratch dirs (worker logs, DBs)")
     ap.add_argument("--log-level", default="CRITICAL", help="LOG_LEVEL for workers (default CRITICAL)")
@@ -723,20 +776,29 @@ def main(argv: list[str] | None = None) -> int:
         "long_docs": args.long_docs,
         "warmup_docs": args.warmup_docs,
     }
+    # Provenance is observed before the first level so it describes what is measured; it is
+    # re-checked after the last level and the report says if it moved in between.
+    git_before = git_state()
+    machine = machine_notes()
     started = time.time()
     levels = []
     for c in args.levels:
         print(f"== concurrency {c}: {args.docs} docs ...", file=sys.stderr, flush=True)
         levels.append(run_level({**base_cfg, "concurrency": c}, args))
+    git_after = git_state()
+    changed = provenance_changed(git_before, git_after)
+    if changed:
+        print("! provenance changed while the levels ran (HEAD or working tree moved)", file=sys.stderr)
     report = {
         "schema_version": SCHEMA_VERSION,
         "kind": "graph-throughput-benchmark",
         "mock_llm": True,
         "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
         "command": "PYTHONPATH=src python src/scripts/bench_throughput.py " + " ".join(argv if argv is not None else sys.argv[1:]),
-        "commit": _git("rev-parse", "HEAD"),
-        "tree_clean": _git("status", "--porcelain") == "",
-        "machine": machine_notes(),
+        **git_before,
+        "provenance_changed": changed,
+        **({"provenance_after": git_after} if changed else {}),
+        "machine": machine,
         "config": {**base_cfg, "levels": args.levels},
         "levels": levels,
     }

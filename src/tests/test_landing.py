@@ -20,7 +20,7 @@ INSTALL = (
 )
 BADGES = (
     "python-3.11%2B-blue",
-    "LangGraph-13--node%20state%20machine-4C8CBF",
+    "LangGraph-14--node%20state%20machine-4C8CBF",
     "LLM-OpenRouter%20%7C%20Ollama%20%7C%20vLLM-8A2BE2",
     "tracing-Langfuse%20%7C%20Braintrust%20%7C%20Phoenix-F5A623",
     "storage-SQLite--first-lightgrey",
