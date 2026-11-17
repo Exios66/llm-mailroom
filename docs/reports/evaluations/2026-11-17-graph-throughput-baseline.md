@@ -3,13 +3,24 @@
 - **Date**: 2026-11-17 (UTC)
 - **Kind**: evaluations (offline load benchmark; no real model, no hosted service)
 - **Status**: baseline recorded. **Measured at commit `df127446e0449a134e1de8c5cd9fdce18504ad7e`**
-  (`df12744`, branch `claude/project-thread-lwyq6k`), with `tree_clean: true` in each JSON. #286 was
-  squash-merged, so `df12744` is not on `v0.30.0` or `main`; its code is in the #286 squash (`49425a3`).
-  #283, #284 and #288 landed on `v0.30.0` before that squash but after the measurement. That flag was
-  sampled after each run finished, not before, so it does not prove the tree stayed clean during
-  the run (the script now checks before and after, and fails a run whose provenance moved). The commit that adds this report changes only the report, its three JSON
-  files, `CHANGELOG.md` and the generated `docs/changelog/`; no pipeline code and no script differs
-  from the measured commit. Nothing in the pipeline was changed.
+  (`df12744`, branch `claude/project-thread-lwyq6k`), with `tree_clean: true` in each JSON. That flag
+  was sampled after each run finished, not before, so it does not prove the tree stayed clean during
+  the run (the script now checks before and after, and fails a run whose provenance moved).
+  #286 was squash-merged, so `df12744` is not reachable from `v0.30.0` or `main`; the measured code,
+  the benchmark script and this report are all in the single #286 squash commit `49425a3`.
+  What `git` supports as of the time of writing (checked at `v0.30.0` head, `dee8512` plus later fixes):
+  - `src/scripts/bench_throughput.py` has one commit, `49425a3`, and has not changed since.
+    `df12744` itself is not in this clone, so the script at `df12744` was not diffed against it.
+  - #283, #284 and #288 are ancestors of `49425a3` and landed after the measurement. #283 changes
+    insurance extraction enrichment (`doc_inventories.py`, `specialist_agents.py`, `posthoc_gt.py`,
+    `extraction_gt.py`, `schemas/documents.py`); #284 changes only the opt-in interim ground-truth
+    overlay, the HF pilot and a test hook; #288 changes only tests. None touches `src/graph/`, `src/storage/`
+    or the watcher, so none changes the graph wiring or the storage path this benchmark exercises.
+    Whether #283's per-insurance-document derivation moves any number was not measured.
+  - #289 (decision points) came after `49425a3` and does change `src/graph/build_graph.py`,
+    `graph/state.py`, `pipeline/config.py`, `pipeline/watcher.py` and `pipeline/reconsideration.py`.
+    It is off by default (no wrapper is added without a configured slot), but this baseline was not
+    re-run on it, so the numbers below describe the pre-#289 graph.
 - **Revision note**: the first version of this report (commit `a29f69a`) was measured at
   `e00ac25`, which is not in this branch's history, and its text claimed more than its numbers
   support. Everything below was re-measured on the shipped tree and the conclusions were rewritten
@@ -150,7 +161,7 @@ backoff the throughput equals the clean c=4 baseline above (214 docs/min). That 
 | 4 | 48 / 0 | 67.7 | 43 | 4419 | 5092 | 52547 | 419 | 120 | 0.18 |
 | 16 | 48 / 0 | 53.9 | 53 | 6361 | 8496 | 53913 | 2285 | 120 | 0.30 |
 
-The 48-document mix contains one long document. Its end-to-end time is the max column: 52.6 s at
+The 48-document mix contains one long document. Its end-to-end time is the max column: 52.5 s at
 c=4 and 53.9 s at c=16, which is the whole wall time of the c=16 run.
 
 ## Findings
@@ -219,7 +230,7 @@ c=4 and 53.9 s at c=16, which is the whole wall time of the c=16 run.
    ones, 213 = 121 + 4 x 23 and 120 = 108 + 4 x 3; the 48-document runs give the same 23 and 3 for
    their single long document (70 = 47 + 23, 45 = 42 + 3). So a ~230,000-character document would
    take about 23 sequential sorter calls and 3 extraction calls: 26 calls, 5.7 s end to end at 200
-   ms per call (the maximum latency at c=1; a short document takes about 0.6 s), and 52.6 s at 2000
+   ms per call (the maximum latency at c=1; a short document takes about 0.6 s), and 52.5 s at 2000
    ms per call. At the provider-like latency that one document is the makespan of a 48-document run
    (53.9 s wall at c=16, equal to its max latency, against 67.7 s at c=4). This benchmark cannot say
    how common long documents are in the real corpus.
