@@ -83,7 +83,7 @@ def test_enrich_fills_canonical_tokens_without_clobbering_contracts():
         {"insurer": "CMS", "claim_type": "PDE"},
         doc_type="insurance_claim",
     )
-    assert claim["claim_type"] == "pde"
+    assert claim["claim_type"] == "health"  # a CMS table's product line (#174 §2)
     merger = enrich_extraction(
         {"contract_value": "all cash"},
         doc_type="merger_agreement",
@@ -231,7 +231,7 @@ def test_parse_hf_row_joins_insurance_ground_truth():
     assert row["claim_type"] == "outpatient"
     assert row["claim_number"] == "CLM-9"
     fields = expected_fields_for_sample(row)
-    assert fields["claim_type"] == "outpatient"
+    assert fields["claim_type"] == "health"  # the scored product line, not the CMS table (#174 §2)
     assert fields["insurer"] == "CMS Medicare"
 
     corp = expected_fields_for_sample({
@@ -319,7 +319,7 @@ def test_score_row_extraction_gates_homogeneous_insurance_gt():
     assert row["claim_type"] == "outpatient"
     assert row["claim_number"] == "CLM-9"
     fields = expected_fields_for_sample(row)
-    assert fields["claim_type"] == "outpatient"
+    assert fields["claim_type"] == "health"  # the scored product line, not the CMS table (#174 §2)
     assert fields["insurer"] == "CMS Medicare"
 
     corp = expected_fields_for_sample({
@@ -392,3 +392,41 @@ def test_intent_vocabulary_is_the_dojos():
     assert inv.INTENT_DESCRIPTIONS is dojo_intents.INTENT_DESCRIPTIONS
     assert inv._INTENT_ALIASES is dojo_intents.INTENT_ALIASES
     assert inv.normalize_intent is dojo_intents.normalize_intent
+
+
+def test_claim_type_is_the_scored_product_line_only():
+    """#174 §2: claim_type is Dojo INSURANCE_PRODUCT_LINES; a CMS table token scores 0 there."""
+    from llm_dojo_scoring.schemas.corpus import INSURANCE_PRODUCT_LINES as DOJO_LINES
+
+    from langchain_agents.doc_inventories import (
+        CMS_CLAIM_TABLES,
+        INSURANCE_PRODUCT_LINES,
+        normalize_claim_line,
+    )
+
+    assert INSURANCE_PRODUCT_LINES == tuple(DOJO_LINES)
+    assert CMS_CLAIM_TABLES == ("pde", "inpatient", "outpatient", "carrier")
+    for table in CMS_CLAIM_TABLES:
+        assert normalize_claim_line(table) == "health"
+    assert normalize_claim_line("Part D Event") == "health"
+    assert normalize_claim_line("Automobile") == "auto"
+    assert normalize_claim_line("") == ""
+    described = CLAIM_TYPE_DESCRIPTION.split("Emit exactly one of:", 1)[1].split(".", 1)[0]
+    assert tuple(t.strip() for t in described.split(",")) == INSURANCE_PRODUCT_LINES
+
+
+def test_enrich_never_backfills_a_cms_table_token_into_claim_type():
+    for subtype in ("pde", "inpatient", "outpatient", "carrier"):
+        out = enrich_extraction({"insurer": "CMS"}, doc_type="insurance_claim", subtype=subtype)
+        assert out["claim_type"] == "health", subtype
+        out = enrich_extraction({"claim_type": subtype}, doc_type="insurance_claim")
+        assert out["claim_type"] == "health", subtype
+    kept = enrich_extraction({"claim_type": "property"}, doc_type="insurance_claim", subtype="carrier")
+    assert kept["claim_type"] == "property"
+
+
+def test_insurance_handoff_teaches_the_product_line_not_the_table():
+    note = specialist_handoff("insurance_claim")
+    assert "claim_type is health" in note
+    assert "never a claim_type" in note
+    assert "Hub token" not in note

@@ -13,7 +13,9 @@ Canonical tokens (Hub ``expected_subclass``):
   ``demand``, ``attorney_demand``, ``press_release``, ``meeting_request``
 - ``insurance_claim`` — CMS/DE-SynPUF file types ``pde``, ``inpatient``,
   ``outpatient``, ``carrier`` (plus the legacy FNOL lines
-  ``auto``/``property``/``liability``/``health``/``life``/``workers_comp``)
+  ``auto``/``property``/``liability``/``health``/``life``/``workers_comp``).
+  These are sorter subclasses; the extracted ``claim_type`` is the product line
+  only (``INSURANCE_PRODUCT_LINES``), and a CMS table's line is ``health`` (#174 §2).
 
 Contract / merger inventories stay in ``cuad_maud.py``; this module
 dispatches to them so graph handoff / enrich / Boss-skip share one entry.
@@ -69,6 +71,13 @@ INSURANCE_CLAIM_TYPES: tuple[str, ...] = (
     "workers_comp",
     "other",
 )
+
+#: The CMS/DE-SynPUF source-table tokens: sorter subclasses, never a ``claim_type``.
+CMS_CLAIM_TABLES: tuple[str, ...] = INSURANCE_CLAIM_TYPES[:4]
+#: The scored ``claim_type`` vocabulary (Dojo ``INSURANCE_PRODUCT_LINES``, #174 §2). Since
+#: llm-dojo-scoring#93 the CMS table is its own field and a table token on ``claim_type``
+#: scores 0; every CMS row's product line is ``health``.
+INSURANCE_PRODUCT_LINES: tuple[str, ...] = INSURANCE_CLAIM_TYPES[4:]
 
 INSURANCE_GT_KEYS: tuple[str, ...] = (
     "claim_number",
@@ -396,6 +405,12 @@ def normalize_claim_type(value: Any) -> str:
     return _normalize(value, INSURANCE_CLAIM_TYPES, _INSURANCE_ALIASES)
 
 
+def normalize_claim_line(value: Any) -> str:
+    """``claim_type`` as a product line: a CMS table token (or a table subclass) is ``health``."""
+    token = normalize_claim_type(value)
+    return "health" if token in CMS_CLAIM_TABLES else token
+
+
 RECORD_TYPE_DESCRIPTION = (
     "Canonical Hub subclass. Emit exactly one of: articles_of_incorporation, "
     "bylaws, powers_of_attorney, rights_instrument, other. "
@@ -420,12 +435,11 @@ COMMUNICATION_TYPE_DESCRIPTION = (
 )
 
 CLAIM_TYPE_DESCRIPTION = (
-    "Canonical claim-file / line token. For CMS/DE-SynPUF claim tables emit "
-    "exactly one of: pde (Part D Event / prescription), inpatient, "
-    "outpatient, carrier (professional/physician/carrier). For traditional "
-    "FNOL/policy documents emit: auto, property, liability, health, life, "
-    "workers_comp. Use other only when none of those fit. Never leave this "
-    "empty when table headers identify a CMS file type."
+    "Line of business. Emit exactly one of: auto, property, liability, "
+    "health, life, workers_comp, other. A CMS/DE-SynPUF claim table "
+    "(Part D event, inpatient, outpatient or carrier/physician claim) is "
+    "health; never put a table name (pde, inpatient, outpatient, carrier) "
+    "here. Use other only when none of those fit."
 )
 
 
@@ -456,13 +470,13 @@ def specialist_handoff(doc_type: str | None, subtype: str | None = None) -> str:
         )
     if kind == "insurance_claim":
         return (
-            "INSURANCE CLAIM INVENTORY — set claim_type to a Hub token. "
-            "CMS/DE-SynPUF tables: "
-            + ", ".join(INSURANCE_CLAIM_TYPES[:4])
-            + ". Traditional FNOL lines: "
-            + ", ".join(INSURANCE_CLAIM_TYPES[4:])
-            + ". PDE/CLM_ID/DESYNPUF headers identify the CMS file type; "
-            "those tables are still insurance_claim claims."
+            "INSURANCE CLAIM INVENTORY — set claim_type to the line of business, "
+            "exactly one of: "
+            + ", ".join(INSURANCE_PRODUCT_LINES)
+            + ". CMS/DE-SynPUF tables (PDE/CLM_ID/DESYNPUF headers: "
+            + ", ".join(CMS_CLAIM_TABLES)
+            + ") are insurance_claim claims whose claim_type is health; "
+            "the table name is never a claim_type."
         )
     return ""
 
@@ -504,7 +518,7 @@ def enrich_extraction(
         if token and not (not own and token == "other"):
             result["communication_type"] = token
     elif kind == "insurance_claim":
-        token = normalize_claim_type(result.get("claim_type") or subtype)
+        token = normalize_claim_line(result.get("claim_type") or subtype)
         if token:
             result["claim_type"] = token
     if kind in INTENT_LABELS:
