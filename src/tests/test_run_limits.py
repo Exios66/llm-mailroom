@@ -108,6 +108,18 @@ class TestLimitsUnit:
         assert summary["prompt_tokens"] == 0
         assert summary["completion_tokens"] == 57
 
+    def test_zero_counts_preserve_audit_prompt_and_completion(self):
+        from pipeline.limits import _run_usage, record_usage, reset_run_usage
+
+        reset_run_usage()
+        record_usage(
+            {"input_tokens": 0, "output_tokens": 0, "prompt_tokens": 99, "completion_tokens": 99},
+            model="m", prompt="audit prompt", completion="audit response",
+        )
+        [call] = _run_usage.get()
+        assert (call["prompt_tokens"], call["completion_tokens"]) == (0, 0)
+        assert (call["prompt"], call["completion"]) == ("audit prompt", "audit response")
+
     @pytest.mark.parametrize(
         "prompt,completion",
         [

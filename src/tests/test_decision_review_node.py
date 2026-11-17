@@ -290,6 +290,22 @@ def test_permanent_backend_error_is_recorded_not_a_silent_no_answer(
     assert REVIEWER_UNAVAILABLE in collect_review_causes({**st, **updates})
 
 
+def test_permanent_backend_error_keeps_raw_cause_out_of_sender_echo(
+    decision_config, no_llm_reviewer
+):
+    from pipeline.gmail_intake import build_echo_body
+
+    private_detail = "provider denied document /private/client/input.pdf"
+    register_decision_backend(Spy(exc=RuntimeError(private_detail)))
+    updates = review_classify_node(state())
+    body = build_echo_body({"stage": "review", **updates})
+    assert private_detail in updates["error_message"]
+    assert private_detail in updates["escalation_reason"]
+    assert "decision reviewer error" in body
+    assert "RuntimeError" in body
+    assert private_detail not in body
+
+
 def test_permanent_backend_error_ends_in_human_review_when_arbiter_fails(
     decision_config, no_llm_reviewer, monkeypatch
 ):

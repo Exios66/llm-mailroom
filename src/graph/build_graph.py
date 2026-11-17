@@ -1325,7 +1325,8 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     confidence are kept unless the decision accepts, and
     ``escalation_reason`` uses structured fields rather than model text, except
     that a non-transient backend error appends its exception class and the
-    first 200 characters of its message. That error is also recorded as
+    first 200 characters of its message behind the internal ``[cause:`` marker
+    stripped by sender echoes. That error is also recorded as
     ``error_message`` beside ``reviewer_unavailable``, so it is not
     mistaken for a reviewer that answered nothing; it never sets
     ``transient_error``.
@@ -1350,6 +1351,7 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
 
     raw = None
     backend_error: str | None = None
+    backend_error_type: str | None = None
     if has_text:
         backend = get_decision_backend()
         if backend is None:
@@ -1392,6 +1394,7 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
                 # record it so the review record says why the reviewer was
                 # unavailable. decide_review turns the absent answer into
                 # REVIEWER_UNAVAILABLE; this is deliberately not a transient error.
+                backend_error_type = type(exc).__name__
                 backend_error = (
                     f"{_REVIEWER_ERROR_PREFIX} {type(exc).__name__}: {str(exc)[:200]}"
                 )
@@ -1464,7 +1467,7 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     if route.causes:
         reason += f" [{', '.join(route.causes)}] -- routing to human review"
     if backend_error is not None:
-        reason += f" [{backend_error}]"
+        reason += f" [{_REVIEWER_ERROR_PREFIX} {backend_error_type}] [cause: {backend_error}]"
     updates: dict[str, Any] = {
         "reviewer_doc_type": reviewer_type,
         "reviewer_contract_subtype": (

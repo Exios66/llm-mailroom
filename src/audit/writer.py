@@ -477,7 +477,9 @@ async def write_addendum(add: Addendum) -> WriteResult:
     rollback cannot deadlock the write. Transient SQLite lock errors retry the
     whole transaction in a fresh session under the shared PR #203 backoff,
     bounded to the same attempt budget; other database errors propagate
-    immediately. Failed transactions are rolled back.
+    immediately. Failed transactions are rolled back. Recovery-tagged ``resumed``
+    and ``recovered_detail`` records are idempotent by captured detail digest;
+    the duplicate check runs under the same document lock as the append.
     """
     if add.kind not in ADDENDUM_KINDS:
         raise ValueError(f"unknown addendum kind {add.kind!r}; expected one of {ADDENDUM_KINDS}")
@@ -513,6 +515,24 @@ async def _write_addendum_once(
                 row = await _existing_row(session, add.doc_id)
                 if row is None:
                     raise NoAuditRow(f"document {add.doc_id} has no audit row; addenda need one")
+                # Two recovery sweeps can read the same pending record before either
+                # appends it. Check its captured digest under the document lock,
+                # so retrying recovery cannot append the same record twice.
+                recovery = detail.get("recovered_from")
+                digest = recovery.get("detail_sha256") if isinstance(recovery, dict) else None
+                if add.kind in ("resumed", "recovered_detail") and digest:
+                    existing = (await session.execute(
+                        select(AuditAddendumRecord).where(
+                            AuditAddendumRecord.doc_id == add.doc_id,
+                            AuditAddendumRecord.kind == add.kind,
+                        )
+                    )).scalars().all()
+                    for prior in existing:
+                        provenance = (prior.detail or {}).get("recovered_from")
+                        if isinstance(provenance, dict) and provenance.get("detail_sha256") == digest:
+                            await session.commit()
+                            return WriteResult(entry_id=prior.addendum_id, entry_hash=prior.entry_hash,
+                                               kind="addendum", seq=prior.seq)
                 tail = (
                     await session.execute(
                         select(AuditAddendumRecord.seq, AuditAddendumRecord.entry_hash)

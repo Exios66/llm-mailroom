@@ -1082,3 +1082,47 @@ async def test_closing_a_partial_gap_does_not_drop_a_later_write_from_the_same_b
     assert small.pending == {} and late.pending == {}
     assert _manifest().audit_written is True and _manifest().audit_pending_refs == []
     assert (await verify_audit_db()).ok
+
+
+@pytest.mark.parametrize("partial", [False, True])
+async def test_concurrent_recovery_appends_each_parked_write_once(sinks, db_down, monkeypatch, partial):
+    import asyncio
+
+    import audit.writer as writer
+    from audit.reconcile import reconcile
+    from audit.verify import verify_audit_db
+
+    if partial:
+        small, late = FakeSink("small", max_payload_bytes=8_000), FakeSink("late")
+        sinks[:] = [small, late]
+        await writer.commit_or_park(_row(big=True))
+        held = dict(late.pending)
+        late.pending.clear()
+        db_down[0] = None
+        assert (await reconcile()).partial == 1
+        late.pending.update(held)
+    else:
+        await _row_then_park(db_down, _repeat_of(outcome="failed"))
+
+    original_get = writer.get_row
+    both_read = asyncio.Event()
+    reads = 0
+
+    async def same_snapshot(doc_id):
+        nonlocal reads
+        row = await original_get(doc_id)
+        reads += 1
+        if reads <= 2:
+            if reads == 2:
+                both_read.set()
+            await asyncio.wait_for(both_read.wait(), timeout=5)
+        return row
+
+    monkeypatch.setattr(writer, "get_row", same_snapshot)
+    reports = await asyncio.gather(reconcile(), reconcile())
+    assert all(r.failed == 0 for r in reports)
+    row = await original_get("d-1")
+    assert len(row["addenda"]) == 1
+    assert row["addenda"][0]["kind"] == ("recovered_detail" if partial else "resumed")
+    assert (await verify_audit_db()).ok
+    assert all(not sink.fetch_pending() for sink in sinks)
