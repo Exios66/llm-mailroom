@@ -11,7 +11,7 @@ import pytest
 
 
 def test_built_wheel_contains_and_loads_its_runtime_prompt_catalog(tmp_path):
-    """An isolated wheel must resolve its taxonomy and all 18 frozen templates."""
+    """An isolated wheel must resolve its taxonomy and all 22 templates (18 agent prompts + 4 label-alignment addenda)."""
     root = Path(__file__).resolve().parents[2]
     dist = tmp_path / "dist"
     # Build with this interpreter's own setuptools/wheel (both in the ``dev`` extra), so the
@@ -52,7 +52,7 @@ from pipeline import config
 from llm.prompts import prompt_templates
 assert config.CONFIG_PATH.resolve().is_relative_to(pathlib.Path(wheel).resolve())
 templates = prompt_templates()
-assert len(templates) == 18
+assert len(templates) == 22
 assert "corporate_records_specialist" in templates
 assert set(config.get_all_doc_types()) == {"contract", "corporate_record", "correspondence", "insurance_claim", "merger_agreement"}
 assert not any("editable" in repr(finder).lower() for finder in sys.meta_path)
@@ -67,4 +67,4 @@ print(json.dumps({"templates": len(templates), "config": str(config.CONFIG_PATH)
         cwd=tmp_path, env=environment, text=True, capture_output=True, timeout=45,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert json.loads(result.stdout.splitlines()[-1])["templates"] == 18
+    assert json.loads(result.stdout.splitlines()[-1])["templates"] == 22

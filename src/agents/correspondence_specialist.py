@@ -2,6 +2,7 @@ import structlog
 from agents.base import BaseAgent
 from langchain_agents.specialist_agents import CORRESPONDENCE_SCHEMA
 from llm.frozen_v1 import load_specialist_v1
+from llm.label_alignment import apply_label_alignment
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
@@ -45,7 +46,7 @@ class CorrespondenceSpecialist(BaseAgent):
 
     def system_prompt(self) -> str:
         text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
-        return text
+        return apply_label_alignment(self.agent_name, text)
 
     def extract(
         self,
