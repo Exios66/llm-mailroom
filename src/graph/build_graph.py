@@ -130,7 +130,13 @@ def get_compiled_graph():
 
 
 def reset_compiled_graph():
-    """Drop the process-level graph (tests change MAILROOM_BASE_DIR / saver)."""
+    """Drop the process-level graph (tests change MAILROOM_BASE_DIR / saver).
+
+    Also clears the decision-point routing rules the dropped graph installed, so call it
+    only between runs: a run still streaming on the old graph resolves its conditional
+    edges against the process-wide rule registry and would lose its decision-point
+    redirects (the router's own routes are unaffected).
+    """
     global _compiled_graph
     with _compiled_graph_lock:
         _compiled_graph = None

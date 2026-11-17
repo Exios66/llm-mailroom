@@ -194,7 +194,8 @@ class DecisionPointConfigError(ValueError):
 
 
 DECISION_POINT_ON_FAILURE = ("fail_open", "fail_safe")
-_DP_SLOT_NAME = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$")
+DECISION_POINT_MAX_TIMEOUT_SECONDS = 3600  # one hour; anything longer is a typo, not a decision call
+_DP_SLOT_NAME = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*\Z")
 _DP_SLOT_KEYS = frozenset({
     "node", "backend", "enabled", "timeout_seconds", "on_failure", "allow", "min_confidence", "by_class",
     "max_overrides",
@@ -227,7 +228,8 @@ def get_decision_points_config() -> dict[str, dict]:
     min_confidence, max_overrides, by_class}}`` in file order. A missing, empty or ``null`` section
     is ``{}``: no decision point, no wrapper, no rule, the pipeline runs as before.
     Defaults: ``enabled`` true (declaring a slot turns it on), ``timeout_seconds``
-    ``None`` (``run_limits.llm_call_timeout_seconds`` at call time), ``on_failure``
+    ``None`` (``run_limits.llm_call_timeout_seconds`` at call time; a set value is above 0
+    and at most ``DECISION_POINT_MAX_TIMEOUT_SECONDS``, 3600), ``on_failure``
     ``fail_open``, ``allow`` empty (the outcome is recorded and never routes),
     ``min_confidence`` ``None``, ``max_overrides`` 1 (how often the slot may redirect a
     document to a non-park destination), ``by_class`` ``{}`` holding only the keys a
@@ -273,8 +275,12 @@ def get_decision_points_config() -> dict[str, dict]:
                 entry["enabled"] = raw["enabled"]
         if raw.get("timeout_seconds") is not None:
             t = raw["timeout_seconds"]
-            if not _dp_is_number(t) or not math.isfinite(t) or t <= 0:  # type: ignore[arg-type]
-                problems.append(f"{where}: timeout_seconds must be a positive number")
+            # Bounds first: math.isfinite raises OverflowError on an int too large for a float.
+            if not _dp_is_number(t) or not 0 < t <= DECISION_POINT_MAX_TIMEOUT_SECONDS:  # type: ignore[operator]
+                problems.append(
+                    f"{where}: timeout_seconds must be a number above 0 and at most "
+                    f"{DECISION_POINT_MAX_TIMEOUT_SECONDS}"
+                )
             else:
                 entry["timeout_seconds"] = float(t)  # type: ignore[arg-type]
         if "on_failure" in raw:

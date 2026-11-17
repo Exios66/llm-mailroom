@@ -344,7 +344,7 @@ reviewer:
 #       backend: my_fee_checker    # registered name, or an import spec `module.path:callable`
 #                                  # (imported at startup; an import error stops the process)
 #       enabled: true              # default true; false keeps the slot declared but off
-#       timeout_seconds: 30        # default run_limits.llm_call_timeout_seconds; always
+#       timeout_seconds: 30        # 0 < t <= 3600; default run_limits.llm_call_timeout_seconds; always
 #                                  # capped by the time left on the run deadline
 #       on_failure: fail_safe      # fail_open (default): a timeout or error gives no hint
 #                                  # fail_safe: it parks the document for a person with the
