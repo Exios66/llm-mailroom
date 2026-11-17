@@ -51,14 +51,15 @@ How the pieces fit (``build_graph()`` calls :func:`prepare_slots`, :func:`wrap_n
   attribute error, or an async callable, is a ``DecisionPointConfigError``. A bare name that
   is not registered yet only logs ``decision_point_backend_unregistered`` (slot, backend,
   ``on_failure``; once per slot per process): registering lazily stays allowed.
-* **Limits of this phase.** The abandoned-thread cap (``_MAX_ABANDONED_DECISION_POINT_THREADS``)
-  is one list shared by every slot, so a stalled backend can make other slots' calls refuse
+* **Limits of this phase.** The live-thread cap (``_MAX_ABANDONED_DECISION_POINT_THREADS``:
+  running plus timed-out calls, reserved under a lock) is one list shared by every slot, so
+  a stalled backend, or four slow ones at once, can make other slots' calls refuse
   (``unavailable``). A consultation runs inside the node's ``_bounded`` wrapper, after the
   node itself: its time (the slot's ``timeout_seconds``, at most the time left on the run
   deadline) counts toward the node's wall-clock budget, not a separate one. There is no
-  concurrency limit and no circuit breaker: every document consults its slot, and a failing
+  circuit breaker: every document consults its slot, and a failing
   backend is retried by the next document, so a slow or down backend costs up to
-  ``timeout_seconds`` per document per slot. Both are planned for a later phase.
+  ``timeout_seconds`` per document per slot. A circuit breaker is planned for a later phase.
 * **Review causes.** An outcome whose vetted route is a park shows up in
   ``pipeline.reconsideration.collect_review_causes`` as
   ``decision_point:<slot>:<cause>``.
@@ -67,15 +68,17 @@ The older one-slot registries (``agents.decision_backend`` for the classificatio
 reviewer, ``agents.extraction_gate`` for the extraction gate) are unchanged and do not use
 slots yet; they will be moved onto slots later.
 
-Never logged: document text, evidence, backend error messages. Spans and logs carry the
-slot, backend, node, status, route hint, label, confidence, cause tokens and the
-exception class name.
+Never logged: document text, evidence, backend error messages, the backend's ``label``
+(free text that could quote the document). Spans and logs carry the slot, backend, node,
+status, route hint, the label's length, confidence, cause tokens and the exception class
+name.
 """
 from __future__ import annotations
 
 import contextvars
 import copy
 import functools
+import itertools
 import inspect
 import json
 import math
@@ -164,27 +167,33 @@ def run_bounded(
     """Run ``call()`` with a wall-clock bound and return its value.
 
     The timeout is ``timeout`` (default ``llm_call_timeout_seconds``), shortened to the
-    time left on the run deadline. The call runs on a daemon thread so a stalled backend
-    can neither block the worker nor keep the process alive; on expiry
-    :class:`DecisionBackendTimeout` is raised and the stray thread is tracked in
-    ``abandoned``. At ``max_abandoned`` live abandoned threads, new calls are refused with
-    :class:`DecisionBackendTimeout` instead of starting another. Exceptions raised by
-    ``call`` propagate unchanged. The caller's contextvars (run deadline, token
+    time left on the run deadline (a huge or NaN value is clamped or refused, never an
+    ``OverflowError``). The call runs on a daemon thread so a stalled backend can neither
+    block the worker nor keep the process alive; on expiry :class:`DecisionBackendTimeout`
+    is raised and the stray thread stays tracked in ``abandoned``.
+
+    ``abandoned`` holds every live thread of this kind: a call reserves its place in it,
+    under ``lock``, in the same step that checks the cap and starts the thread, so
+    concurrent callers cannot overshoot ``max_abandoned``. In-flight calls count too (any of
+    them may be abandoned a moment later): at ``max_abandoned`` live threads, new calls are
+    refused with :class:`DecisionBackendTimeout` instead of starting another. Exceptions
+    raised by ``call`` propagate unchanged. The caller's contextvars (run deadline, token
     accounting, tracing) are visible to ``call``.
     """
     from pipeline import limits
 
     if timeout is None:
-        timeout = float(limits.get_call_timeout_seconds())
+        timeout = limits.get_call_timeout_seconds()
+    try:
+        timeout = float(timeout)
+    except OverflowError:  # an int too large for a float: as good as no limit
+        timeout = float(threading.TIMEOUT_MAX)
     deadline = limits.get_run_deadline()
     if deadline is not None:
         timeout = min(timeout, deadline - time.time())
-    if timeout <= 0:
+    if not timeout > 0:  # also NaN
         raise DecisionBackendTimeout("no time left on the run deadline")
-    with lock:
-        abandoned[:] = [t for t in abandoned if t.is_alive()]
-        if len(abandoned) >= max_abandoned:
-            raise DecisionBackendTimeout(f"{len(abandoned)} stalled {name} calls still running")
+    timeout = min(timeout, float(threading.TIMEOUT_MAX))
 
     box: dict[str, Any] = {}
     ctx = contextvars.copy_context()
@@ -197,19 +206,28 @@ def run_bounded(
             box["error"] = exc
 
     thread = threading.Thread(target=_target, name=name, daemon=True)
-    thread.start()
-    thread.join(timeout)
+    with lock:  # check, reserve and start in one step: the cap cannot be overshot
+        abandoned[:] = [t for t in abandoned if t.is_alive()]
+        if len(abandoned) >= max_abandoned:
+            raise DecisionBackendTimeout(f"{len(abandoned)} stalled {name} calls still running")
+        try:
+            thread.start()
+        except RuntimeError:  # cannot start a new thread: no answer, not a backend fault
+            raise DecisionBackendTimeout(f"could not start a {name} thread") from None
+        abandoned.append(thread)
+    try:
+        thread.join(timeout)
+    except OverflowError:  # belt and braces: the clamp above should make this unreachable
+        thread.join(float(threading.TIMEOUT_MAX))
     if thread.is_alive():
-        with lock:
-            abandoned.append(thread)
         raise DecisionBackendTimeout(f"{name} exceeded {timeout:.0f}s")
     if "error" in box:
         raise box["error"]
     return box.get("value")
 
 
-# Timed-out decision-point calls leave a daemon thread behind. Past this many live
-# abandoned threads, new calls are refused (the slot's on_failure applies). Own list and
+# Live decision-point threads: running calls and timed-out ones that left a daemon thread
+# behind. At this many, new calls are refused (the slot's on_failure applies). Own list and
 # cap: stalled slots can never make the classification reviewer or the extraction gate
 # refuse calls, and the reverse.
 _MAX_ABANDONED_DECISION_POINT_THREADS = 4
@@ -221,10 +239,16 @@ _abandoned_lock = threading.Lock()
 # Contract: input and outcome
 # ---------------------------------------------------------------------------
 
-_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+_TOKEN = re.compile(r"[A-Za-z0-9_.:-]{1,64}")  # used with fullmatch: "$" would accept a trailing newline
 _MAX_CAUSES = 8
 _MAX_TEXT = 200
 _MAX_EVIDENCE_BYTES = 8192
+
+
+def _exact_str(value: Any) -> Any:
+    """A ``str`` subclass instance as a plain ``str`` (``__eq__``, ``__hash__``, ``__len__``
+    and friends of a hostile subclass no longer decide anything); other values as they are."""
+    return str.__str__(value) if isinstance(value, str) else value
 
 
 def _unit_float(value: Any) -> bool:
@@ -297,26 +321,40 @@ class DecisionOutcome:
     status: Status = "ok"
 
     def __post_init__(self) -> None:
-        hint = self.route_hint
+        # Every text field is coerced to an exact ``str`` first, so what is validated is what
+        # is stored and compared later (a ``str`` subclass could answer "equal" to anything).
+        hint = _exact_str(self.route_hint)
         if hint is not None and (not isinstance(hint, str) or not hint or len(hint) > 64):
             raise ValueError("route_hint must be a destination name or None")
-        label = self.label
+        object.__setattr__(self, "route_hint", hint)
+        label = _exact_str(self.label)
         if label is not None and (not isinstance(label, str) or len(label) > _MAX_TEXT):
             raise ValueError("label must be a string of at most 200 characters or None")
+        object.__setattr__(self, "label", label)
         conf = self.confidence
         if conf is not None:
+            if isinstance(conf, float):
+                conf = float.__float__(conf)  # an exact float, whatever a subclass overrides
+            elif isinstance(conf, int) and not isinstance(conf, bool):
+                conf = int.__int__(conf)
             if not _unit_float(conf):
                 raise ValueError("confidence must be a finite number from 0 to 1 or None")
             object.__setattr__(self, "confidence", float(conf))
         causes = self.causes
         if isinstance(causes, (str, bytes)) or not isinstance(causes, Iterable):
             raise ValueError("causes must be a sequence of tokens")
-        tokens = tuple(dict.fromkeys(causes))
-        if len(tokens) > _MAX_CAUSES or not all(isinstance(t, str) and _TOKEN.match(t) for t in tokens):
+        # Read at most one more than the cap, so an endless iterator cannot hang us.
+        items = list(itertools.islice(causes, _MAX_CAUSES + 1))
+        if len(items) > _MAX_CAUSES or not all(isinstance(t, str) for t in items):
+            raise ValueError("causes must be at most 8 tokens of [A-Za-z0-9_.:-], 1 to 64 characters")
+        tokens = tuple(dict.fromkeys(_exact_str(t) for t in items))
+        if not all(_TOKEN.fullmatch(t) for t in tokens):
             raise ValueError("causes must be at most 8 tokens of [A-Za-z0-9_.:-], 1 to 64 characters")
         object.__setattr__(self, "causes", tokens)
-        if not isinstance(self.model, str) or len(self.model) > _MAX_TEXT:
+        model = _exact_str(self.model)
+        if not isinstance(model, str) or len(model) > _MAX_TEXT:
             raise ValueError("model must be a string of at most 200 characters")
+        object.__setattr__(self, "model", model)
         if not isinstance(self.evidence, Mapping) or not all(isinstance(k, str) for k in self.evidence):
             raise ValueError("evidence must be a mapping with string keys")
         try:
@@ -326,8 +364,10 @@ class DecisionOutcome:
         if len(encoded) > _MAX_EVIDENCE_BYTES:
             raise ValueError("evidence is larger than 8 KB")
         object.__setattr__(self, "evidence", json.loads(encoded))
-        if self.status not in _STATUSES:
+        status = _exact_str(self.status)
+        if not isinstance(status, str) or status not in _STATUSES:
             raise ValueError("status must be ok, unavailable or invalid")
+        object.__setattr__(self, "status", status)
 
     def to_dict(self) -> dict[str, Any]:
         """JSON-serialisable form (what lands in ``decision_outcomes``)."""
@@ -350,18 +390,22 @@ def _failure(status: Status, reason: str, **extra: Any) -> DecisionOutcome:
 
 
 def normalize_outcome(raw: Any) -> DecisionOutcome:
-    """A backend's return value as a :class:`DecisionOutcome`; anything malformed is ``invalid``.
+    """A backend's return value as a plain :class:`DecisionOutcome`; anything malformed is ``invalid``.
 
     Accepts an outcome or a mapping with any of the outcome's keys (unknown keys are
-    dropped). Never raises.
+    dropped). A :class:`DecisionOutcome` subclass is rebuilt field by field, so it is
+    validated like any other answer. Never raises. It reads the backend's object (a lazy
+    mapping, an iterator), so :func:`consult` runs it inside the bounded call.
     """
-    if isinstance(raw, DecisionOutcome):
-        return raw
-    if not isinstance(raw, Mapping):
-        return _failure("invalid", "malformed_answer", answer_type=type(raw).__name__)
     try:
+        if type(raw) is DecisionOutcome:
+            return raw
+        if isinstance(raw, DecisionOutcome):
+            return DecisionOutcome(**{k: getattr(raw, k) for k in _OUTCOME_KEYS})
+        if not isinstance(raw, Mapping):
+            return _failure("invalid", "malformed_answer", answer_type=type(raw).__name__)
         return DecisionOutcome(**{k: raw[k] for k in _OUTCOME_KEYS if k in raw})
-    except Exception as exc:  # ValueError from validation; TypeError from a hostile mapping
+    except Exception as exc:  # ValueError from validation; anything a hostile object raises
         return _failure("invalid", "malformed_answer", detail=_safe_detail(exc))
 
 
@@ -585,7 +629,7 @@ def _first_time(seen: set, key: Any) -> bool:
         return True
 
 
-_IMPORT_SPEC = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_.]*$")
+_IMPORT_SPEC = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_.]*\Z")
 
 
 def _resolve_backend(policy: SlotPolicy) -> None:
@@ -622,7 +666,7 @@ def _resolve_backend(policy: SlotPolicy) -> None:
         target: Any = importlib.import_module(module_name)
         for part in attr_path.split("."):
             target = getattr(target, part)
-    except Exception as exc:  # ImportError, AttributeError, or whatever the module raises
+    except (Exception, SystemExit) as exc:  # ImportError, AttributeError, a module that exits, ...
         raise DecisionPointConfigError(
             f"invalid decision_points config:\n  - {where}: cannot import backend {spec!r}: "
             f"{type(exc).__name__}: {str(exc)[:200]}"
@@ -822,7 +866,7 @@ def _failed_outcome(policy: SlotPolicy, status: Status, reason: str, **extra: An
 
 
 def consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
-    """Ask ``policy``'s backend about ``inp``. Never raises (BaseExceptions aside).
+    """Ask ``policy``'s backend about ``inp``. Never raises (a ``KeyboardInterrupt`` aside).
 
     See the module docstring for the status of each failure. A usable answer is returned
     as the backend gave it (normalised), with any hint it carried; whether the hint may
@@ -858,7 +902,8 @@ def consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
                 span.update(
                     output={
                         "status": outcome.status, "route_hint": outcome.route_hint,
-                        "label": outcome.label, "confidence": outcome.confidence,
+                        "label_length": len(outcome.label) if outcome.label is not None else None,
+                        "confidence": outcome.confidence,
                         "causes": list(outcome.causes), "model": outcome.model,
                         "latency_ms": latency_ms,
                     },
@@ -883,8 +928,10 @@ def _consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
                            on_failure=policy.on_failure)
         return _failed_outcome(policy, "unavailable", "backend_not_registered")
     try:
-        raw = run_bounded(
-            lambda: backend(inp),
+        # The answer is normalised inside the bounded call: reading a lazy mapping or an
+        # iterator of causes is the backend's time too, and the bound returns a plain outcome.
+        outcome = run_bounded(
+            lambda: normalize_outcome(backend(inp)),
             name=f"decision-point-{policy.slot}",
             abandoned=_abandoned_threads,
             max_abandoned=_MAX_ABANDONED_DECISION_POINT_THREADS,
@@ -904,7 +951,10 @@ def _consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
         if transient:
             return _failed_outcome(policy, "unavailable", "transient_error", error=type(exc).__name__)
         return _failed_outcome(policy, "invalid", "backend_error", error=type(exc).__name__)
-    outcome = normalize_outcome(raw)
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:  # noqa: BLE001 - SystemExit, GeneratorExit...: never leave the consultation
+        return _failed_outcome(policy, "invalid", "backend_error", error=type(exc).__name__)
     if outcome.status != "ok":
         # Declared by the backend itself ("unavailable") or found malformed ("invalid"):
         # the backend's own hint is not trusted; on_failure decides.

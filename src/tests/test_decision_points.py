@@ -1562,3 +1562,252 @@ def test_state_declares_the_key():
 
 def test_input_state_view_type():
     assert isinstance(inp().state, MappingProxyType)
+
+
+# ---------------------------------------------------------------------------
+# Round-3 hardening: hostile backends, bounds, never-raise
+# ---------------------------------------------------------------------------
+
+
+class Chameleon(str):
+    """A str that claims to equal both a park and a redirect."""
+
+    def __eq__(self, other):
+        return other in ("human_review", "retry_extract")
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    __hash__ = str.__hash__
+
+
+class TestHostileAnswers:
+    def test_a_lazy_slow_mapping_is_unavailable_within_the_timeout(self):
+        from collections.abc import Mapping
+
+        release = threading.Event()
+
+        class Slow(Mapping):
+            def __getitem__(self, key):
+                release.wait(10)
+                raise KeyError(key)
+
+            def __iter__(self):
+                return iter(())
+
+            def __len__(self):
+                return 0
+
+        dp.register_decision_point_backend("fake", lambda i: Slow())  # returns at once; reading it stalls
+        try:
+            started = time.monotonic()
+            got = dp.consult(policy(timeout_seconds=0.3), inp())
+            assert time.monotonic() - started < 2.5
+            assert got.status == "unavailable" and got.evidence["reason"] == "timeout"
+        finally:
+            release.set()
+
+    def test_endless_causes_are_invalid_and_quick(self):
+        import itertools
+
+        for causes in (itertools.repeat("a"), (f"c{i}" for i in itertools.count())):
+            dp.register_decision_point_backend("fake", lambda i, c=causes: {"causes": c, "route_hint": "human_review"})
+            started = time.monotonic()
+            got = dp.consult(policy(timeout_seconds=5), inp())
+            assert time.monotonic() - started < 2
+            assert got.status == "invalid" and got.evidence["reason"] == "malformed_answer"
+
+    def test_more_than_eight_causes_are_invalid_even_with_duplicates(self):
+        with pytest.raises(ValueError):
+            ok(causes=["a"] * 9)
+        assert ok(causes=["a"] * 8).causes == ("a",)
+
+    def test_a_str_subclass_is_stored_as_an_exact_str(self):
+        out = ok(route_hint=Chameleon("retry_extract"), label=Chameleon("l"), model=Chameleon("m"),
+                 causes=[Chameleon("c1")], status=Chameleon("ok"))
+        for value in (out.route_hint, out.label, out.model, out.causes[0], out.status):
+            assert type(value) is str
+        record = out.to_dict()
+        assert type(record["route_hint"]) is str and record["route_hint"] != "human_review"
+
+    def test_a_float_subclass_confidence_is_an_exact_float(self):
+        class Evil(float):
+            def __le__(self, other):
+                return True
+
+            __ge__ = __le__
+
+            def __float__(self):
+                return 0.5
+
+        with pytest.raises(ValueError):  # 7.0 is out of range whatever the subclass's comparisons say
+            ok(confidence=Evil(7.0))
+
+    def test_an_outcome_subclass_is_revalidated(self):
+        class Sneaky(dp.DecisionOutcome):
+            def __post_init__(self):  # skip the base validation, as a hostile subclass would
+                pass
+
+            @property
+            def route_hint(self):
+                return Chameleon("retry_extract")
+
+            @route_hint.setter
+            def route_hint(self, value):  # the dataclass __init__ assigns it
+                pass
+
+        got = dp.normalize_outcome(Sneaky())
+        assert type(got) is dp.DecisionOutcome and type(got.route_hint) is str
+
+        class Broken(dp.DecisionOutcome):
+            def __post_init__(self):
+                pass
+
+            @property
+            def causes(self):
+                return ["x" * 100]
+
+            @causes.setter
+            def causes(self, value):
+                pass
+
+        bad = dp.normalize_outcome(Broken())
+        assert bad.status == "invalid" and bad.evidence["reason"] == "malformed_answer"
+
+    def test_a_chameleon_hint_cannot_dodge_the_override_budget(self):
+        dp.register_decision_point_backend("fake", lambda i: {"route_hint": Chameleon("retry_extract"),
+                                                              "confidence": 0.9})
+        wrapped = dp.wrap_node(
+            "extract", node_returning({}),
+            [policy(allow=("retry_extract", "human_review"), max_overrides=1)],
+        )
+        state = dict(PROPOSES_COMPILE)
+        state.update(wrapped(state))
+        assert state["decision_override_counts"] == {"extract.post": 1}
+        assert state["decision_outcomes"]["extract.post"]["vetted_route"] == "retry_extract"
+        again = wrapped(state)
+        record = again["decision_outcomes"]["extract.post"]
+        assert record["capped"] is True and record["vetted_route"] is None
+
+    @pytest.mark.parametrize("bad", ["x\n", "x\n\n", "\nx", "x y"])
+    def test_a_token_with_a_trailing_newline_is_invalid(self, bad):
+        with pytest.raises(ValueError):
+            ok(causes=[bad])
+        assert dp.normalize_outcome({"causes": [bad]}).status == "invalid"
+
+    def test_a_system_exit_from_a_backend_is_invalid_not_raised(self):
+        def leave(i):
+            raise SystemExit(3)
+
+        dp.register_decision_point_backend("fake", leave)
+        got = dp.consult(policy(), inp())
+        assert got.status == "invalid" and got.evidence == {"reason": "backend_error", "error": "SystemExit"}
+        safe = dp.consult(policy(on_failure="fail_safe"), inp())
+        assert safe.route_hint == "human_review" and safe.causes == ("decision_point_invalid",)
+
+    def test_a_keyboard_interrupt_still_propagates(self):
+        def stop(i):
+            raise KeyboardInterrupt
+
+        dp.register_decision_point_backend("fake", stop)
+        with pytest.raises(KeyboardInterrupt):
+            dp.consult(policy(), inp())
+
+    def test_the_span_output_carries_no_label(self, monkeypatch):
+        updates = []
+
+        class Span:
+            def update(self, **kw):
+                updates.append(kw)
+
+        import contextlib
+
+        @contextlib.contextmanager
+        def fake_observation(*a, **kw):
+            yield Span()
+
+        monkeypatch.setattr(dp, "observation", fake_observation)
+        dp.register_decision_point_backend("fake", lambda i: ok(label="Acme owes Beta"))
+        dp.consult(policy(), inp())
+        (call,) = updates
+        assert "label" not in call["output"] and call["output"]["label_length"] == len("Acme owes Beta")
+        assert "Acme" not in json.dumps(updates, default=str)
+
+
+class TestBounds:
+    @pytest.mark.parametrize("timeout", [10**400, float("inf"), 10**30])
+    def test_a_huge_timeout_runs_the_call_and_returns_its_answer(self, timeout):
+        dp.register_decision_point_backend("fake", lambda i: ok(label="fine"))
+        got = dp.consult(policy(timeout_seconds=timeout), inp())
+        assert got.status == "ok" and got.label == "fine"
+
+    def test_a_nan_timeout_is_no_time_not_an_error(self):
+        dp.register_decision_point_backend("fake", lambda i: ok())
+        got = dp.consult(policy(timeout_seconds=float("nan")), inp())
+        assert got.status == "unavailable" and got.evidence["reason"] == "timeout"
+
+    @pytest.mark.parametrize("value", [3601, 10**400, float("inf"), float("nan"), -1])
+    def test_config_rejects_an_unreasonable_timeout(self, decision_points, value):
+        decision_points({"extract.post": {"node": "extract", "backend": "b", "timeout_seconds": value}})
+        with pytest.raises(DecisionPointConfigError, match="timeout_seconds must be a number above 0 and at most 3600"):
+            get_decision_points_config()
+
+    def test_config_accepts_the_upper_bound(self, decision_points):
+        decision_points({"extract.post": {"node": "extract", "backend": "b", "timeout_seconds": 3600}})
+        assert get_decision_points_config()["extract.post"]["timeout_seconds"] == 3600.0
+
+    def test_the_cap_cannot_be_overshot_by_concurrent_callers(self):
+        cap, callers = 2, 8
+        live: list = []
+        lock = threading.Lock()
+        release = threading.Event()
+        barrier = threading.Barrier(callers)
+        started, refused = [], []
+
+        def call():
+            started.append(1)
+            release.wait(10)
+
+        def caller():
+            barrier.wait()
+            try:
+                dp.run_bounded(call, name="t", abandoned=live, max_abandoned=cap, lock=lock, timeout=0.2)
+            except dp.DecisionBackendTimeout as exc:
+                if "stalled" in str(exc):
+                    refused.append(1)
+
+        threads = [threading.Thread(target=caller) for _ in range(callers)]
+        try:
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(10)
+            assert len(started) <= cap, f"{len(started)} calls started past a cap of {cap}"
+            assert len(refused) == callers - len(started)
+        finally:
+            release.set()
+
+    def test_finished_calls_free_their_place(self):
+        live: list = []
+        lock = threading.Lock()
+        for _ in range(5):
+            assert dp.run_bounded(lambda: 1, name="t", abandoned=live, max_abandoned=1, lock=lock, timeout=2) == 1
+
+
+class TestResolveExit:
+    def test_a_backend_module_that_exits_at_import_is_a_config_error(self, decision_points, tmp_path, monkeypatch):
+        import sys
+
+        (tmp_path / "dp_exit_mod.py").write_text("import sys\nsys.exit(3)\n")
+        monkeypatch.syspath_prepend(str(tmp_path))
+        decision_points({"extract.post": {"node": "extract", "backend": "dp_exit_mod:fn"}})
+        try:
+            with pytest.raises(DecisionPointConfigError, match="SystemExit"):
+                dp.prepare_slots()
+        finally:
+            sys.modules.pop("dp_exit_mod", None)
+
+    def test_an_import_spec_with_a_trailing_newline_is_refused(self, backend_module):
+        # Config strips whitespace, so this guards the resolver itself.
+        with pytest.raises(DecisionPointConfigError, match="not a registered name or an import spec"):
+            dp._resolve_backend(policy(backend="dp_backend_mod:decide\n"))
