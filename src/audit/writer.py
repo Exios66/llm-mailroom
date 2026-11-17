@@ -4,8 +4,10 @@
   tail by ``seq``, links the new row to it and inserts the row and its attempt
   sub-rows in one transaction. If the document already has a row it writes a
   ``resumed`` addendum instead.
-* ``write_addendum`` takes the per-document ``audit_doc:<doc_id>`` lock and
-  appends to the document's addendum chain, which starts at the row's hash.
+* ``write_addendum`` takes the per-document ``doc_lock_key(doc_id)`` lock
+  (``audit_doc:<doc_id>``, kept apart from the global ``audit_log:chain`` key
+  even for a document named ``chain``) and appends to the document's addendum
+  chain, which starts at the row's hash.
 
 Every hash is hash version 2 (``schemas.audit.compute_audit_hash``),
 byte-identical with the dojo's ``archive_entry_hash``. The dojo's
@@ -21,7 +23,7 @@ from __future__ import annotations
 
 import copy
 import uuid
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -35,6 +37,7 @@ from audit.models import (
     Addendum,
     AttemptRow,
     AuditMigrationPending,
+    AuditRowExists,
     AuditWriteError,
     NoAuditRow,
     TerminalRow,
@@ -46,6 +49,7 @@ from storage.audit_log import (
     AuditAttemptRecord,
     AuditLogRecord,
     AuditMetaRecord,
+    doc_lock_key,
 )
 from storage.db import (
     acquire_write_lock,
@@ -67,6 +71,7 @@ MAX_ATTEMPTS = 5
 def _utc(ts: datetime | str | None) -> datetime | None:
     """Normalize to UTC, treating naive values as UTC and preserving ``None``.
 
+    The empty string (the stored unknown-start shape) normalizes like ``None``.
     Raise ``ValueError`` if a string is not a valid ISO datetime.
     """
     if ts is None or ts == "":
@@ -277,21 +282,50 @@ def _build_sub_rows(
     return records, listed
 
 
+#: Unique constraints that two concurrent writers can both hit (the chain position or the one row
+#: per document, the addendum position per document): re-reading the tail under a fresh lock cures
+#: them. SQLite names the columns, Postgres the index.
+_RACE_CONSTRAINTS = (
+    "audit_log.seq", "audit_log.doc_id", "audit_addenda.doc_id", "audit_addenda.seq",
+    "ux_audit_log_seq", "ux_audit_log_doc_id", "ix_audit_addenda_doc_seq",
+)
+
+
 def _is_retryable(exc: IntegrityError) -> bool:
+    """True only for a chain-position race; any other integrity error is deterministic.
+
+    A duplicate sub-row or entry primary key (``attempt_id``, ``entry_id``, ``addendum_id``) fails the
+    same way on every attempt, so it is raised at once instead of retried (and, from
+    ``audit-reconcile``, quarantined instead of failing every run).
+    """
     msg = str(exc.orig).lower() if exc.orig is not None else str(exc).lower()
-    return "unique" in msg or "duplicate" in msg
+    return ("unique" in msg or "duplicate" in msg) and any(c in msg for c in _RACE_CONSTRAINTS)
 
 
 # ---------------------------------------------------------------- writers
 
 
-async def write_terminal_row(row: TerminalRow) -> WriteResult:
+async def write_terminal_row(
+    row: TerminalRow,
+    *,
+    entry_id: str | None = None,
+    recovered_from: dict[str, Any] | None = None,
+    if_absent: bool = False,
+) -> WriteResult:
     """Commit a terminal row and its attempts, returning its entry id, hash, and sequence.
 
     A new row joins the global chain and creates a minimal catalog document
     if needed. Its ``detail.attempts`` is replaced with attempt hash references.
     An existing row is preserved; the call writes a ``resumed`` addendum with
     the requested event in ``detail.event`` and returns its identity instead.
+
+    ``entry_id`` and ``recovered_from`` are for ``audit-reconcile`` (§5.6): the
+    row keeps the id its pending record was captured under, so its attempt
+    hashes and ``detail`` are the captured ones, and ``detail.recovered_from``
+    is added after the attempts are listed. ``if_absent`` is for the same
+    caller: the existing-row check runs under the chain lock, so a reconcile
+    that raced another writer gets ``AuditRowExists`` instead of a ``resumed``
+    addendum (which would be wrong for a recovered record).
 
     Raise ``ValueError`` for an unknown event or invalid attempt timestamp,
     ``AuditMigrationPending`` if the migration marker is absent, and
@@ -316,16 +350,34 @@ async def write_terminal_row(row: TerminalRow) -> WriteResult:
     # attempt, so every retry re-reads the chain tail.
     return await run_write_with_retry(
         lambda: _write_terminal_row_once(
-            row, detail=snapshot_detail, attempts=snapshot_attempts
+            row,
+            detail=snapshot_detail,
+            attempts=snapshot_attempts,
+            entry_id=entry_id,
+            recovered_from=_snapshot_detail(recovered_from) if recovered_from is not None else None,
+            if_absent=if_absent,
         ),
         attempts=MAX_ATTEMPTS,
     )
 
 
 async def _write_terminal_row_once(
-    row: TerminalRow, *, detail: dict[str, Any], attempts: list[AttemptRow]
+    row: TerminalRow,
+    *,
+    detail: dict[str, Any],
+    attempts: list[AttemptRow],
+    entry_id: str | None = None,
+    recovered_from: dict[str, Any] | None = None,
+    if_absent: bool = False,
 ) -> WriteResult:
-    """One bounded transaction attempt loop for a new terminal row."""
+    """Retry a terminal-row transaction; write a resumed addendum if the row exists.
+
+    A new row uses the supplied entry id and recovery provenance when provided.
+    With ``if_absent`` an existing row raises ``AuditRowExists`` instead.
+    """
+    # A reconcile write keeps the entry id its pending record was captured
+    # under; an ordinary write mints a fresh one.
+    preset_id = entry_id
     for attempt in range(1, MAX_ATTEMPTS + 1):
         async with async_session() as session:
             try:
@@ -337,6 +389,8 @@ async def _write_terminal_row_once(
                 await _require_migrated(session)
                 if await _existing_row(session, row.doc_id) is not None:
                     await session.rollback()
+                    if if_absent:
+                        raise AuditRowExists(f"document {row.doc_id} already has an audit row")
                     resumed = _as_resumed(row, detail=detail, attempts=attempts)
                     # No nested retry wrapper: a transient lock error here
                     # bubbles to the terminal row's wrapper, which replays the
@@ -351,13 +405,18 @@ async def _write_terminal_row_once(
                 tail = await _read_tail(session)
                 seq = (tail.seq if tail else 0) + 1
                 prev_hash = tail.entry_hash if tail else ""
-                entry_id = _new_id("row")
+                entry_id = preset_id or _new_id("row")
                 timestamp = datetime.now(timezone.utc)
                 subs, listed = _build_sub_rows(
                     attempts, parent_id=entry_id, doc_id=row.doc_id,
                     matter_id=row.matter_id, actor=row.actor,
                 )
                 row_detail = {**detail, "attempts": listed}
+                if recovered_from is not None:
+                    # Added after the attempts are listed, so the recovered
+                    # row's hash covers exactly what the pending record held
+                    # plus this provenance block.
+                    row_detail["recovered_from"] = copy.deepcopy(recovered_from)
                 entry_hash = hash_entry(
                     prev_hash=prev_hash, doc_id=row.doc_id, entry_id=entry_id, event=row.event,
                     detail=row_detail, matter_id=row.matter_id, actor=row.actor, timestamp=timestamp,
@@ -433,7 +492,9 @@ async def write_addendum(add: Addendum) -> WriteResult:
     rollback cannot deadlock the write. Transient SQLite lock errors retry the
     whole transaction in a fresh session under the shared PR #203 backoff,
     bounded to the same attempt budget; other database errors propagate
-    immediately. Failed transactions are rolled back.
+    immediately. Failed transactions are rolled back. Recovery-tagged ``resumed``
+    and ``recovered_detail`` records are idempotent by captured detail digest;
+    the duplicate check runs under the same document lock as the append.
     """
     if add.kind not in ADDENDUM_KINDS:
         raise ValueError(f"unknown addendum kind {add.kind!r}; expected one of {ADDENDUM_KINDS}")
@@ -464,11 +525,29 @@ async def _write_addendum_once(
                 # Both live INSIDE the try so a lock failure rolls the session
                 # back and reaches the retry wrapper.
                 await _take_migration_gate(session)
-                await acquire_write_lock(session, f"audit_doc:{add.doc_id}")
+                await acquire_write_lock(session, doc_lock_key(add.doc_id))
                 await _require_migrated(session)
                 row = await _existing_row(session, add.doc_id)
                 if row is None:
                     raise NoAuditRow(f"document {add.doc_id} has no audit row; addenda need one")
+                # Two recovery sweeps can read the same pending record before either
+                # appends it. Check its captured digest under the document lock,
+                # so retrying recovery cannot append the same record twice.
+                recovery = detail.get("recovered_from")
+                digest = recovery.get("detail_sha256") if isinstance(recovery, dict) else None
+                if add.kind in ("resumed", "recovered_detail") and digest:
+                    existing = (await session.execute(
+                        select(AuditAddendumRecord).where(
+                            AuditAddendumRecord.doc_id == add.doc_id,
+                            AuditAddendumRecord.kind == add.kind,
+                        )
+                    )).scalars().all()
+                    for prior in existing:
+                        provenance = (prior.detail or {}).get("recovered_from")
+                        if isinstance(provenance, dict) and provenance.get("detail_sha256") == digest:
+                            await session.commit()
+                            return WriteResult(entry_id=prior.addendum_id, entry_hash=prior.entry_hash,
+                                               kind="addendum", seq=prior.seq, existing=True)
                 tail = (
                     await session.execute(
                         select(AuditAddendumRecord.seq, AuditAddendumRecord.entry_hash)
@@ -580,6 +659,11 @@ async def get_row(doc_id: str) -> dict[str, Any] | None:
                 .order_by(AuditAddendumRecord.seq)
             )
         ).scalars().all()
+    return _row_dict(row, subs, adds)
+
+
+def _row_dict(row: AuditLogRecord, subs: list[AuditAttemptRecord], adds: list[AuditAddendumRecord]) -> dict[str, Any]:
+    """One document's row, with the sub-rows of it and of each addendum, as ``get_row`` returns it."""
     return {
         "entry_id": row.entry_id,
         "doc_id": row.doc_id,
@@ -607,3 +691,199 @@ async def get_row(doc_id: str) -> dict[str, Any] | None:
             for a in adds
         ],
     }
+
+
+async def get_rows(*, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
+    """Rows in chain (``seq``) order, each shaped like :func:`get_row`, from a fixed number of queries.
+
+    One read-only snapshot and four statements however many documents there are (a
+    per-document ``get_row`` loop costs a snapshot and three statements each). ``limit`` and
+    ``offset`` page the chain. Raise ``AuditMigrationPending`` before the migration.
+    """
+    ensure_schema()
+    async with async_session() as session:
+        await begin_read_snapshot(session)
+        await _take_migration_gate(session)
+        await _require_migrated(session)
+        query = select(AuditLogRecord).order_by(AuditLogRecord.seq)
+        if limit is not None:
+            query = query.limit(limit).offset(offset)
+        rows = (await session.execute(query)).scalars().all()
+        if not rows:
+            return []
+        subs_query = select(AuditAttemptRecord).order_by(
+            AuditAttemptRecord.stage, AuditAttemptRecord.attempt_no, AuditAttemptRecord.attempt_id)
+        adds_query = select(AuditAddendumRecord).order_by(AuditAddendumRecord.doc_id, AuditAddendumRecord.seq)
+        if limit is not None:
+            doc_ids = [r.doc_id for r in rows]
+            subs_query = subs_query.where(AuditAttemptRecord.doc_id.in_(doc_ids))
+            adds_query = adds_query.where(AuditAddendumRecord.doc_id.in_(doc_ids))
+        subs = (await session.execute(subs_query)).scalars().all()
+        adds = (await session.execute(adds_query)).scalars().all()
+    subs_by_doc: dict[str, list[AuditAttemptRecord]] = {}
+    for sub in subs:
+        subs_by_doc.setdefault(sub.doc_id, []).append(sub)
+    adds_by_doc: dict[str, list[AuditAddendumRecord]] = {}
+    for add in adds:
+        adds_by_doc.setdefault(add.doc_id, []).append(add)
+    return [_row_dict(r, subs_by_doc.get(r.doc_id, []), adds_by_doc.get(r.doc_id, [])) for r in rows]
+
+
+# ---------------------------------------------------------------- write-failure fallback (§5.6)
+
+#: Attempts to commit a terminal row before it is parked in the sinks, and the waits between them.
+COMMIT_ATTEMPTS = 3
+RETRY_DELAYS_S = (0.1, 0.3)
+
+
+@dataclass(frozen=True)
+class CommitOutcome:
+    """How a terminal row ended: ``written``, ``pending``, ``pending_partial`` or ``gap``.
+
+    ``refs`` names every sink copy kept (``sink``, ``ref``, ``complete``,
+    ``recoverable``), including those only write-only sinks hold. A ``gap`` has
+    no refs: no sink kept anything.
+    """
+
+    status: str
+    result: WriteResult | None = None
+    refs: tuple[dict[str, Any], ...] = ()
+
+
+def _prepare(row: TerminalRow, entry_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The row's ``detail`` and sub-rows exactly as ``write_terminal_row`` would store them under ``entry_id``."""
+    records, listed = _build_sub_rows(
+        row.attempts, parent_id=entry_id, doc_id=row.doc_id, matter_id=row.matter_id, actor=row.actor,
+    )
+    subs = [_sub_row_dict(rec) for rec in records]
+    return {**copy.deepcopy(row.detail), "attempts": listed}, subs
+
+
+def pending_record(row: TerminalRow, *, entry_id: str | None = None) -> dict[str, Any]:
+    """The complete pending record of §5.6 step 1, captured under a fixed ``entry_id``.
+
+    ``detail`` is the stored form (``detail.attempts`` lists the sub-row hashes),
+    so ``detail_sha256`` is what the verifier recomputes on the recovered row.
+    """
+    from audit.digests import detail_sha256
+
+    entry_id = entry_id or _new_id("row")
+    detail, subs = _prepare(row, entry_id)
+    return {
+        "entry_id": entry_id, "doc_id": row.doc_id, "matter_id": row.matter_id, "event": row.event,
+        "actor": row.actor, "detail": detail, "sub_rows": subs,
+        "sub_row_hashes": [s["entry_hash"] for s in subs], "detail_sha256": detail_sha256(detail),
+        "captured_at": datetime.now(timezone.utc).isoformat(), "complete": True,
+    }
+
+
+def _decisions_view(visits: Any) -> list[dict[str, Any]]:
+    """Each visit's identity, ``decisions`` and ``decision``.
+
+    ``decision`` is reduced to its ``audit_event`` (the visit's audit event: review decision, actor,
+    disposition), so a decisions-only copy keeps who decided what without the visit's extraction payload.
+    """
+    keep = ("visit_id", "node", "attempt_id", "status", "outcome", "decisions")
+    out = []
+    for v in visits or []:
+        if not isinstance(v, dict):
+            continue
+        view = {k: v.get(k) for k in keep}
+        event = (v.get("decision") or {}).get("audit_event") if isinstance(v.get("decision"), dict) else None
+        view["decision"] = {"audit_event": event} if event else {}
+        out.append(view)
+    return out
+
+
+def decisions_only_record(row: TerminalRow, full: dict[str, Any]) -> dict[str, Any]:
+    """The decisions-only copy for a sink whose limit the full record exceeds (§5.6 step 1).
+
+    The trace keeps each visit's identity, ``decisions`` and the ``audit_event`` of its ``decision``; sub-rows keep their
+    nodes and decisions; extraction data, I/O and scoring detail are dropped. It
+    carries its own ``detail_sha256`` and the full record's as ``full_detail_sha256``.
+    """
+    from audit.digests import detail_sha256
+
+    detail = copy.deepcopy(row.detail)
+    detail["trace"] = _decisions_view(detail.get("trace"))
+    detail["extraction"] = None
+    detail["scoring"] = None
+    attempts = [
+        AttemptRow(
+            attempt_id=a.attempt_id, stage=a.stage, attempt_no=a.attempt_no, trigger=a.trigger,
+            outcome=a.outcome, started_at=a.started_at, ended_at=a.ended_at,
+            detail={"nodes": (a.detail or {}).get("nodes"), "decisions": (a.detail or {}).get("decisions")},
+        )
+        for a in row.attempts
+    ]
+    small = TerminalRow(doc_id=row.doc_id, matter_id=row.matter_id, event=row.event, actor=row.actor,
+                        detail=detail, attempts=attempts)
+    stored, subs = _prepare(small, full["entry_id"])
+    return {
+        **{k: full[k] for k in ("entry_id", "doc_id", "matter_id", "event", "actor", "captured_at")},
+        "detail": stored, "sub_rows": subs, "sub_row_hashes": [s["entry_hash"] for s in subs],
+        "detail_sha256": detail_sha256(stored), "complete": False,
+        "full_detail_sha256": full["detail_sha256"],
+    }
+
+
+async def commit_or_park(row: TerminalRow) -> CommitOutcome:
+    """Commit the row or park it in trace sinks after bounded failures (§5.6).
+
+    ``AuditMigrationPending`` is parked at once (no retry, no sleep: the marker will not
+    appear within the retry window), so the record waits for ``audit-reconcile`` after
+    the migration; a deterministic ``IntegrityError`` (``_is_retryable`` false) is parked
+    at once as well. Return ``written`` on success,
+    ``pending`` if a sink that ``audit-reconcile`` can read back (``recoverable``)
+    holds a full copy, ``pending_partial`` if only reduced copies survive or only
+    write-only sinks hold the record (nothing can recover it, but the refs on the
+    manifest say where the copy went), or ``gap`` if no sink kept anything.
+    Database write failures lead to parking; malformed rows still raise
+    ``ValueError``. A failure while building or capturing the pending record is
+    logged as ``audit_gap`` (``reason="park_failed"``) and returns ``gap``, so the
+    row is reported lost instead of the exception escaping.
+    """
+    import asyncio
+
+    from audit import sinks
+
+    error: BaseException | None = None
+    for attempt in range(1, COMMIT_ATTEMPTS + 1):
+        try:
+            return CommitOutcome("written", await write_terminal_row(row))
+        except ValueError:
+            raise  # a malformed row is a bug, not a write failure
+        except Exception as exc:  # noqa: BLE001 - any failure to commit takes the fallback
+            error = exc
+            logger.warning("audit_row_commit_failed", doc_id=row.doc_id, attempt=attempt,
+                           error=f"{type(exc).__name__}: {exc}")
+            if isinstance(exc, AuditMigrationPending) or (
+                isinstance(exc, IntegrityError) and not _is_retryable(exc)
+            ):
+                break  # deterministic: the same call fails the same way, so waiting only costs time
+            if attempt < COMMIT_ATTEMPTS:
+                await asyncio.sleep(RETRY_DELAYS_S[min(attempt - 1, len(RETRY_DELAYS_S) - 1)])
+    commit_error = f"{type(error).__name__}: {error}" if error else None
+    try:
+        full = pending_record(row)
+        refs = tuple(sinks.capture_pending(full, partial=lambda: decisions_only_record(row, full)))
+    except Exception as exc:  # noqa: BLE001 - building the record failed (e.g. a detail that cannot be hashed)
+        # Nothing was kept, so this is a gap, reported like one: ``audit_gap`` and ``audit_written`` False.
+        logger.error("audit_gap", doc_id=row.doc_id, event_name=row.event, refs=[], error=commit_error,
+                     reason="park_failed", park_error=f"{type(exc).__name__}: {exc}", exc_info=True)
+        return CommitOutcome("gap")
+    detail = {"doc_id": row.doc_id, "event_name": row.event, "refs": list(refs), "error": commit_error}
+    # ``complete`` is only ever true for a copy a recoverable sink holds in full
+    # (``sinks.capture_pending``), so a write-only sink never makes the row ``pending``.
+    if any(r["complete"] for r in refs):
+        logger.info("audit_pending", **detail)
+        return CommitOutcome("pending", refs=refs)
+    if refs:
+        # Decisions-only copies, or copies only write-only sinks hold: the refs stay on the
+        # manifest so an operator can fetch the copy by hand.
+        if not any(r["recoverable"] for r in refs):
+            detail["reason"] = "only_write_only_sinks"
+        logger.warning("audit_pending_partial", **detail)
+        return CommitOutcome("pending_partial", refs=refs)
+    logger.error("audit_gap", **detail)
+    return CommitOutcome("gap")
