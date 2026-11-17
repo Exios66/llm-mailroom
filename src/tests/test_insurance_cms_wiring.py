@@ -96,6 +96,17 @@ def test_cms_fill_emits_hcpcs_detail_only_for_real_codes():
     assert refs == ["facility provider 1800VN", "provider NPI 3387884527", "HCPCS detail (3 codes)"]
 
 
+def test_hcpcs_heading_words_are_not_counted_as_codes():
+    from observability.posthoc_gt import _hcpcs_codes
+
+    # A five-letter heading word is not a code (it used to give "HCPCS detail (2 codes)").
+    assert _hcpcs_codes("HCPCS CODES\n   1. HCPCS 90816   allowed $60.00") == ["90816"]
+    assert _hcpcs_codes("Services (HCPCS): CODES, J1234, G0283") == ["J1234", "G0283"]
+    heading_only = CARRIER_NO_CODES.replace("HCPCS ----", "HCPCS CODES")
+    assert _refs(heading_only) == ["provider NPI 8284740037"]
+    assert _hcpcs_codes("HCPCS ----") == []
+
+
 def test_supporting_documents_guidance_names_every_cms_reference_form():
     spec = INSURANCE_CLAIMS_SCHEMA["properties"]["supporting_documents"]
     assert spec["description"] == SUPPORTING_DOCUMENTS_DESCRIPTION

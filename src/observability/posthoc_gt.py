@@ -524,16 +524,21 @@ def extract_insurance_fields(text: str) -> dict[str, Any]:
     return out
 
 
+_HCPCS_CODE = re.compile(r"[A-Z0-9][0-9]{4}")
+
+
 def _hcpcs_codes(text: str) -> list[str]:
     """HCPCS codes a CMS notice lists: itemized ``HCPCS <code>`` lines or a ``(HCPCS):`` list.
 
     Blank code placeholders (``----``) are not codes, so a claim whose lines carry none
-    gets no ``HCPCS detail`` reference (the Hub labels it the same way).
+    gets no ``HCPCS detail`` reference (the Hub labels it the same way). A code is one
+    letter or digit followed by four digits (``J1234``, ``90816``), so a five-letter
+    heading word such as ``HCPCS CODES`` is not counted.
     """
     listed = re.search(r"\(HCPCS\)\s*:\s*([^\n]+)", text, re.IGNORECASE)
     if listed:
-        return [c for c in re.split(r"[,;\s]+", listed.group(1)) if re.fullmatch(r"[A-Z0-9]{5}", c)]
-    return re.findall(r"\bHCPCS\s+([A-Z0-9]{5})\b", text)
+        return [c for c in re.split(r"[,;\s]+", listed.group(1)) if _HCPCS_CODE.fullmatch(c)]
+    return re.findall(rf"\bHCPCS\s+({_HCPCS_CODE.pattern})\b", text)
 
 
 def extract_merger_fields(text: str) -> dict[str, Any]:
