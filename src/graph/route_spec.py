@@ -446,6 +446,10 @@ def decide_route(spec: RouteSpec, state: Mapping[str, Any]) -> str:
         if answer is None:
             continue
         try:
+            # Canonicalise str subclasses to an exact str, so a hostile __hash__ /
+            # __eq__ cannot pass this check and then fail in LangGraph's branch map.
+            if isinstance(answer, str) and type(answer) is not str:
+                answer = str.__str__(answer)
             valid = isinstance(answer, str) and answer in spec.destinations
             changed = valid and answer != proposed
         except Exception:  # e.g. a str subclass whose __hash__ / __eq__ raises

@@ -240,8 +240,10 @@ One accepted attachment per email (`route: triage`) and
         ▼
  triage read            GmailTriageAgent (openrouter/free, $0):
  (advisory)             primary_doc_class + doc_subclass + confidence +
-                        one-sentence gist + ≤6 keywords;
-                        validate_triage clamps to the live taxonomy
+                        one-sentence gist + ≤6 keywords + key entities
+                        (schema-driven: the class's EXTRACTION_SCHEMAS
+                        fields); validate_triage clamps the class to the
+                        live taxonomy and the entities to that schema
         ▼
  auditable-hash archive triage_ingested / triage_classified /
                         triage_archived audit entries (OWN section — never

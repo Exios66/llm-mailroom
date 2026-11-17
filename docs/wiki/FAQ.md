@@ -9,7 +9,7 @@ Mailroom is a multi-agent pipeline that ingests legal documents, classifies them
 Six live taxonomy classes:
 
 - **Contracts** (CUAD commercial agreements — 25 agreement families: MSAs, NDAs, licenses, distribution, …)
-- **Merger Agreements** (MAUD — a distinct class reusing the contracts specialist)
+- **Merger Agreements** (MAUD — a distinct class with its own `merger_agreement_specialist`)
 - **Corporate Records** (articles, bylaws, powers of attorney, rights instruments, other)
 - **Correspondence** (demand letters, legal notices, memos — corpus from the CMU Enron dataset)
 - **Compliance Filings** (SEC filings, state filings)

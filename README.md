@@ -118,7 +118,7 @@ and [documentation home](docs/README.md).
 | | Phase | Graph node(s) | What happens |
 | :---: | :--- | :--- | :--- |
 | 📥 | **Intake** | `intake-document` | The ingest specialist claims the file, transcribes it, cleans it and writes its manifest |
-| 🏷️ | **Classify** | `classify-document`, `(retry)`, `(reviewer)`, `arbitrate-classification` | `SorterAgent` picks one of the five classes with a confidence score. High confidence goes to extraction, medium confidence gets a retry and a reviewer's second opinion, and low or unknown confidence goes to a human |
+| 🏷️ | **Classify** | `classify-document`, `(retry)`, `(reviewer)`, `arbitrate-classification` | `SorterAgent` picks one of the five classes with a confidence score. High confidence goes to extraction. Medium confidence gets a retry (a retry that reaches high confidence goes straight to extraction) and, if it stays medium, a reviewer's second opinion, with the arbiter stepping in when that review fails. Low or unknown confidence goes to a human |
 | 🔍 | **Extract** | `extract-fields`, `(retry)` | The class specialist fills a Pydantic schema, gated on schema validity, confidence, factuality and completeness |
 | ⚖️ | **Quality** | `judge-verify`, `arbitrate-verdict`, `adjudicate-conflict` | The Judge checks ambiguous completeness. The Arbiter lets the verdict stand, orders a re-extraction or escalates. The Boss adjudicates matter conflicts |
 | 🧑‍⚖️ | **Human review** | `route-for-review` | The governance boundary: a person approves, rejects or requeues. A rejection ends in `FAILED` |
@@ -277,7 +277,7 @@ One **LangGraph state machine run per document** — 14 nodes, MemorySaver-check
 
 ### LangGraph state machine
 
-The core pipeline is a **14-node LangGraph state machine** executed once per document. Two auxiliary flows operate outside the graph: the **Gmail triage lane** (free model swarm for single-document emails) and the **relations clerk** (post-archive association scanning).
+The core pipeline is a **14-node LangGraph state machine** executed once per document. Two auxiliary flows operate outside the graph: the **Gmail triage lane** (free model swarm for single-document emails) and the **relations clerk** (post-archive association scanning; the diagram below draws it after `archive` for orientation only, since it is dispatched on a daemon thread and is not one of the 14 nodes).
 
 <details>
 <summary><b>🗺️ The full 14-node state machine (Mermaid)</b></summary>
@@ -300,7 +300,7 @@ flowchart TD
     REPORT["compile-report<br/>(procedural)"]
     CATALOG["write-catalog<br/>SQLite documents + matters"]
     ARCHIVE["archive-document<br/>archivist + hash-chained audit log"]
-    RELATIONS["relations scan<br/>post-archive association clerk"]
+    RELATIONS["relations scan<br/>post-archive association clerk<br/>(outside the graph)"]
     FAILED["FAILED"]
     ENDX([END])
 
@@ -315,9 +315,9 @@ flowchart TD
     RETRY_CLASS -- "medium band exhausted (Lane A)" --> REVIEW_CLASS
     RETRY_CLASS -- "medium or still low confidence" --> REVIEW
     REVIEW_CLASS -- "high-confidence reviewer verdict" --> EXTRACT
-    REVIEW_CLASS -- "decision review exhausted or failed" --> CLASS_ARBITER
+    REVIEW_CLASS -- "decision-model result not extract, or review exhausted / failed" --> CLASS_ARBITER
     REVIEW_CLASS -- "anything else" --> REVIEW
-    CLASS_ARBITER -- "accepted class" --> EXTRACT
+    CLASS_ARBITER -- "accepted class (no ground-truth class miss)" --> EXTRACT
     CLASS_ARBITER -- "anything else" --> REVIEW
 
     EXTRACT -- "confidence >= low" --> REPORT
@@ -370,6 +370,7 @@ flowchart TB
     subgraph CLASSIFY["Classification"]
         SORTER["SorterAgent<br/>5 live doc classes + 25 CUAD contract subtypes<br/>(vendored LangChain agent, prompt lineage v0–v14)"]
         REVIEWER["SorterReviewerAgent<br/>second opinion on medium-confidence<br/>classifications (Lane A)"]
+        CLASS_ARBITER["ClassificationArbiterAgent<br/>arbitrates a parked or failed decision<br/>review before a person sees it"]
     end
 
     subgraph SPECIALISTS["Extraction Specialists — one per document class"]
@@ -404,6 +405,7 @@ flowchart TB
     GMAIL -.->|free lane| SORTER
     SORTER -- "class + subtype + confidence" --> SPECIALISTS
     REVIEWER -. "Lane A: medium band" .-> SORTER
+    REVIEWER -. "parked or failed review" .-> CLASS_ARBITER
     SPECIALISTS -- "extraction + confidence" --> JUDGE
     JUDGE -. "Lane B: partial" .-> ARBITER
     SPECIALISTS -- "conflict" --> BOSS
