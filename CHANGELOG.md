@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `disputed` labels are never applied.
     - Labels bind to the labelled document text.
     - A closed inventory field must hold a vocabulary value.
-  - **Recording.** Applied fields carry source `interim:<status>`, which `labelled_expected_fields` scores as gold. The GT meta and HF pilot rows record `interim_gt` (overlay sha256 and per-field outcome). The HF pilot report header records the overlay identity, or `null`.
+  - **Recording.** Applied fields carry source `interim:<status>`, which `labelled_expected_fields` scores as gold. The GT meta and HF pilot rows record `interim_gt` (overlay sha256 and per-field outcome). The HF pilot report header records the overlay identity, or `null`. `--resume` refuses a run whose overlay differs from the current one, so one report never mixes gold. Live-manifest rows key the overlay by `document_id` (Hub rows by `id`).
   - **Overlay rules fixed in the port.**
     - The sandbox overlay treated the CMS `claim_type` of `health` as a defect. Since #280 it is the correct gold, so a label that would change a CMS row's `claim_type` is rejected.
     - The sandbox derives `record_type` from the raw subclass, so 109 corporate labels (`charter_amendment`, `officer_certificate`, `board_resolution`, `indenture`, `subsidiary_list`) were outside the 5-token vocabulary. These are rejected.

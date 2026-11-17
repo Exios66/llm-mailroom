@@ -183,7 +183,8 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
     sample = {
         "filename": filename,
         # Hub row id: what the opt-in interim GT overlay (observability.interim_gt) keys on.
-        "hub_id": str(row.get("id") or ""),
+        # Hub rows carry ``id``; live-manifest rows carry ``document_id`` (live_manifest.py).
+        "hub_id": str(row.get("id") or row.get("document_id") or ""),
         "text": str(text),
         "expected_hf_class": hf_class,
         "expected_subclass": str(subclass).strip() if subclass else "",
@@ -609,6 +610,27 @@ def interim_gt_provenance() -> dict | None:
 
     overlay = active_overlay()
     return overlay.provenance() if overlay is not None else None
+
+
+def check_resume_gold(resume_report: dict) -> None:
+    """Refuse a ``--resume`` whose interim GT overlay differs from the one this process uses.
+
+    Resumed sample rows keep the gold they were scored against, so mixing Hub-only rows
+    with overlay rows (or two overlays) in one report would misstate its provenance.
+    A report written before the overlay existed has no ``interim_gt`` key: Hub-only.
+    """
+    if not resume_report:
+        return
+    before = resume_report.get("interim_gt") or None
+    now = interim_gt_provenance()
+    sha_before = (before or {}).get("overlay_sha256")
+    sha_now = (now or {}).get("overlay_sha256")
+    if sha_before != sha_now:
+        raise SystemExit(
+            "--resume: the run's interim GT overlay "
+            f"({sha_before or 'none, Hub-only'}) differs from this process's "
+            f"({sha_now or 'none, Hub-only'}); set MAILROOM_INTERIM_GT_* to match or start a new run"
+        )
 
 
 def labelled_fields(expected_fields: dict | None, sources: dict | None) -> dict:
@@ -1756,6 +1778,7 @@ def main() -> int:
     resume_report: dict = {}
     if args.resume:
         resume_report = _load_resume(Path(args.resume))
+        check_resume_gold(resume_report)
 
     stamp = (
         str(resume_report.get("run_id") or "")
