@@ -461,6 +461,29 @@ def test_fields_default_when_unset_or_malformed(monkeypatch):
     assert chunk_merge_settings("contracts_specialist").fields == frozenset(_DEFAULT_EVIDENCE_FIELDS)
 
 
+def test_unreadable_merge_config_falls_back_to_union_and_warns(monkeypatch):
+    """#275: a malformed ``chunking.merge`` keeps the union fallback but is no longer silent."""
+    import structlog
+
+    from langchain_agents.specialist_agents import (
+        _DEFAULT_EVIDENCE_FIELDS,
+        _DEFAULT_MERGE_MIN_WINDOWS,
+        chunk_merge_settings,
+    )
+
+    _config(monkeypatch, policy="evidence", by_agent=["contracts_specialist"])  # a list, not a mapping
+    with structlog.testing.capture_logs() as logs:
+        settings = chunk_merge_settings("contracts_specialist")
+    assert settings.policy == "union"
+    assert settings.min_windows == _DEFAULT_MERGE_MIN_WINDOWS
+    assert settings.fields == frozenset(_DEFAULT_EVIDENCE_FIELDS)
+    events = [e for e in logs if e["event"] == "chunk_merge_config_unreadable"]
+    assert len(events) == 1
+    assert events[0]["agent"] == "contracts_specialist"
+    assert events[0]["error_type"] == "AttributeError"
+    assert events[0]["log_level"] == "warning"
+
+
 def test_default_taxonomy_fields_are_claim_lists_only():
     from pipeline.config import load_config
 

@@ -180,8 +180,12 @@ def chunk_merge_settings(agent_name: str) -> ChunkMergeSettings:
             min_windows = raw_min
         if isinstance(raw_fields, (list, tuple)):  # an empty list filters nothing
             fields = frozenset(str(f).strip() for f in raw_fields if str(f).strip())
-    except Exception:  # noqa: BLE001 - never let config trouble break extraction
-        pass
+    except Exception as exc:  # noqa: BLE001 - never let config trouble break extraction
+        # Keep the safe fallback, but say so: a malformed ``chunking.merge``
+        # (e.g. a list under ``by_agent``) would otherwise silently run union.
+        logger.warning("chunk_merge_config_unreadable", agent=agent_name, error_type=type(exc).__name__)
+        policy, min_windows = "union", _DEFAULT_MERGE_MIN_WINDOWS
+        fields = frozenset(_DEFAULT_EVIDENCE_FIELDS)
     return ChunkMergeSettings(policy, min_windows, fields)
 
 

@@ -272,7 +272,10 @@ confidence:
   # attempt is always recorded in extraction_attempt_history; this only decides
   # which one compile_report and the review handoff use: ranked complete >
   # partial > incomplete, then extraction confidence, ties keep the latest, and
-  # only judged attempts that passed the schema/quality gate compete. Off by
+  # only judged attempts that passed the schema/quality gate compete. An
+  # unjudged latest retry is kept, and archiving keeps the latest when the
+  # selected earlier attempt is still unsure or below the coverage floor
+  # (earlier_attempt_requires_review). Off by
   # default for the same reason as judge_rejudge_retry (the ranking trusts the
   # uncalibrated judge, #242). Per-class overridable under by_class. Routing
   # never reads it.
