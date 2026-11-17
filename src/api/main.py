@@ -167,6 +167,30 @@ def _mount_diagnostics(application: FastAPI) -> bool:
 _diagnostics_mounted = _mount_diagnostics(app)
 
 
+def _upload_provider_problem() -> str | None:
+    """Why uploads must be refused for lack of a model, or ``None`` to accept them.
+
+    Only active when ``MAILROOM_UPLOAD_REQUIRE_PROVIDER`` is truthy. It resolves the
+    sorter's provider and model the same way the pipeline does (no network call, no
+    tokens), so a missing or placeholder API key is caught before a document is queued.
+    The answer is the exception's type name only: the exception text can carry
+    configuration detail and is logged, never returned to the client.
+    """
+    import os
+
+    flag = os.environ.get("MAILROOM_UPLOAD_REQUIRE_PROVIDER", "").strip().lower()
+    if flag not in ("1", "true", "yes", "on"):
+        return None
+    try:
+        from llm.client import resolve_agent_model
+
+        resolve_agent_model("sorter")
+    except Exception as exc:  # noqa: BLE001 - any resolution failure means no usable model
+        logger.warning("upload_refused_no_provider", error_type=type(exc).__name__)
+        return type(exc).__name__
+    return None
+
+
 async def _check_llm_provider() -> dict:
     """Best-effort LLM provider connectivity check.
 
@@ -326,6 +350,16 @@ async def upload_document(
     # Pause gate (audit L-18): refuse new work while ingestion is paused.
     if is_ingestion_paused():
         raise HTTPException(503, "Ingestion is paused by the ops monitor — try again later")
+
+    # Provider gate (opt-in, on in the Compose producer): without a model the watcher
+    # would accept the document and quietly park it in review.
+    provider_problem = _upload_provider_problem()
+    if provider_problem:
+        raise HTTPException(
+            503,
+            f"No LLM provider resolves ({provider_problem}); uploads are refused until the "
+            "provider is configured — see GET /health",
+        )
 
     _rate_limit_upload()
 

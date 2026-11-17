@@ -577,7 +577,7 @@ All errors follow a consistent format:
 | `413`  | Upload exceeds `MAILROOM_MAX_UPLOAD_BYTES`                          |
 | `429`  | Upload rate limit exceeded (`MAILROOM_UPLOAD_RATE` per 60 s window) |
 | `500`  | Internal server error / database unavailable                        |
-| `503`  | Ingestion paused / dependency unavailable / no live API token and the request arrived off loopback |
+| `503`  | Ingestion paused / dependency unavailable / no live API token and the request arrived off loopback / `/upload` with `MAILROOM_UPLOAD_REQUIRE_PROVIDER` on while no LLM provider resolves |
 
 ***
 

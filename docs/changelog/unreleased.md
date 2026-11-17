@@ -17,6 +17,7 @@ Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com
 
 ## Added
 
+- **The Compose producer refuses uploads while no LLM provider resolves.** With the new opt-in `MAILROOM_UPLOAD_REQUIRE_PROVIDER` (on by default in `deploy/docker-compose.producer.yml`, off elsewhere), `/upload` answers 503 when the sorter's provider and model do not resolve, for example because `OPENROUTER_API_KEY` is missing. Before, a producer with no key accepted every upload and each document parked in review while `/health` only said `degraded`. The check resolves the model without a network call or tokens; the response names only the exception type, and the warning `upload_refused_no_provider` is logged. Docs: `.env.example`, `configuration.md`, `api.md`. Test: `test_upload_provider_guard.py`.
 - **Staged interim ground truth: an opt-in, pinned overlay for labels the Hub does not publish yet (`observability/interim_gt.py`).** This ports the local-mailroom-sandbox interim label overlay (schema `mailroom-interim-labels/v1`) into the pipeline's GT layer.
   - **Loading.** The labels stay where the sandbox builds them, and a run pins the sha256 of their `MANIFEST.json` (`MAILROOM_INTERIM_GT_DIR` plus `MAILROOM_INTERIM_GT_SHA256`; set both or neither). Each class file is verified against the manifest. A mismatch raises `InterimOverlayError`.
   - **Merge.** `build_expected_fields` applies the truth labels (`gap_fill`, `derived`, `correction`) after the Hub catalog and before the post-hoc regex fill.
