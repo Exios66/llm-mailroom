@@ -144,6 +144,7 @@ namespaces = true
 
 [tool.setuptools.package-data]
 "llm.frozen_v1" = ["lineage.json", "README.md"]
+"llm.prompt_sets" = ["catalog.yaml", "*/*.txt"]
 "config" = ["taxonomy.yaml"]
 
 [tool.pytest.ini_options]

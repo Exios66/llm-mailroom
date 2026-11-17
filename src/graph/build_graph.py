@@ -4263,11 +4263,11 @@ def _execute_run(
 
     oracle_routing = oracle_routing_enabled()
     trace_metadata["oracle_routing"] = oracle_routing
-    # Label-aligned specialist guidance arm (llm/label_alignment.py), so an A/B
-    # result set says which prompt arm produced it. "off" on a production run.
-    from llm.label_alignment import alignment_mode
+    # Active prompt set (llm/prompt_sets/catalog.yaml), so an A/B result set says
+    # which prompts produced it.
+    from llm.prompt_sets import active_prompt_set
 
-    trace_metadata["prompt_alignment"] = alignment_mode()
+    trace_metadata["prompt_set"] = active_prompt_set()
     if oracle_routing and ground_truth:
         _warn_oracle_routing_once(run_id)
     public_gt = _public_ground_truth(ground_truth)

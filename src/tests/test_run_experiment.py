@@ -121,8 +121,8 @@ def test_regression_gate_rejects_different_oracle_routing_modes(current_mode, ba
     assert rx.check_regression(current, current) == []
 
 
-def test_regression_gate_rejects_a_different_prompt_alignment_arm():
-    current = {"n_items": 1, "n_errors": 0, "metrics": {"class_accuracy": 1.0}, "prompt_alignment": "rules"}
-    assert any("prompt_alignment" in p for p in rx.check_regression(current, {**current, "prompt_alignment": "off"}))
-    legacy = {k: v for k, v in current.items() if k != "prompt_alignment"}
+def test_regression_gate_rejects_a_different_prompt_set():
+    current = {"n_items": 1, "n_errors": 0, "metrics": {"class_accuracy": 1.0}, "prompt_set": "deploy_v1"}
+    assert any("prompt_set" in p for p in rx.check_regression(current, {**current, "prompt_set": "frozen_v1"}))
+    legacy = {k: v for k, v in current.items() if k != "prompt_set"}
     assert rx.check_regression(current, legacy) == []

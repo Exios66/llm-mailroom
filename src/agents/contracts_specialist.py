@@ -16,7 +16,7 @@ that agreement family in mind.
 import structlog
 from langchain_agents.prompts import get_prompt
 from langchain_agents.specialist_agents import ContractsSpecialist as _LangChainContractsSpecialist
-from llm.label_alignment import apply_label_alignment
+from llm.prompt_sets import served_prompt
 from llm.prompts import get_managed_prompt
 from pipeline.config import get_agent_config
 
@@ -60,5 +60,10 @@ class ContractsSpecialist(_LangChainContractsSpecialist):
 
     def system_prompt(self) -> str:
         default = get_prompt(self.prompt_version)
-        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, default)
-        return apply_label_alignment(self.agent_name, text)
+        if self.prompt_version == self.agent_name:
+            # The production pin follows the active prompt set; an explicit eval pin
+            # (e.g. contracts_specialist_v33) is served as pinned.
+            text, self._langfuse_prompt = get_managed_prompt(*served_prompt(self.agent_name, default))
+        else:
+            text, self._langfuse_prompt = get_managed_prompt(self.agent_name, default)
+        return text

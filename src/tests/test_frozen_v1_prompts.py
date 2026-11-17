@@ -356,6 +356,8 @@ def test_mailroom_wrappers_resolve_prompts_through_get_managed_prompt(monkeypatc
     from agents.sorter import SorterAgent
 
     seen: dict[str, str] = {}
+    # The frozen-v1 wiring is the frozen_v1 prompt set; deploy_v1 is covered in test_prompt_sets.py.
+    monkeypatch.setenv("MAILROOM_PROMPT_SET", "frozen_v1")
 
     def fake(agent_name, default_text, variables=None, label="production"):
         seen[agent_name] = default_text

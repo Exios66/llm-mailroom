@@ -314,14 +314,15 @@ routing:
   # Cause labelling (class_miss, subclass_miss) and scoring read GT either way.
   use_ground_truth: false
 
-# Label-aligned specialist guidance (llm/label_alignment.py). off (default): the
-# frozen v1 specialist prompts are served unchanged. rules: append field definitions,
-# closed vocabularies and edge-case rules from the gold-label guide (correspondence,
-# corporate_record, contract). rules_few_shot: rules plus synthetic worked examples
-# (correspondence). An A/B experiment knob: MAILROOM_PROMPT_ALIGNMENT=off|rules|rules_few_shot
-# overrides this for one process. Not a proven gain until an experiment measures it.
-prompt_alignment:
-  mode: "off"
+# Prompt sets (llm/prompt_sets/catalog.yaml): which versioned system prompt each agent
+# serves. deploy_v1 = the condensed front-runners plus the label-guide fixes; frozen_v1 =
+# every agent's code default (the A/B baseline); deploy_v1_examples = deploy_v1 plus
+# synthetic correspondence examples. MAILROOM_PROMPT_SET overrides `active` for one process.
+# by_agent pins single agents to another set for a per-agent A/B arm
+# (e.g. {correspondence_specialist: frozen_v1}); the env var, when set, wins over it.
+prompt_set:
+  active: deploy_v1
+  by_agent: {}
 
 # Lane A reviewer mode (see pipeline/decision_review.py). Every class keeps
 # the LLM sorter_reviewer unless its by_class entry sets `mode: decision_only`

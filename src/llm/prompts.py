@@ -183,7 +183,7 @@ def prompt_templates() -> dict[str, str]:
     )
 
     from llm.frozen_v1 import load_specialist_v1
-    from llm.label_alignment import alignment_templates
+    from llm.prompt_sets import set_templates
 
     return {
         # Sorter: the condensed lineage prompt (prime-sample compare beat the
@@ -208,7 +208,7 @@ def prompt_templates() -> dict[str, str]:
         "gmail_triage": gmail_triage.TRIAGE_SYSTEM_PROMPT,
         "intake": intake.INTAKE_SYSTEM_PROMPT,
         "relations": relations.RELATIONS_SYSTEM_PROMPT,
-        # Opt-in label-aligned addenda (llm/label_alignment.py), appended to the
-        # specialist prompt only when prompt_alignment.mode is not "off".
-        **alignment_templates(),
+        # Versioned prompt-set files (llm/prompt_sets/catalog.yaml), managed as
+        # mailroom-<agent>--<set> so one set's Langfuse copy never overrides another.
+        **set_templates(),
     }
