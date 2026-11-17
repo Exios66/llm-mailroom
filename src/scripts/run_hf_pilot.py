@@ -801,6 +801,16 @@ def enrich_sample_row(row: dict) -> dict:
     return out
 
 
+def _interim_gt_line(interim: object) -> str:
+    """The gold's identity for the Markdown report, from the saved report value (not the env)."""
+    if not isinstance(interim, dict) or not interim:
+        return "- gold = **Hub-only** (no interim GT overlay)"
+    sha = interim.get("overlay_sha256") or "unknown"
+    docs = interim.get("documents")
+    detail = f"  documents = {docs}" if docs is not None else ""
+    return f"- gold = **Hub + interim GT overlay**  overlay sha256 = `{sha}`{detail}"
+
+
 def render_metrics_markdown(report: dict) -> str:
     """Human-readable scoring + pricing table for an HF pilot report."""
     rows = [enrich_sample_row(r) for r in (report.get("samples") or [])]
@@ -812,6 +822,7 @@ def render_metrics_markdown(report: dict) -> str:
         f"- dataset = `{report.get('dataset')}` split `{report.get('split')}`",
         f"- mode = **{report.get('mode')}**  "
         f"unique_matters = `{report.get('unique_matters')}`",
+        _interim_gt_line(report.get("interim_gt")),
         f"- n = **{metrics.get('n', 0)}**  errors = **{report.get('errors', 0)}**",
         f"- exact accuracy = **{metrics.get('exact_accuracy')}**  "
         f"subclass = **{metrics.get('subclass_accuracy')}**",
