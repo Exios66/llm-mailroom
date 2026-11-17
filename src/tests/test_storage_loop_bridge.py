@@ -391,5 +391,24 @@ def test_wired_call_sites_use_the_bridge():
     from pipeline import relations
     from storage import warehouse
 
-    for fn in (build_graph._run_coro, relations._run, warehouse._run_async):
+    for fn in (build_graph._run_coro, relations._run):
         assert "run_sync" in inspect.getsource(fn), fn.__qualname__
+    # The warehouse export does blocking parquet/flock work inside its
+    # coroutine, so it must stay off the shared loop (it would stall it).
+    assert "run_sync" not in inspect.getsource(warehouse._run_async)
+
+
+def test_system_exit_in_coroutine_reaches_caller_and_loop_survives():
+    """A SystemExit raised inside the work must not kill the shared loop thread."""
+    from storage import loop_bridge
+
+    async def _boom():
+        raise SystemExit(3)
+
+    with pytest.raises(SystemExit):
+        loop_bridge.run_sync(_boom)
+
+    async def _ok():
+        return 7
+
+    assert loop_bridge.run_sync(_ok, timeout=10) == 7

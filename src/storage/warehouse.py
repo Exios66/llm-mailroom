@@ -508,21 +508,27 @@ def _publish_export(stamp, doc_rows, audit_rows, latest_updated):
 
 
 def _run_async(coro):
-    """Run ``coro`` from sync code on the shared storage loop.
+    """Run ``coro`` on a private event loop (deliberately NOT the shared storage loop).
 
-    From a thread that already runs a loop (an async API handler) the old code
-    bounded the wait with 30 s; that bound is kept for that case (the work is
-    now cancelled on expiry instead of left running). Elsewhere it was unbounded.
+    The export runs ``_publish_export`` synchronously inside the coroutine
+    (parquet merge/write under a blocking ``fcntl.flock``). On the shared
+    ``storage.loop_bridge`` loop that would stall every other sync DB call in
+    the process (heartbeats, audit writes) for the whole export, or forever if
+    another process holds the lock. A private loop blocks only this caller.
     """
     import asyncio
-
-    from storage.loop_bridge import run_sync
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return run_sync(coro)
-    return run_sync(coro, timeout=30)
+        return asyncio.run(coro)
+    # A loop is running in THIS thread (async API handler). Scheduling onto it
+    # and blocking on the future would deadlock it, so run the coroutine on a
+    # fresh loop in a helper thread instead.
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result(timeout=30)
 
 
 def export_document_to_warehouse(doc_id: str, *, stamp: date | None = None) -> bool:
