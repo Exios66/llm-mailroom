@@ -240,3 +240,16 @@ def test_stateless_rejection_survives_an_unreadable_manifest_reload(api, temp_ba
     export = mocker.patch.object(bg, "_maybe_export_warehouse")
     bg._stateless_reject_audit_row(manifest, "", None)  # no exception: the rejection is already final
     export.assert_called_once_with(doc_id)
+
+
+def test_stateless_rejection_trace_records_the_reject_decision(api, temp_base_dir, llm):
+    """Review (PR #298): decisions come from the visit's own update, so the synthesized ``human_review``
+    visit must carry the rejection there, or the ``failed`` row's trace loses who decided what."""
+    from graph import build_graph as bg
+    from pipeline.bins import load_manifest
+
+    doc_id = _extraction_park(temp_base_dir, "reject-decision.txt")
+    bg._stateless_reject_audit_row(load_manifest(doc_id), "", None)
+    visit = _row(doc_id)["detail"]["trace"][-1]
+    assert visit["node"] == "human_review"
+    assert [(d["question"], d["answer"]) for d in visit["decisions"]] == [("review_decision", "rejected")]

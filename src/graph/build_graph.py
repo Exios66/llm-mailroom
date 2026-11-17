@@ -4847,7 +4847,8 @@ def _stateless_reject_audit_row(manifest, file_path: str, label: dict | None) ->
         current = load_manifest(doc_id) or manifest
         state = _stateless_reject_state(current, file_path, label)
         now = datetime.now(timezone.utc)
-        state["audit_trace"] = [visit("human_review", state, {}, started_at=now, ended_at=now)]
+        state["audit_trace"] = [visit("human_review", state, {"review_decision": state["review_decision"]},
+                                       started_at=now, ended_at=now)]
 
         def write() -> None:
             # This rejection made no LLM call and took no time of its own: account it from a fresh run, in an

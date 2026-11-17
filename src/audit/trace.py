@@ -171,8 +171,8 @@ def decisions_for(node: str, state: dict, update: dict, *, event: dict | None = 
     """The node's decisions in the sandbox schema ``{question, type, answer, p, expected, options, source}``.
 
     Only decisions this invocation made are listed: answers come from the node's own ``update``, never from
-    values carried in the merged state (a ``None`` or absent answer is skipped, so a transient retry that
-    returned no result records none). ``expected`` ground truth is read from the merged state.
+    values carried in the merged state (a ``None`` or absent answer is skipped, so a transient classifier retry
+    that returned no label records none; a transient ``extract`` still reports its ``0.0`` confidence). ``expected`` ground truth is read from the merged state.
     """
     s = {**(state or {}), **(update or {})}
     u = update if isinstance(update, dict) else {}
@@ -325,7 +325,7 @@ def llm_info_since(start: int, scope: str | None = None) -> LLMCallInfo | None:
     """Aggregate calls since ``start``, or return ``None`` when there are none.
 
     With ``scope`` (the visit's :func:`current_visit_scope`), only calls made by that visit count: a call
-    that lands late from an earlier, timed-out visit stays with the visit that made it.
+    that lands late from an earlier, timed-out visit is not counted for this visit (it stays in the run-level totals).
 
     Sum token counts and known costs, join captured I/O, and use the last
     call's model and prompt version. Cost stays ``None`` if every cost is unknown.
