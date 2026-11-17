@@ -584,7 +584,7 @@ def load_corpus(
         )
     if verify and "doc_text" in merged.columns:
         texts = merged["doc_text"].fillna("").astype(str)
-        has_text = texts.str.len() > 0
+        has_text = texts.str.strip().str.len() > 0  # whitespace-only text is unreadable, not present
         expected = merged.get("content_sha256")
         if expected is not None:
             computed = texts.map(_sha256_text)

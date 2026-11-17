@@ -506,3 +506,16 @@ def test_another_run_of_identical_text_keeps_this_runs_cached_windows(monkeypatc
     sw.forget_document(text, "run-a")
     assert not [k for k in sw._cache if k[0] == "run-a"]
     assert n > 3
+
+
+def test_arbitration_findings_keep_their_own_window_numbers():
+    """A human_review from window 3 of 3 is reported as window 3 of 3, not renumbered."""
+    from agents.arbiter import aggregate_arbitration
+
+    merged = aggregate_arbitration([
+        {"decision": "accept_with_caveats", "reasoning": "fine"},
+        {"decision": "accept_with_caveats", "reasoning": "fine"},
+        {"decision": "human_review", "reasoning": "signature block conflicts"},
+    ])
+    assert merged["decision"] == "human_review"
+    assert merged["reasoning"] == "[window 3 of 3] signature block conflicts"

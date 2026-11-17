@@ -215,7 +215,8 @@ def test_pilot_manifest_rows_carry_the_flag_and_strict_is_forwarded(fake_loader,
 
     rows, prov = run_pilot.build_hf_manifest("train", 3, 0, base_dir=tmp_path)
     assert fake_loader == [{"split": "train"}]
-    assert {r["filename"]: r["content_verified"] for r in rows if r["id"].startswith("contract_1")} or True
+    flags = {r["id"]: r["content_verified"] for r in rows}
+    assert [v for k, v in flags.items() if k.startswith("contract_1")] == ["0"]
     assert sorted({r["content_verified"] for r in rows}) == ["0", "1"]
     assert prov["integrity"]["mismatched"] == 1
     run_pilot.build_hf_manifest("train", 1, 0, base_dir=tmp_path, strict=True)
@@ -255,3 +256,16 @@ def test_sync_dataset_keeps_content_verified_out_of_labels(monkeypatch):
     sync_dataset._load_hf_rows(live=True)
     assert seen and "content_verified" not in seen[0][0]["labels"]
     assert seen[0][0]["labels"]["expected"] == "contract"
+
+
+def test_whitespace_only_text_counts_as_missing_not_verified(monkeypatch):
+    """Whitespace-only text is unreadable: never verified even when its hash matches, and strict refuses it."""
+    blank = "   \n\t"
+    gt = pd.DataFrame([{"filename": "blank.txt", "expected": "contract", "content_sha256": _d(blank)}])
+    blind = pd.DataFrame([{"filename": "blank.txt", "doc_text": blank}])
+    _install(monkeypatch, gt, blind)
+    frame, prov = loader.load_corpus(revision="v1")
+    assert bool(frame["content_verified"].iloc[0]) is False
+    assert prov["integrity"]["missing_text"] == 1 and prov["integrity"]["verified"] == 0
+    with pytest.raises(loader.CorpusIntegrityError):
+        loader.load_corpus(revision="v1", strict=True)

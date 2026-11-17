@@ -97,10 +97,14 @@ def _coverage(windows_total: int, windows_checked: int, model_calls: int, mark: 
     }
 
 
-def _tagged(results: list[dict], key: str) -> str:
+def _tagged(results: list[dict], key: str, chosen: list[dict] | None = None) -> str:
+    """Each chosen window's ``key`` text, tagged with that window's own position in ``results``."""
     total = len(results)
+    keep = results if chosen is None else chosen
     return "\n".join(
-        f"[{window_label(i, total)}] {r.get(key)}" for i, r in enumerate(results, start=1) if r.get(key)
+        f"[{window_label(i, total)}] {r.get(key)}"
+        for i, r in enumerate(results, start=1)
+        if r.get(key) and any(r is c for c in keep)
     )
 
 
@@ -133,8 +137,8 @@ def aggregate_arbitration(results: list[dict]) -> dict:
     return {
         "decision": decision,
         "fields_to_fix": fields if decision == "retry_extraction" else [],
-        "reasoning": _tagged(chosen, "reasoning"),
-        "handoff_summary": _tagged(chosen, "handoff_summary"),
+        "reasoning": _tagged(results, "reasoning", chosen),
+        "handoff_summary": _tagged(results, "handoff_summary", chosen),
     }
 
 
