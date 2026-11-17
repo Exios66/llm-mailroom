@@ -339,15 +339,6 @@ async def test_complete_copy_after_partial_row_becomes_addendum(sinks, db_down, 
     row = await get_row("d-1")
     rf = row["detail"]["recovered_from"]
 
-    # A complete copy with a different hash is refused.
-    from audit.writer import pending_record
-
-    stranger = pending_record(_row(big=True))
-    late.pending["late-x"] = stranger
-    report = await reconcile()
-    assert (report.gap_closed, report.rejected_hash) == (0, 1)
-
-    late.pending.clear()
     late.pending.update(held)
     [copy] = held.values()
     assert copy["detail_sha256"] == rf["full_detail_sha256"]
@@ -1150,3 +1141,52 @@ def test_reconcile_cli_reports_document_write_failure(monkeypatch, capsys, as_js
         assert json.loads(output)["failed"] == 1
     else:
         assert "1 failed" in output
+
+
+@pytest.mark.parametrize("original_spool_visible", [False, True])
+async def test_later_complete_write_is_recovered_while_original_gap_stays_open(
+    sinks, db_down, original_spool_visible
+):
+    from audit.reconcile import reconcile
+    from audit.row import mark_manifest
+    from audit.verify import verify_audit_db
+    from audit.writer import commit_or_park, get_row
+
+    small, late = FakeSink("small", max_payload_bytes=8_000), FakeSink("late")
+    sinks[:] = [small, late]
+    _save_manifest()
+    out = await commit_or_park(_row(big=True))
+    mark_manifest("d-1", out.status, out.refs)
+    original_full = dict(late.pending)
+    late.pending.clear()
+    db_down[0] = None
+    assert (await reconcile()).partial == 1
+    original_partial = dict(small.pending)
+    if not original_spool_visible:
+        small.pending.clear()  # the original sink copy cannot be read on this sweep
+    db_down[0] = RuntimeError("database is locked")
+    await commit_or_park(_second_run_big())
+    db_down[0] = None
+
+    dry_report = await reconcile(dry_run=True)
+    assert (dry_report.resumed, dry_report.rejected_hash, dry_report.gap_closed) == (1, 0, 0)
+    assert (await get_row("d-1"))["addenda"] == []
+    assert _manifest().audit_written == "pending_partial"
+    report = await reconcile()
+    assert (report.resumed, report.rejected_hash, report.gap_closed) == (1, 0, 0)
+    [add] = (await get_row("d-1"))["addenda"]
+    assert add["kind"] == "resumed" and add["detail"]["trace"][0]["visit_id"] == "v-second"
+    assert _manifest().audit_written == "pending_partial"
+    assert any(r["ref"] in original_partial for r in _manifest().audit_pending_refs)
+    assert (await verify_audit_db()).ok
+    await reconcile()  # the later write is spent, while the original gap stays visible
+    assert _manifest().audit_written == "pending_partial"
+    assert len((await get_row("d-1"))["addenda"]) == 1
+
+    small.pending.update(original_partial)
+    late.pending.update(original_full)
+    assert (await reconcile()).gap_closed == 1
+    assert _manifest().audit_written is True
+    assert [a["kind"] for a in (await get_row("d-1"))["addenda"]] == ["resumed", "recovered_detail"]
+    assert all(not sink.fetch_pending() for sink in sinks)
+    assert (await verify_audit_db()).ok

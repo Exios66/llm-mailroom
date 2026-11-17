@@ -142,12 +142,18 @@ def _kept_refs(copies: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _mark_partial(doc_id: str, copies: list[dict[str, Any]]) -> None:
+def _mark_partial(doc_id: str, copies: list[dict[str, Any]], *, row_gap: dict | None = None) -> None:
     """Keep the gap on the manifest: ``pending_partial`` with the kept copies, until a complete one closes it."""
     from audit.row import mark_manifest
     from pipeline.bins import load_manifest
 
     refs = _kept_refs(copies)
+    if row_gap and not any((r["sink"], r["ref"]) == (row_gap.get("sink"), row_gap.get("ref")) for r in refs):
+        # The original partial row remains incomplete even if its spool is
+        # temporarily unreadable. Preserve its provenance without claiming
+        # this sweep read that copy back successfully.
+        refs.append({"sink": row_gap.get("sink"), "ref": row_gap.get("ref"),
+                     "complete": False, "recoverable": False})
     try:
         current = load_manifest(doc_id)
     except Exception:
@@ -272,8 +278,12 @@ async def _reconcile_repeats(report: ReconcileReport, doc_id: str, row: dict[str
         return
     for rec in fresh:
         await _write_repeat(doc_id, rec)
-    if open_partials:
-        _mark_partial(doc_id, open_partials)
+    rf = (row.get("detail") or {}).get("recovered_from") or {}
+    row_gap = rf if rf.get("complete") is False and not any(
+        a["kind"] == "recovered_detail" for a in row.get("addenda") or []
+    ) else None
+    if open_partials or row_gap:
+        _mark_partial(doc_id, open_partials, row_gap=row_gap)
         _drop([c for c in copies if not any(c is o for o in open_partials)])
         return
     # The row (and every repeat write) is in place: the copies are spent. A manifest still
@@ -338,15 +348,10 @@ async def _reconcile_doc(report: ReconcileReport, doc_id: str, copies: list[dict
                     if rest:
                         return await _reconcile_doc(report, doc_id, rest, dry_run=False)
                     return True
-                report.rejected_hash += len(complete)
-                for r in complete:
-                    logger.error("audit_reconcile_hash_mismatch", doc_id=doc_id, sink=r["_sink"],
-                                 ref=r.get("ref"), reason="not_the_partial_rows_full_record")
-            # The partial row stays open: keep every copy, a complete one may still turn up.
-            report.skipped_existing += 1
-            report.docs.append({"doc_id": doc_id, "action": "skipped_existing"})
-            if not dry_run:
-                _mark_partial(doc_id, copies)  # also repairs a mark a crash left behind
+            # A different complete copy can be a later terminal write, not a
+            # corrupt version of the original. hash_ok already validated it.
+            # Recover those repeats while retaining the original row's gap.
+            await _reconcile_repeats(report, doc_id, row, copies, unique, dry_run=dry_run)
             return True
         await _reconcile_repeats(report, doc_id, row, copies, unique, dry_run=dry_run)
         return True
