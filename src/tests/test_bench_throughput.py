@@ -423,7 +423,8 @@ def test_rate_limit_decision_is_deterministic_per_doc_and_call():
 
 def test_smoke_run_writes_json_and_markdown(tmp_path):
     json_out, md_out = tmp_path / "out.json", tmp_path / "out.md"
-    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    # Pin the storage mode: an inherited MAILROOM_DB_SHARED_LOOP=0 would build an engine per call.
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src"), "MAILROOM_DB_SHARED_LOOP": "1"}
     proc = subprocess.run(
         [
             sys.executable, str(ROOT / "src/scripts/bench_throughput.py"),
@@ -443,7 +444,10 @@ def test_smoke_run_writes_json_and_markdown(tmp_path):
         # beats the heart at node boundaries and opens database connections.
         assert c["llm_calls"] >= 2
         assert c["openai_client_constructions"] + c["langchain_client_constructions"] >= 2
-        assert c["heartbeat_calls"] >= 6 and c["db_connections_opened"] > 0 and c["db_engines_created"] > 0
+        assert c["heartbeat_calls"] >= 6 and c["db_connections_opened"] > 0
+        # Sync callers share one storage loop, hence one engine, built during the
+        # discarded warm-up document: the measured window creates none (or one).
+        assert 0 <= c["db_engines_created"] <= 1
         assert {"intake", "classify", "extract", "archive"} <= set(lv["nodes"])
         assert lv["cpu"] is None or lv["cpu"]["cores_busy"] > 0
     assert md_out.read_text().startswith("| concurrency |")

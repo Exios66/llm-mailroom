@@ -824,8 +824,6 @@ def _triage_catalog_upsert(
     (65 live sweeps, zero edges — HUB-051 audit). Best-effort, never raises.
     """
     try:
-        import asyncio
-
         from schemas.matter import Matter
         from storage.catalog import (
             write_document_record as _write_doc,
@@ -858,7 +856,9 @@ def _triage_catalog_upsert(
             await _write_matter(matter)
             await _write_doc(doc_record)
 
-        asyncio.run(_runner())
+        from storage.loop_bridge import run_sync
+
+        run_sync(_runner())
         logger.debug("triage_catalog_upserted", doc_id=manifest.doc_id, stage=doc_record["stage"])
     except Exception:
         logger.exception("triage_catalog_upsert_failed")
