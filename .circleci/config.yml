@@ -1,9 +1,13 @@
 version: 2.1
 
-# CircleCI is the CI hub. One small executor; tiered PR runs (docs, tests,
-# affected, full: see src/scripts/ci_tests.py, which prints the tier and the
-# reason first) and one weekly full/coverage backstop conserve free-tier
-# credits. Keep ci/circleci: test as the required check. A scoped green cache
+# CircleCI is the CI hub. Tiered PR runs (docs, tests, affected, full: see
+# src/scripts/ci_tests.py, which prints the tier and the reason first) and one
+# weekly full/coverage backstop conserve free-tier credits. PR runs use a
+# `large` executor (4 vCPU, 4x the per-minute rate of `small`) with four
+# pytest-xdist workers, which finishes in about a quarter of the time for
+# roughly the same credits; the weekly coverage run stays on `small`, serial.
+# The virtualenv is cached on pyproject.toml (which carries the Dojo pin), so
+# an unchanged dependency set skips pip entirely. Keep ci/circleci: test as the required check. A scoped green cache
 # can never stand in for full. Coverage (branch + per-test contexts) is the
 # slowest part of a full run, so only the weekly backstop collects it.
 parameters:
@@ -13,9 +17,14 @@ parameters:
 
 executors:
   py:
+    parameters:
+      size:
+        type: enum
+        enum: [small, medium, large]
+        default: small
     docker:
       - image: cimg/python:3.11
-    resource_class: small
+    resource_class: << parameters.size >>
 
 jobs:
   test:
@@ -26,7 +35,20 @@ jobs:
       coverage:
         type: boolean
         default: false
-    executor: py
+      size:
+        type: enum
+        enum: [small, medium, large]
+        default: large
+      workers:
+        # pytest-xdist workers; match the executor's vCPUs (small 1, medium 2,
+        # large 4). `-n auto` would read the host's CPU count, not the container's.
+        type: integer
+        default: 4
+    executor:
+      name: py
+      size: << parameters.size >>
+    environment:
+      MAILROOM_TEST_WORKERS: << parameters.workers >>
     steps:
       - checkout
       - restore_cache:
@@ -73,25 +95,40 @@ jobs:
             if [ "<< parameters.force_full >>" != true ] && [ -f test-results/green/ok ]; then
               circleci-agent step halt
             fi
+      - run:
+          name: Key the virtualenv on the interpreter
+          # A venv points at its base interpreter: an image update to a new
+          # 3.11.x must not restore a venv built against the old one.
+          command: |
+            python -c 'import sys; print(sys.version); print(sys.base_prefix)' > /tmp/venv-interpreter
+            echo 'export PATH="$HOME/venv/bin:$PATH"' >> "$BASH_ENV"
       - restore_cache:
           keys:
-            - pip-v1-{{ checksum "pyproject.toml" }}
+            # Exact match only: pyproject.toml carries every pin, the Dojo git
+            # ref included, so any dependency change rebuilds from scratch.
+            - venv-v1-{{ checksum "/tmp/venv-interpreter" }}-{{ checksum "pyproject.toml" }}-{{ checksum "tools/pipeline-diagnostics/pyproject.toml" }}
       - run:
-          name: Install dev dependencies
+          name: Install dev dependencies (skipped on a virtualenv cache hit)
           # pip honors the pinned Dojo dependency; uv workspace sources do not.
-          command: pip install -e ".[dev]"
-      - run:
-          name: Install nested pipeline-diagnostics package
-          # After the parent install: the tool imports pipeline modules, and the
-          # editable install is what puts its console entry point on PATH.
+          # The nested pipeline-diagnostics package installs after the parent:
+          # the tool imports pipeline modules, and the editable install is what
+          # puts its console entry point on PATH. Editable installs point at
+          # this checkout's fixed path, so a restored venv sees the new tree.
           command: |
+            if [ -x ~/venv/bin/python ] && ~/venv/bin/python -c 'import llm_dojo_scoring, xdist, mailroom_diagnostics' 2>/dev/null; then
+              echo "virtualenv restored from cache"
+              exit 0
+            fi
+            rm -rf ~/venv
+            python -m venv ~/venv
+            ~/venv/bin/pip install -e ".[dev]"
             if [ -f tools/pipeline-diagnostics/pyproject.toml ]; then
-              pip install -e tools/pipeline-diagnostics
+              ~/venv/bin/pip install -e tools/pipeline-diagnostics
             fi
       - save_cache:
-          key: pip-v1-{{ checksum "pyproject.toml" }}
+          key: venv-v1-{{ checksum "/tmp/venv-interpreter" }}-{{ checksum "pyproject.toml" }}-{{ checksum "tools/pipeline-diagnostics/pyproject.toml" }}
           paths:
-            - ~/.cache/pip
+            - ~/venv
       - run:
           name: Execute the test cascade and relevant experiment gate
           command: |
@@ -139,3 +176,6 @@ workflows:
       - test:
           force_full: true
           coverage: true
+          # Serial on the cheapest executor, exactly as before this change.
+          size: small
+          workers: 1
