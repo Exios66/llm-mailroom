@@ -4342,6 +4342,11 @@ def _execute_run(
 
     oracle_routing = oracle_routing_enabled()
     trace_metadata["oracle_routing"] = oracle_routing
+    # A/B arms of the confidence thresholds (MAILROOM_CONFIDENCE_PROFILE) must be
+    # told apart in the traces; an unknown profile name fails the run here.
+    from pipeline.config import confidence_profile_name
+
+    trace_metadata["confidence_profile"] = confidence_profile_name()
     if oracle_routing and ground_truth:
         _warn_oracle_routing_once(run_id)
     public_gt = _public_ground_truth(ground_truth)

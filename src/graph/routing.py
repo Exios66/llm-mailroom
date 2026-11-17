@@ -2,6 +2,7 @@ import structlog
 from typing import Any, Literal, Mapping
 
 from pipeline.config import (
+    class_auto_archives,
     get_confidence_thresholds,
     get_review_mode,
     is_extractable_doc_type,
@@ -890,6 +891,15 @@ def after_report(state: dict) -> Literal["catalog_write", "human_review"]:
         logger.info(
             "report_failed_withhold_catalog",
             doc_id=state.get("doc_id"),
+        )
+        return "human_review"
+    # A class with ``auto_archive: false`` never archives model output unseen: the
+    # compiled draft goes to a person. Only fields a person applied archive directly.
+    if not human_fields_applied(state) and not class_auto_archives(state.get("doc_type")):
+        logger.info(
+            "class_requires_review",
+            doc_id=state.get("doc_id"),
+            doc_type=state.get("doc_type"),
         )
         return "human_review"
     return "catalog_write"

@@ -49,6 +49,7 @@ JUDGE_INCOMPLETE = "judge_incomplete"
 JUDGE_ERROR = "judge_error"
 RETRIES_EXHAUSTED = "retries_exhausted"
 CHUNK_FAILED = "chunk_failed"
+CLASS_REQUIRES_REVIEW = "class_requires_review"
 
 CAUSE_LABELS: dict[str, str] = {
     CLASS_MISS: "classification miss vs ground truth",
@@ -83,6 +84,7 @@ CAUSE_LABELS: dict[str, str] = {
     JUDGE_ERROR: "judge verification failed",
     RETRIES_EXHAUSTED: "confidence retry budget spent without a settled answer",
     CHUNK_FAILED: "one or more extraction windows failed",
+    CLASS_REQUIRES_REVIEW: "this class never archives without a person (auto_archive: false)",
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})
@@ -452,6 +454,17 @@ def _state_derived_causes(
 
     if data.get("extraction_guardrail"):
         add(GUARDRAIL)
+
+    if (
+        isinstance(doc_type, str)
+        and is_extractable_doc_type(doc_type)
+        and data.get("extracted_data")
+        and not (data.get("review_decision") == "human_applied" and data.get("extraction_source") == "human")
+    ):
+        from pipeline.config import class_auto_archives
+
+        if not class_auto_archives(doc_type):
+            add(CLASS_REQUIRES_REVIEW)
 
     if _failed_chunks(extracted) > 0:
         add(CHUNK_FAILED)

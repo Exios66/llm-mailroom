@@ -1000,22 +1000,25 @@
     "conflict_threshold": 0.3,
     "by_class": {
       "contract": {
-        "high": 0.98,
+        "high": 0.95,
         "low": 0.9,
         "judge_band_high": 0.97
       },
       "merger_agreement": {
         "high": 0.98,
         "low": 0.9,
-        "judge_band_high": 0.97
+        "judge_band_high": 0.9,
+        "arbiter_retry_max": 1,
+        "judge_max_passes": 2,
+        "auto_archive": false
       },
       "insurance_claim": {
-        "high": 0.98,
+        "high": 0.95,
         "low": 0.9,
         "judge_band_high": 0.97
       },
       "corporate_record": {
-        "high": 0.96,
+        "high": 0.95,
         "low": 0.86,
         "judge_band_high": 0.94
       },

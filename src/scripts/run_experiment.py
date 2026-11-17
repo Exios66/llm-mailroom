@@ -41,7 +41,7 @@ REPO_ROOT = SRC_DIR.parent
 sys.path.insert(0, str(SRC_DIR))
 
 from langfuse import Evaluation  # noqa: E402
-from pipeline.config import oracle_routing_enabled  # noqa: E402
+from pipeline.config import confidence_profile_name, oracle_routing_enabled  # noqa: E402
 
 MANIFEST = REPO_ROOT / "docs" / "examples" / "samples" / "manifest.csv"
 GATED_METRICS = ("class_accuracy", "macro_class_accuracy", "macro_f1", "stage_accuracy")
@@ -380,12 +380,14 @@ def main(argv: list[str] | None = None) -> int:
             f"{args.dataset}-{run_id}", label, len(items), rows, errors, finished))
 
     summary["oracle_routing"] = oracle_routing_enabled()
+    summary["confidence_profile"] = confidence_profile_name()
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
     problems = check_regression(summary, baseline, args.tolerance)
     public = {
         "dataset": args.dataset,
         "mode": "mock" if args.mock else "real",
         "oracle_routing": summary["oracle_routing"],  # #207: True = routing read ground truth
+        "confidence_profile": summary["confidence_profile"],
         "n_items": summary["n_items"],
         "n_errors": summary["n_errors"],
         "metrics": summary["metrics"],
