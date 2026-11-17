@@ -2088,6 +2088,7 @@ class TestDuplicateKeys:
     @pytest.mark.parametrize("text", [
         "a: {<<: {x: 1, x: 2}, y: 3}\n",
         "b: &b {x: 1}\nd: {<<: [*b, {z: 1, z: 2}]}\n",
+        "b: &b {x: 1}\nc: &c {x: 2}\nd:\n  <<: *b\n  <<: *c\n",
     ])
     def test_a_duplicate_inside_a_merge_source_is_rejected(self, tmp_path, monkeypatch, text):
         import yaml

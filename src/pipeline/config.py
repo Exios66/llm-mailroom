@@ -35,8 +35,15 @@ class _UniqueKeyLoader(yaml.SafeLoader):
             return
         checked.add(id(node))
         seen: set = set()
+        merges = 0
         for key_node, value_node in node.value:
             if key_node.tag == "tag:yaml.org,2002:merge":
+                merges += 1
+                if merges > 1:  # ``<<`` written twice: SafeLoader would quietly combine both
+                    raise yaml.constructor.ConstructorError(
+                        "while constructing a mapping", node.start_mark,
+                        "found duplicate key '<<'", key_node.start_mark,
+                    )
                 # The merge sources are mappings in their own right: an inline one is never
                 # constructed on its own, so its keys are checked here. An explicit key of
                 # ``node`` overriding a merged one stays legal.
