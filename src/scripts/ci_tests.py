@@ -86,7 +86,8 @@ NESTED_PARENT_INPUTS = {"src/scripts/export_contract.py"}
 
 BROAD_PRODUCTION_FILES = 8    # this many changed production files: stop reasoning file by file
 BROAD_TEST_SHARE = 0.65       # a selection this large is cheaper to run as the full suite
-# Soft per-tier wall-clock budgets (seconds) on the CI `small` executor. They are reported, never
+# Soft per-tier wall-clock budgets (seconds), set on the serial CI `small` executor (PR runs are now
+# parallel on `large`, so they finish well inside them). They are reported, never
 # enforced: a run over budget prints a warning so the tier boundaries can be re-tuned from data.
 TIER_BUDGET_SECONDS = {"docs": 120, "tests": 300, "affected": 480, "full": 900}
 
@@ -352,6 +353,20 @@ def _env() -> dict:
     return env
 
 
+def worker_args(plan: dict) -> list[str]:
+    """pytest-xdist arguments from ``MAILROOM_TEST_WORKERS`` (CI sets it to the executor's
+    vCPU count). Unset, invalid or 1 means a serial run, and a coverage run always stays serial
+    so the weekly backstop's per-test contexts are collected exactly as before."""
+    try:
+        workers = int(os.environ.get("MAILROOM_TEST_WORKERS", "1"))
+    except ValueError:
+        workers = 1
+    if workers <= 1 or plan["coverage"]:
+        return []
+    # worksteal rebalances the long tail (notebook re-execution, calibration fixtures).
+    return ["-n", str(workers), "--dist", "worksteal"]
+
+
 def execute(plan: dict, *, results: Path) -> int:
     """Run the planned stages in order, stop at the first failure, and report time per stage."""
     results.mkdir(parents=True, exist_ok=True)
@@ -384,7 +399,7 @@ def execute(plan: dict, *, results: Path) -> int:
 
     for name, paths in phases:
         cmd = [sys.executable, "-m", "pytest", *paths, "-q", "-p", "no:cacheprovider",
-               "--durations=20", f"--junitxml={results / (name + '.xml')}"]
+               "--durations=20", f"--junitxml={results / (name + '.xml')}", *worker_args(plan)]
         if name == "full" and plan["coverage"]:
             cmd += ["--cov=src", "--cov-branch", "--cov-context=test",
                     f"--cov-report=xml:{results / 'coverage.xml'}", "--cov-report=term:skip-covered"]

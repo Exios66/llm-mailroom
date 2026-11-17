@@ -64,12 +64,19 @@ caught before. Check each one. The orchestrator adds a line when a new one gets 
 `.claude/rules/pr-flow.md`).
 
 - Response-shape validation must cover absent attributes as well as explicit nulls; exercise both inside the retry wrapper.
+- Plug-in answers are untrusted text everywhere: logs, spans and stored evidence carry only our own tokens or operator-configured names, never a backend's reason, detail or hint; and a config-derived property ("can redirect") reads only the settings in force (`enabled` respected).
 
 - A fact changed in one doc but not in the other pages that repeat it (versions, counts,
   pins, ports, defaults).
 - A relative link or `#anchor` that does not resolve.
+- A new key read off a dataset row must cover every caller's row shape (Hub rows carry `id`,
+  live-manifest rows `document_id`); grep the callers of the parser.
+- A `--resume` path must not restamp run-level provenance (gold overlay, pins) from the
+  current environment over rows scored under the old one.
 - A bounded-input regression fixture whose serialized byte count does not actually exceed the patched limit; check the payload size before claiming the oversized-input path is covered.
 - New default test roots whose documented developer setup does not install their entrypoints; verify the complete setup and CI install sequence.
 - Structural reachability that traverses invalid endpoints, or treats entry/exit boundaries as interchangeable; require ghost-path and reversed-boundary regressions.
 - A new environment variable read in `src/` but missing from `.env.example`.
 - A changed docstring or comment that no longer describes the code.
+- A diff that corrects a fact (a node count, an agent list) in one doc: grep the whole tree (README, `docs/`, `.cursor/skills/`, `AGENTS.md`, test docstrings, generated assets and their generators) for the old value and fix every page that repeats it, or the bot flags the contradiction.
+- A plug-in hook (route rule, decision point) that can override a router: check every hard gate the router enforces (lost windows, judge, arbiter, conflict ruling), not just parks and self-loops; and check that a YAML config section cannot silently drop a duplicated key.

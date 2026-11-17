@@ -33,7 +33,7 @@ Digital-Mailroom integrates committed core packages as git subtrees inside a sin
 
 | Package | Layer | What it is |
 | :--- | :--- | :--- |
-| [llm-mailroom](repos/llm-mailroom.md) | Pipeline | The 13-node LangGraph pipeline and FastAPI producer. The center of everything. |
+| [llm-mailroom](repos/llm-mailroom.md) | Pipeline | The LangGraph pipeline (14 nodes as of 2026-11-17) and FastAPI producer. The center of everything. |
 | [llm-dojo-scoring](repos/llm-dojo-scoring.md) | Scoring | The sole owner of all metrics, scoring formulas, normalization rules, and suites; consumers import its APIs. |
 | [local-mailroom-sandbox](repos/local-mailroom-sandbox.md) | Surface | Owns the local/offline harness on Ollama, vLLM, llama.cpp or LM Studio and the Modal/vLLM test interface; consumes committed pipeline and dojo source. GitBook: [docs](repos/local-mailroom-sandbox-docs.md), [run reports](repos/local-mailroom-sandbox-reports.md), [visuals](repos/local-mailroom-sandbox-visuals.md). |
 | [The-Mailroom](repos/the-mailroom.md) | Surface | The visualizer and hosted Observatory used by both pipeline and sandbox, through compatible producer and trace contracts. |
@@ -81,6 +81,6 @@ Package versions and pins refreshed 2026-10-23 from each repository's README and
 | Item | Version |
 | :--- | :--- |
 | llm-mailroom | v0.9.3 |
-| llm-dojo-scoring | v0.29.0 latest as of 2026-11-15, 0.30.0 staged and untagged; llm-mailroom pins 116da0b0f5104165244ec9a4b7f068c1cf0048cf |
+| llm-dojo-scoring | v0.29.0 latest as of 2026-11-15, 0.30.0 staged and untagged; llm-mailroom pins 025400f3d703531c5e1a76093e4b803ccc6fb576 |
 | The-Mailroom | v0.5.0 |
 | mailroom-dataset | schema v9, commit `ccd040f6` (tag v9.3), 3,302 documents, as of 2026-11-09 |

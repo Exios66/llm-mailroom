@@ -104,6 +104,11 @@ async def lifespan(app: FastAPI):
     from llm.frozen_v1 import verify_specialist_pins
 
     verify_specialist_pins()
+    # And on a malformed taxonomy ``decision_points:`` section: build_graph() would raise
+    # DecisionPointConfigError for every uploaded document. Raises before any watcher starts.
+    from graph.decision_points import prepare_slots
+
+    prepare_slots()
     _ensure_dirs()
     from audit.sinks.sql import warn_if_ephemeral
 

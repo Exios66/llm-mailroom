@@ -1,9 +1,9 @@
-"""Network-free smoke coverage for every node in the 13-node pipeline graph.
+"""Network-free smoke coverage for every node in the 14-node pipeline graph.
 
 The plan (test-coverage audit) found two nodes with zero direct tests —
 ``human_review_node`` and ``catalog_write_node`` — and several others only
 covered indirectly (compile_report, entry_route). This file exercises each
-of the 13 nodes' happy path AND its primary error path using the established
+of the 14 nodes' happy path AND its primary error path using the established
 house fixtures:
 
 - ``temp_base_dir`` — fresh MAILROOM_BASE_DIR + bins + reset_compiled_graph()
@@ -174,6 +174,44 @@ class TestReviewClassifyNode:
         monkeypatch.setattr("agents.sorter_reviewer.SorterReviewerAgent", BoomReviewer)
         updates = bg.review_classify_node(_base_state())
         assert updates["review_verdict"] == "reviewer_error"
+        assert updates["transient_error"] is False
+
+
+# --- classification_arbiter (node 14) ---------------------------------------
+
+
+class TestClassificationArbiterNode:
+    @staticmethod
+    def _state():
+        return _base_state(
+            doc_subclass="nda",
+            classification_confidence=0.6,
+            reviewer_doc_type="correspondence",
+            reviewer_confidence=0.5,
+            reviewer_causes=["reviewer_low_confidence"],
+            escalation_reason="decision review: below cutoff",
+        )
+
+    def test_happy_path_accepts_the_sorter_class(self, monkeypatch):
+        class FakeArbiter:
+            def arbitrate_classification(self, **kwargs):
+                return {"decision": "accept_sorter", "confidence": 0.99, "reasoning": "NDA"}
+
+        monkeypatch.setattr("agents.arbiter.ClassificationArbiterAgent", FakeArbiter)
+        updates = bg.classification_arbiter_node(self._state())
+        assert updates["classification_arbiter_decision"] == "accept_sorter"
+        assert updates["doc_type"] == "contract"
+        assert updates["transient_error"] is False
+
+    def test_hard_fail_arbiter_error_goes_to_human_review(self, monkeypatch):
+        class BoomArbiter:
+            def arbitrate_classification(self, **kwargs):
+                raise RuntimeError("arbiter exploded")
+
+        monkeypatch.setattr("agents.arbiter.ClassificationArbiterAgent", BoomArbiter)
+        updates = bg.classification_arbiter_node(self._state())
+        assert updates["classification_arbiter_decision"] == "human_review"
+        assert "classification arbiter failed (RuntimeError)" in updates["escalation_reason"]
         assert updates["transient_error"] is False
 
 
@@ -513,11 +551,11 @@ class TestArchiveNode:
         assert updates["stage"] == "failed" or updates.get("run_aborted") is not None
 
 
-# --- topology (all 13 registered) --------------------------------------------
+# --- topology (all 14 registered) --------------------------------------------
 
 
-def test_all_thirteen_nodes_registered():
-    """The graph registers exactly the 13 nodes; a rename here fails loudly
+def test_all_fourteen_nodes_registered():
+    """The graph registers exactly the 14 nodes; a rename here fails loudly
     instead of silently dropping a node from the pipeline."""
     graph = bg.build_graph()
     node_names = {node for node in graph.nodes}

@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command, interrupt
 
@@ -21,27 +21,19 @@ from graph.state import DocumentState
 # field scoring / judge gating run on package defaults, not the calibrated map.
 import observability.scoring_wiring  # noqa: F401,E402
 from graph.routing import (
-    after_classify,
-    after_retry_classify,
-    after_review_classify,
+    entry_route,  # noqa: F401  (re-export: callers import it from graph.build_graph)
     after_extraction,
-    after_extraction_gated,
     after_retry_extraction,
-    after_retry_extraction_gated,
-    after_judge,
-    after_arbiter,
-    after_classification_arbiter,
-    after_boss,
     conflict_fingerprint,
-    after_human_review,
-    human_fields_applied,
     HUMAN_APPLIED,
-    after_report,
     judge_gate,
     judge_should_run,
     keep_best_attempt_enabled,
 )
 from graph import attempts as attempt_history
+from graph import decision_points
+from graph.decision_points import DecisionBackendTimeout, run_bounded
+from graph.route_spec import wire_edges
 from observability.tracing import pipeline_trace, traced_node, observation
 from schemas.manifest import DocumentManifest, PipelineStage
 from pipeline.config import get_confidence_thresholds, UNKNOWN_DOC_TYPE
@@ -138,10 +130,20 @@ def get_compiled_graph():
 
 
 def reset_compiled_graph():
-    """Drop the process-level graph (tests change MAILROOM_BASE_DIR / saver)."""
+    """Drop the process-level graph (tests change MAILROOM_BASE_DIR / saver).
+
+    Also clears the decision-point routing rules the dropped graph installed, so call it
+    only between runs: a run still streaming on the old graph resolves its conditional
+    edges against the process-wide rule registry and would lose its decision-point
+    redirects (the router's own routes are unaffected).
+    """
     global _compiled_graph
     with _compiled_graph_lock:
         _compiled_graph = None
+        # Decision-point routing rules belong to the graph that installed them; cleared under
+        # the same lock, so a concurrent get_compiled_graph() cannot install a new graph's
+        # rules between the drop and the clear and lose them.
+        decision_points.clear_rules()
 
 
 def _ensure_dirs():
@@ -277,36 +279,6 @@ def _extract_text_from_pdf(file_path: Path) -> tuple[str, bool]:
     except Exception:
         logger.exception("pdf_fallback_failed")
     return (f"[PDF file: {file_path.name} — transcription failed]", False)
-
-
-def entry_route(state: dict) -> str:
-    """Entry router: a review-resume re-invocation starts at fresh extraction
-    (doc_type already known from the manifest); everything else goes through
-    normal intake → classify.
-
-    The `review_decision == "approved"` guard is deliberate: only the
-    resume-from-review path sets it, so a crashed/partial run can never be
-    mistaken for a resume and skip classification (pilot: correspondence_01
-    ended with output=null when a degraded second run took the extract branch
-    without a real classification).
-    """
-    if (
-        state.get("resume_extraction")
-        and state.get("review_decision") == "approved"
-        and state.get("doc_type")
-    ):
-        return "extract"
-    # Stateless fallback for a human-applied review (the interrupt checkpoint
-    # is gone after a restart): the reviewer's fields enter the same tail the
-    # live interrupt resume reaches. Guarded by the explicit token + provenance,
-    # like the "approved" branch above.
-    if (
-        state.get("resume_extraction")
-        and state.get("doc_type")
-        and human_fields_applied(state)
-    ):
-        return "compile_report"
-    return "intake"
 
 
 def _build_handoff_context(state: DocumentState) -> str | None:
@@ -1143,10 +1115,6 @@ def _has_readable_text(state: Mapping[str, Any]) -> bool:
     return not (isinstance(error, str) and error.startswith("Could not extract text"))
 
 
-class DecisionBackendTimeout(Exception):
-    """The decision backend did not answer within the call/run deadline."""
-
-
 def _accepts_handoff(backend) -> bool:
     """True when ``backend`` declares a ``handoff`` parameter.
 
@@ -1197,46 +1165,13 @@ def _run_bounded(call, *, name: str = "decision-backend", abandoned: list[thread
     At ``max_abandoned`` live abandoned threads in ``abandoned`` (default: the
     decision backend's list and ``_MAX_ABANDONED_BACKEND_THREADS``), new calls
     are refused with ``DecisionBackendTimeout`` instead of starting another.
-    Exceptions raised by ``call`` propagate unchanged.
+    Exceptions raised by ``call`` propagate unchanged. The mechanism is
+    ``graph.decision_points.run_bounded``, shared with the decision points.
     """
-    import contextvars
-
-    from pipeline import limits
-
-    timeout = float(limits.get_call_timeout_seconds())
-    deadline = limits.get_run_deadline()
-    if deadline is not None:
-        timeout = min(timeout, deadline - time.time())
-    if timeout <= 0:
-        raise DecisionBackendTimeout("no time left on the run deadline")
     if abandoned is None:
         abandoned = _abandoned_backend_threads
     limit = _MAX_ABANDONED_BACKEND_THREADS if max_abandoned is None else max_abandoned
-    with _abandoned_lock:
-        abandoned[:] = [t for t in abandoned if t.is_alive()]
-        if len(abandoned) >= limit:
-            raise DecisionBackendTimeout(f"{len(abandoned)} stalled {name} calls still running")
-
-    box: dict[str, Any] = {}
-    ctx = contextvars.copy_context()
-
-    def _target() -> None:
-        """Run the call on this thread and hand its result or error back."""
-        try:
-            box["value"] = ctx.run(call)
-        except BaseException as exc:  # re-raised on the caller's thread
-            box["error"] = exc
-
-    thread = threading.Thread(target=_target, name=name, daemon=True)
-    thread.start()
-    thread.join(timeout)
-    if thread.is_alive():
-        with _abandoned_lock:
-            abandoned.append(thread)
-        raise DecisionBackendTimeout(f"{name} exceeded {timeout:.0f}s")
-    if "error" in box:
-        raise box["error"]
-    return box.get("value")
+    return run_bounded(call, name=name, abandoned=abandoned, max_abandoned=limit, lock=_abandoned_lock)
 
 
 def _call_decision_backend(backend, doc_text, doc_types, catalogs, handoff=None):
@@ -1325,8 +1260,7 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     confidence are kept unless the decision accepts, and
     ``escalation_reason`` uses structured fields rather than model text, except
     that a non-transient backend error appends its exception class and the
-    first 200 characters of its message behind the internal ``[cause:`` marker
-    stripped by sender echoes. That error is also recorded as
+    first 200 characters of its message. That error is also recorded as
     ``error_message`` beside ``reviewer_unavailable``, so it is not
     mistaken for a reviewer that answered nothing; it never sets
     ``transient_error``.
@@ -1351,7 +1285,6 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
 
     raw = None
     backend_error: str | None = None
-    backend_error_type: str | None = None
     if has_text:
         backend = get_decision_backend()
         if backend is None:
@@ -1394,7 +1327,6 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
                 # record it so the review record says why the reviewer was
                 # unavailable. decide_review turns the absent answer into
                 # REVIEWER_UNAVAILABLE; this is deliberately not a transient error.
-                backend_error_type = type(exc).__name__
                 backend_error = (
                     f"{_REVIEWER_ERROR_PREFIX} {type(exc).__name__}: {str(exc)[:200]}"
                 )
@@ -1467,7 +1399,8 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     if route.causes:
         reason += f" [{', '.join(route.causes)}] -- routing to human review"
     if backend_error is not None:
-        reason += f" [{_REVIEWER_ERROR_PREFIX} {backend_error_type}] [cause: {backend_error}]"
+        # Exception text is audit-only: ``[cause: ...]`` is cut from the sender echo (#260).
+        reason += f" [cause: {backend_error}]"
     updates: dict[str, Any] = {
         "reviewer_doc_type": reviewer_type,
         "reviewer_contract_subtype": (
@@ -1524,6 +1457,10 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
     }
     causes = [str(c) for c in (state.get("reviewer_causes") or [])]
     base_reason = state.get("escalation_reason") or "decision review parked"
+    # Keep the arbiter's outcome ahead of any internal ``[cause: ...]`` from the review, so
+    # the sender echo (which cuts at the first ``[cause:``) still shows what the arbiter did.
+    base_head, cause_sep, cause_tail = base_reason.partition(" [cause:")
+    base_cause = f"{cause_sep}{cause_tail}" if cause_sep else ""
     try:
         result = ClassificationArbiterAgent().arbitrate_classification(
             sorter=sorter,
@@ -1540,8 +1477,8 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
             "classification_arbiter_reasoning": (
                 f"classification arbiter failed ({type(exc).__name__}): {_cause(exc)}"
             ),
-            "escalation_reason": f"{base_reason}; classification arbiter failed "
-            f"({type(exc).__name__}) -- routing to human review [cause: {_cause(exc)}]",
+            "escalation_reason": f"{base_head}; classification arbiter failed "
+            f"({type(exc).__name__}) -- routing to human review [cause: {_cause(exc)}]{base_cause}",
             "transient_error": False,
         }
 
@@ -1596,8 +1533,9 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
             updates["error_message"] = None
     else:
         updates["escalation_reason"] = (
-            f"{base_reason}; classification arbiter: {decision} "
+            f"{base_head}; classification arbiter: {decision} "
             f"({_fmt_conf(confidence)}, cutoff {_fmt_conf(cutoff)}) -- routing to human review"
+            f"{base_cause}"
         )
     return updates
 
@@ -3801,127 +3739,51 @@ def build_graph(checkpointer=None):
 
     verify_specialist_pins()
 
+    # Pluggable decision points (taxonomy ``decision_points:``, empty by default). Validated
+    # now, so a bad section stops startup. With no slot on, ``_dp`` returns each node
+    # unchanged and no rule is registered: the graph is exactly the one declared below.
+    slots = decision_points.prepare_slots()
+    decision_points.install_rules(slots)
+
+    def _dp(node: str, fn):
+        return decision_points.wrap_node(node, fn, slots)
+
     workflow = StateGraph(DocumentState)
 
     # Node names stay stable (best practice); per-run values go in metadata.
     # Every node is bounded: the run deadline and token budget are enforced at
     # each boundary so a stuck run is cut off as soon as its budget is spent.
     workflow.add_node("intake", traced_node("intake-document")(_bounded(intake_node)))
-    workflow.add_node("classify", traced_node("classify-document")(_bounded(classify_node)))
-    workflow.add_node("retry_classify", traced_node("classify-document")(_bounded(retry_classify_node)))
+    workflow.add_node("classify", traced_node("classify-document")(_bounded(_dp("classify", classify_node))))
+    workflow.add_node("retry_classify", traced_node("classify-document")(_bounded(_dp("retry_classify", retry_classify_node))))
     # KANBAN-062 (Lane A): agent second opinion on exhausted medium-band
     # classifications — the [REVIEW] exception path from the target diagram.
-    workflow.add_node("review_classify", traced_node("classify-document")(_bounded(review_classify_node)))
-    workflow.add_node("extract", traced_node("extract-fields")(_bounded(extract_node)))
-    workflow.add_node("retry_extract", traced_node("extract-fields")(_bounded(retry_extract_node)))
+    workflow.add_node("review_classify", traced_node("classify-document")(_bounded(_dp("review_classify", review_classify_node))))
+    workflow.add_node("extract", traced_node("extract-fields")(_bounded(_dp("extract", extract_node))))
+    workflow.add_node("retry_extract", traced_node("extract-fields")(_bounded(_dp("retry_extract", retry_extract_node))))
     # KANBAN-063 (Lane B): gated completeness verification + arbitration —
     # the Judge → [ARBITER] exception path from the target diagram.
-    workflow.add_node("judge_verify", traced_node("judge-verify")(_bounded(judge_verify_node)))
-    workflow.add_node("arbiter", traced_node("arbitrate-verdict")(_bounded(arbiter_node)))
+    workflow.add_node("judge_verify", traced_node("judge-verify")(_bounded(_dp("judge_verify", judge_verify_node))))
+    workflow.add_node("arbiter", traced_node("arbitrate-verdict")(_bounded(_dp("arbiter", arbiter_node))))
     workflow.add_node(
         "classification_arbiter",
-        traced_node("arbitrate-classification")(_bounded(classification_arbiter_node)),
+        traced_node("arbitrate-classification")(_bounded(_dp("classification_arbiter", classification_arbiter_node))),
     )
-    workflow.add_node("human_review", traced_node("route-for-review")(_bounded(human_review_node)))
-    workflow.add_node("boss_escalation", traced_node("adjudicate-conflict")(_bounded(boss_escalation_node)))
-    workflow.add_node("compile_report", traced_node("compile-report")(_bounded(compile_report_node)))
+    workflow.add_node("human_review", traced_node("route-for-review")(_bounded(decision_points.wrap_human_review(human_review_node, slots))))
+    workflow.add_node("boss_escalation", traced_node("adjudicate-conflict")(_bounded(_dp("boss_escalation", boss_escalation_node))))
+    workflow.add_node("compile_report", traced_node("compile-report")(_bounded(_dp("compile_report", compile_report_node))))
     workflow.add_node("catalog_write", traced_node("write-catalog")(_bounded(catalog_write_node)))
     workflow.add_node("archive", traced_node("archive-document")(_bounded(archive_node)))
     workflow.add_node("audit_failed", traced_node("audit-failed")(audit_failed_node))
-
-    workflow.add_conditional_edges(START, entry_route, {
-        "intake": "intake",
-        "extract": "extract",
-        "compile_report": "compile_report",  # stateless human-applied review
-    })
-    workflow.add_edge("intake", "classify")
-
-    workflow.add_conditional_edges("classify", after_classify, {
-        "classify": "classify",  # transient-error self-loop (same node, LLM-level retry)
-        "retry_classify": "retry_classify",
-        "review_classify": "review_classify",  # GT class miss even at 0.99
-        "extract": "extract",
-        "human_review": "human_review",
-    })
-
-    workflow.add_conditional_edges("retry_classify", after_retry_classify, {
-        "retry_classify": "retry_classify",  # transient self-loop (own per-node budget)
-        "review_classify": "review_classify",
-        "extract": "extract",
-        "human_review": "human_review",
-    })
-
-    # KANBAN-062 (Lane A): agent second opinion. High-confidence reviewer →
-    # extract (label applied by the node); anything else → human review.
-    workflow.add_conditional_edges("review_classify", after_review_classify, {
-        "review_classify": "review_classify",  # transient self-loop (own per-node budget)
-        "extract": "extract",
-        "classification_arbiter": "classification_arbiter",
-        "human_review": "human_review",
-    })
-    workflow.add_conditional_edges("classification_arbiter", after_classification_arbiter, {
-        "extract": "extract",
-        "human_review": "human_review",
-    })
-
-    workflow.add_conditional_edges("extract", after_extraction_gated, {
-        "extract": "extract",  # transient-error self-loop (same node, LLM-level retry)
-        "retry_extract": "retry_extract",
-        "compile_report": "compile_report",
-        "judge_verify": "judge_verify",
-        "human_review": "human_review",
-        "boss_escalation": "boss_escalation",
-    })
-
-    workflow.add_conditional_edges("retry_extract", after_retry_extraction_gated, {
-        "retry_extract": "retry_extract",  # transient self-loop (own per-node budget)
-        "compile_report": "compile_report",
-        "judge_verify": "judge_verify",
-        "human_review": "human_review",
-        "boss_escalation": "boss_escalation",
-    })
-
-    # KANBAN-063 (Lane B): judge verdict routing — complete/skipped proceeds;
-    # partial/incomplete goes to the arbiter; hard failure escalates fail-safe.
-    workflow.add_conditional_edges("judge_verify", after_judge, {
-        "judge_verify": "judge_verify",  # transient self-loop (own per-node budget)
-        "compile_report": "compile_report",
-        "arbiter": "arbiter",
-        "human_review": "human_review",
-    })
-
-    workflow.add_conditional_edges("arbiter", after_arbiter, {
-        "arbiter": "arbiter",  # transient self-loop (own per-node budget)
-        "compile_report": "compile_report",
-        "retry_extract": "retry_extract",
-        "human_review": "human_review",
-    })
-
-    workflow.add_conditional_edges("boss_escalation", after_boss, {
-        "boss_escalation": "boss_escalation",  # transient self-loop (own per-node budget)
-        "compile_report": "compile_report",
-        "human_review": "human_review",
-    })
-
-    workflow.add_conditional_edges("human_review", after_human_review, {
-        "extract": "extract",
-        "compile_report": "compile_report",  # reviewer's fields, no LLM
-        "failed": "audit_failed",
-    })
-    workflow.add_edge("audit_failed", END)
-
-    # Unified audit row (spec §5.1): the report is scored before it is catalogued.
+    # Unified audit row (spec 5.1): the report is scored before it is catalogued. Nodes only;
+    # their edges are declared in route_spec.scoring_topology().
     from graph.scoring_nodes import add_scoring_nodes
 
-    add_scoring_nodes(
-        workflow, next_node="catalog_write", wrap=lambda span, fn: traced_node(span)(_bounded(fn))
-    )
-    workflow.add_conditional_edges("compile_report", after_report, {
-        "catalog_write": "score_common",
-        "human_review": "human_review",
-    })
-    workflow.add_edge("catalog_write", "archive")
-    workflow.add_edge("archive", END)
+    add_scoring_nodes(workflow, wrap=lambda span, fn: traced_node(span)(_bounded(fn)))
+
+    # Edge topology is declared once, in graph/route_spec.py (ROUTE_SPECS / PLAIN_EDGES):
+    # validated against the nodes above, then wired. Routers keep their names and logic.
+    wire_edges(workflow)
 
     return workflow.compile(checkpointer=checkpointer)
 

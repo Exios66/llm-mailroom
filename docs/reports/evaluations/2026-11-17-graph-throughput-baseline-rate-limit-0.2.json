@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "kind": "graph-throughput-benchmark",
+  "mock_llm": true,
+  "generated_at_utc": "2026-11-17T07:03:55Z",
+  "command": "PYTHONPATH=src .venv/bin/python src/scripts/bench_throughput.py --levels 4 --docs 48 --rate-limit-rate 0.2 --json-out docs/reports/evaluations/2026-11-17-graph-throughput-baseline-rate-limit-0.2.json --md-out .evidence/rl.md",
+  "commit": "df127446e0449a134e1de8c5cd9fdce18504ad7e",
+  "tree_clean": true,
+  "machine": {
+    "platform": "Linux-6.18.44-fc-v553-x86_64-with-glibc2.39",
+    "python": "3.13.18",
+    "cpu_count": 4,
+    "memory_gb": 15.7,
+    "load_average_at_start": [
+      1.71,
+      1.09,
+      1.09
+    ]
+  },
+  "config": {
+    "docs": 48,
+    "latency_ms": 200.0,
+    "rate_limit_rate": 0.2,
+    "retry_base_delay_ms": 50.0,
+    "seed": 7,
+    "clean": false,
+    "long_docs": null,
+    "warmup_docs": 1,
+    "levels": [
+      4
+    ]
+  },
+  "levels": [
+    {
+      "concurrency": 4,
+      "effective_concurrency": 4,
+      "docs": 48,
+      "completed": 48,
+      "failed": 0,
+      "stages": {
+        "archived": 43,
+        "review": 5
+      },
+      "wall_s": 13.458688286000324,
+      "docs_per_min": 213.9881642846105,
+      "latency_s": {
+        "n": 48,
+        "mean": 1.1038519313541524,
+        "p50": 0.920346132999839,
+        "p95": 1.4458588715999212,
+        "max": 6.541279060999841
+      },
+      "overhead_s": {
+        "n": 48,
+        "mean": 0.6038519313541523,
+        "p50": 0.520346132999839,
+        "p95": 1.0458588715999213,
+        "max": 1.341279060999839
+      },
+      "nodes": {
+        "archive": {
+          "invocations": 43,
+          "p50_s": 0.11916518299995005,
+          "p95_s": 0.2799128614003621,
+          "mean_s": 0.1368178663953353,
+          "mean_llm_s": 0.0,
+          "mean_heartbeat_s": 0.01749189665115621,
+          "mean_overhead_s": 0.1368178663953353,
+          "llm_calls": 0
+        },
+        "catalog_write": {
+          "invocations": 43,
+          "p50_s": 0.05124160400009714,
+          "p95_s": 0.1352111366000372,
+          "mean_s": 0.06483868311627089,
+          "mean_llm_s": 0.0,
+          "mean_heartbeat_s": 0.01705269495347915,
+          "mean_overhead_s": 0.06483868311627089,
+          "llm_calls": 0
+        },
+        "classify": {
+          "invocations": 48,
+          "p50_s": 0.26308084650008823,
+          "p95_s": 0.4368978441999388,
+          "mean_s": 0.3802240634791758,
+          "mean_llm_s": 0.2916666666666667,
+          "mean_heartbeat_s": 0.0193942912916422,
+          "mean_overhead_s": 0.08855739681250911,
+          "llm_calls": 80
+        },
+        "compile_report": {
+          "invocations": 43,
+          "p50_s": 0.015870126000208984,
+          "p95_s": 0.038192623699796965,
+          "mean_s": 0.01728278199998597,
+          "mean_llm_s": 0.0,
+          "mean_heartbeat_s": 0.016968070581443437,
+          "mean_overhead_s": 0.01728278199998597,
+          "llm_calls": 0
+        },
+        "extract": {
+          "invocations": 43,
+          "p50_s": 0.29909735100000034,
+          "p95_s": 0.42506634390001635,
+          "mean_s": 0.3145392076279106,
+          "mean_llm_s": 0.20930232558139536,
+          "mean_heartbeat_s": 0.016695147976745005,
+          "mean_overhead_s": 0.10523688204651523,
+          "llm_calls": 56
+        },
+        "human_review": {
+          "invocations": 5,
+          "p50_s": 0.13387757700002112,
+          "p95_s": 0.16138043760010987,
+          "mean_s": 0.11069609160022083,
+          "mean_llm_s": 0.0,
+          "mean_heartbeat_s": 0.01667686839991802,
+          "mean_overhead_s": 0.11069609160022083,
+          "llm_calls": 0
+        },
+        "intake": {
+          "invocations": 48,
+          "p50_s": 0.1491379164999671,
+          "p95_s": 0.2900303497001005,
+          "mean_s": 0.16005001872916105,
+          "mean_llm_s": 0.0,
+          "mean_heartbeat_s": 0.0003435686041844595,
+          "mean_overhead_s": 0.16005001872916105,
+          "llm_calls": 0
+        },
+        "retry_classify": {
+          "invocations": 5,
+          "p50_s": 0.2184307809998245,
+          "p95_s": 0.34999090660003274,
+          "mean_s": 0.24913252259993895,
+          "mean_llm_s": 0.2,
+          "mean_heartbeat_s": 0.01319553260000248,
+          "mean_overhead_s": 0.04913252259993896,
+          "llm_calls": 7
+        }
+      },
+      "counters": {
+        "llm_calls": 143,
+        "rate_limited": 23,
+        "openai_client_constructions": 26,
+        "langchain_client_constructions": 70,
+        "heartbeat_calls": 278,
+        "run_coro_calls": 930,
+        "asyncio_run_calls": 973,
+        "db_engines_created": 973,
+        "db_connections_opened": 1491
+      },
+      "seconds": {
+        "heartbeat_total_s": 4.0297151170007055,
+        "openai_client_construct_total_s": 0.2617702040001859,
+        "langchain_client_construct_total_s": 0.0314117789980628,
+        "llm_latency_total_s": 23.999999999999947
+      },
+      "per_doc": {
+        "llm_calls_mean": 2.9791666666666665,
+        "client_constructions_mean": 2.0,
+        "heartbeats_mean": 5.791666666666667,
+        "db_connections_mean": 31.0625
+      },
+      "errors": {},
+      "long_docs": 1,
+      "cpu": {
+        "user_s": 8.750630000000001,
+        "system_s": 4.361511,
+        "cores_busy": 0.9742510355663114
+      }
+    }
+  ]
+}

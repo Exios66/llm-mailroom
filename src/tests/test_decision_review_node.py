@@ -290,20 +290,35 @@ def test_permanent_backend_error_is_recorded_not_a_silent_no_answer(
     assert REVIEWER_UNAVAILABLE in collect_review_causes({**st, **updates})
 
 
-def test_permanent_backend_error_keeps_raw_cause_out_of_sender_echo(
+def test_backend_exception_text_never_reaches_the_sender(
     decision_config, no_llm_reviewer
 ):
-    from pipeline.gmail_intake import build_echo_body
+    """The backend exception text is audit-only: it rides behind ``[cause: ...]`` in the
+    escalation reason so the Gmail echo cuts it, while the manifest keeps it."""
+    from pipeline.gmail_intake import _sender_reason, build_echo_body
 
-    private_detail = "provider denied document /private/client/input.pdf"
-    register_decision_backend(Spy(exc=RuntimeError(private_detail)))
-    updates = review_classify_node(state())
-    body = build_echo_body({"stage": "review", **updates})
-    assert private_detail in updates["error_message"]
-    assert private_detail in updates["escalation_reason"]
-    assert "decision reviewer error" in body
-    assert "RuntimeError" in body
-    assert private_detail not in body
+    secret = "provider 403 for key sk-abc123 at /srv/private/doc.pdf"
+    register_decision_backend(Spy(exc=RuntimeError(secret)))
+    st = state()
+    updates = review_classify_node(st)
+
+    reason = updates["escalation_reason"]
+    assert secret in reason  # the audit text keeps the cause
+    assert f"[cause: decision reviewer error: RuntimeError: {secret}]" in reason
+    seen = _sender_reason({"escalation_reason": reason})
+    assert "sk-abc123" not in seen and "/srv/private" not in seen and "[cause:" not in seen
+    assert "RuntimeError" not in seen and "decision reviewer error" not in seen
+    assert "routing to human review" in seen
+
+    manifest = {
+        "doc_id": "d-1", "matter_id": "M", "original_filename": "c.txt", "stage": "review",
+        "escalation_reason": reason, "error_message": updates["error_message"],
+        "intake": {"source": "gmail", "message_id": "m", "sender": "a@example.com"},
+    }
+    body = build_echo_body(manifest, [], True)
+    assert "sk-abc123" not in body and "/srv/private" not in body
+    # the manifest keeps the full text for the audit trail
+    assert secret in manifest["escalation_reason"] and secret in manifest["error_message"]
 
 
 def test_permanent_backend_error_ends_in_human_review_when_arbiter_fails(
@@ -325,6 +340,37 @@ def test_permanent_backend_error_ends_in_human_review_when_arbiter_fails(
     assert after_classification_arbiter(merged) == "human_review"
     assert merged["error_message"].startswith("decision reviewer error: RuntimeError")
     assert REVIEWER_UNAVAILABLE in collect_review_causes(merged)
+
+
+def test_sender_still_sees_the_arbiter_outcome_after_a_backend_error(
+    decision_config, no_llm_reviewer, monkeypatch
+):
+    """The arbiter's outcome is written ahead of the review's ``[cause: ...]``, so the
+    sender echo shows what the arbiter did while the exception text stays audit-only."""
+    import agents.arbiter as arbiter_mod
+    from graph.build_graph import classification_arbiter_node
+    from pipeline.gmail_intake import _sender_reason
+
+    class Rejects:
+        def arbitrate_classification(self, **kwargs):
+            return {"decision": "human_review", "confidence": 0.4, "reasoning": "unclear"}
+
+    class Down:
+        def arbitrate_classification(self, **kwargs):
+            raise RuntimeError("arbiter down")
+
+    for agent, outcome in ((Rejects, "classification arbiter: human_review"),
+                           (Down, "classification arbiter failed")):
+        monkeypatch.setattr(arbiter_mod, "ClassificationArbiterAgent", agent)
+        register_decision_backend(Spy(exc=RuntimeError("secret /srv/private")))
+        st = state()
+        merged = {**st, **review_classify_node(st)}
+        merged.update(classification_arbiter_node(merged))
+        reason = merged["escalation_reason"]
+        assert "secret /srv/private" in reason  # audit keeps it
+        seen = _sender_reason({"escalation_reason": reason})
+        assert outcome in seen
+        assert "/srv/private" not in seen and "[cause:" not in seen
 
 
 def test_arbiter_acceptance_clears_the_reviewer_error_it_resolved(

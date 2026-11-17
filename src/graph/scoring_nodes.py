@@ -151,20 +151,18 @@ def span_name(node: str) -> str:
     return node.replace("_", "-")
 
 
-def add_scoring_nodes(graph, *, next_node: str = "catalog_write", wrap=None) -> None:
-    """Add ``score_common`` and one ``score_<type>`` node per registry entry, routed to ``next_node``.
+def add_scoring_nodes(graph, *, wrap=None) -> None:
+    """Add ``score_common`` and one ``score_<type>`` node per registry entry.
 
+    Only nodes: their edges are declared in ``graph.route_spec.scoring_topology`` and wired
+    (and validated) with the rest of the graph by ``wire_edges``.
     ``wrap(span, fn)`` wraps each node (the graph passes ``traced_node`` + ``_bounded``).
     """
     wrap = wrap or (lambda _span, fn: fn)
     graph.add_node("score_common", wrap(span_name("score_common"), score_common_node))
-    routes = {}
     for scorer in scorer_types():
         name = f"score_{scorer}"
         graph.add_node(name, wrap(span_name(name), _make_type_node(scorer)))
-        graph.add_edge(name, next_node)
-        routes[name] = name
-    graph.add_conditional_edges("score_common", score_route, routes)
 
 
 __all__ = [
