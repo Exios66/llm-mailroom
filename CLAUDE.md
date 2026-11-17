@@ -113,8 +113,9 @@ lint or type cleanliness.
   Write commits with the `.gitmessage` template (`git config commit.template .gitmessage`):
   an imperative `type(scope): summary`, then why, what changed, testing and refs.
   Squash-merge with a hand-written message in the same shape. The CircleCI job
-  `no-session-links` (`.circleci/check_no_session_links.sh`) fails a build whose commits or
-  PR description carry one. CI is CircleCI only: do not add GitHub Actions workflows.
+  `no-session-links` (`.circleci/check_no_session_links.sh`) fails a build whose commits carry
+  one, and checks the PR title and description when it can read them (it warns and skips that
+  part if the GitHub API is unreachable). CI is CircleCI only: do not add GitHub Actions workflows.
 - **No real LLM call ever runs in tests** (`src/tests/conftest.py` patches the client).
   **Never** run anything with `--real`, `sync_prompts`, `sync_dataset`, `sync_dashboards`,
   `sync_evaluators` or `sync_hf_ground_truth --push`: they spend money
