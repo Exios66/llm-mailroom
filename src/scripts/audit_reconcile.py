@@ -15,7 +15,8 @@ Usage:
 With ``--json`` stdout is the report and nothing else: log lines go to stderr
 (the level and format still come from ``LOG_LEVEL`` / ``LOG_FORMAT``).
 
-Exit status: 0 when every copy verified, 1 when any copy was refused for a hash mismatch.
+Exit status: 0 when no hash or document write errors occurred; 1 on either error.
+Partial records and unreadable/write-only copies may still require operator follow-up.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Reconcile pending records and print a report; return 1 on a hash mismatch.
+    """Reconcile pending records and print a report; return 1 on a hash or write error.
 
     ``--dry-run`` reports without writing or removing pending records.
     """
@@ -60,9 +61,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         verb = "would write" if args.dry_run else "wrote"
         print(f"audit-reconcile: {verb} {report.recovered} recovered, {report.partial} partial, "
-              f"{report.gap_closed} recovered_detail; skipped {report.skipped_existing} with a row; "
+              f"{report.gap_closed} recovered_detail, {report.resumed} resumed, {report.failed} failed; skipped {report.skipped_existing} with a row; "
               f"refused {report.rejected_hash} on hash mismatch")
-    return 1 if report.rejected_hash else 0
+    return 1 if report.rejected_hash or report.failed else 0
 
 
 if __name__ == "__main__":

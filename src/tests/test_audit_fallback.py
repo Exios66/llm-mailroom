@@ -1126,3 +1126,27 @@ async def test_concurrent_recovery_appends_each_parked_write_once(sinks, db_down
     assert row["addenda"][0]["kind"] == ("recovered_detail" if partial else "resumed")
     assert (await verify_audit_db()).ok
     assert all(not sink.fetch_pending() for sink in sinks)
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_reconcile_cli_reports_document_write_failure(monkeypatch, capsys, as_json):
+    import importlib.util
+    import json
+
+    from audit.reconcile import ReconcileReport
+
+    async def failed_reconcile(**kwargs):
+        return ReconcileReport(failed=1, docs=[{"doc_id": "d-1", "action": "failed", "error": "write failed"}])
+
+    monkeypatch.setattr("audit.reconcile.reconcile", failed_reconcile)
+    spec = importlib.util.spec_from_file_location(
+        "audit_reconcile_failure_cli", Path(__file__).resolve().parents[1] / "scripts" / "audit_reconcile.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    capsys.readouterr()
+    assert mod.main(["--json"] if as_json else []) == 1
+    output = capsys.readouterr().out
+    if as_json:
+        assert json.loads(output)["failed"] == 1
+    else:
+        assert "1 failed" in output
