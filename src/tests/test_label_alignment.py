@@ -120,3 +120,28 @@ def test_specialist_system_prompt_follows_the_env(monkeypatch):
     on = agent.system_prompt()
     assert off == load_specialist_v1("correspondence_specialist")
     assert on.startswith(off.rstrip()) and "Label-aligned rules" in on
+
+
+@pytest.mark.parametrize("raw,expected", [(None, "off"), ("rules_few_shot", "rules_few_shot")])
+def test_trace_metadata_records_the_alignment_arm(monkeypatch, tmp_path, temp_base_dir, raw, expected):
+    import contextlib
+
+    import graph.build_graph as bg
+    import observability.tracing as tracing
+
+    captured: dict = {}
+
+    @contextlib.contextmanager
+    def fake_trace(**kwargs):
+        captured.update(kwargs["metadata"])
+        raise RuntimeError("stop before the graph runs")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(tracing, "pipeline_trace", fake_trace)
+    if raw is not None:
+        monkeypatch.setenv(LA.ALIGNMENT_ENV, raw)
+    doc = tmp_path / "doc.txt"
+    doc.write_text("hello")
+    with contextlib.suppress(RuntimeError):
+        bg.run_pipeline(doc, "M-1", run_id="r-align")
+    assert captured["prompt_alignment"] == expected
