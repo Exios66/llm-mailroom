@@ -118,7 +118,7 @@ and [documentation home](docs/README.md).
 | | Phase | Graph node(s) | What happens |
 | :---: | :--- | :--- | :--- |
 | 📥 | **Intake** | `intake-document` | The ingest specialist claims the file, transcribes it, cleans it and writes its manifest |
-| 🏷️ | **Classify** | `classify-document`, `(retry)`, `(reviewer)`, `arbitrate-classification` | `SorterAgent` picks one of the five classes with a confidence score. High confidence goes to extraction. Medium or low confidence gets a retry first. After the retry, high confidence goes to extraction and medium confidence gets a reviewer's second opinion; confidence still below the low threshold, or an unknown class, goes to a human. An exhausted or failed LLM review also goes to a human. A class configured as a decision-model review lane (`reviewer.by_class` mode `decision_only`, or every class under `reviewer.default_mode: decision_only`; none by default) is reviewed at any sorter confidence, and when that review parks, is exhausted or its backend fails it goes to the classification arbiter, then to a human unless the arbiter accepts a class |
+| 🏷️ | **Classify** | `classify-document`, `(retry)`, `(reviewer)`, `arbitrate-classification` | `SorterAgent` picks one of the five classes with a confidence score. High confidence goes to extraction. Medium or low confidence gets a retry first. After the retry, high confidence goes to extraction and medium confidence gets a reviewer's second opinion; confidence still below the low threshold, or an unknown class, goes to a human. An exhausted or failed LLM review also goes to a human. A class configured as a decision-model review lane (`reviewer.by_class` mode `decision_only`, or, under `reviewer.default_mode: decision_only`, every class without its own `by_class` entry; none by default) is reviewed at any sorter confidence, and when that review parks, is exhausted or its backend fails it goes to the classification arbiter, then to a human unless the arbiter accepts a class |
 | 🔍 | **Extract** | `extract-fields`, `(retry)` | The class specialist fills a Pydantic schema, gated on schema validity, confidence, factuality and completeness |
 | ⚖️ | **Quality** | `judge-verify`, `arbitrate-verdict`, `adjudicate-conflict` | The Judge checks ambiguous completeness. The Arbiter lets the verdict stand, orders a re-extraction or escalates. The Boss adjudicates matter conflicts |
 | 🧑‍⚖️ | **Human review** | `route-for-review` | The governance boundary: a person approves, rejects or requeues. A rejection ends in `FAILED` |
@@ -283,6 +283,7 @@ The core pipeline is a **14-node LangGraph state machine** executed once per doc
 <summary><b>🗺️ The full 14-node state machine (Mermaid)</b></summary>
 
 ```mermaid
+%% Production routing with oracle routing off. Cutoffs shown are the global defaults; per-class overrides in taxonomy.yaml (for example corporate_record) shift them.
 flowchart TD
     START([START]) --> INTAKE
 

@@ -1455,6 +1455,10 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
     }
     causes = [str(c) for c in (state.get("reviewer_causes") or [])]
     base_reason = state.get("escalation_reason") or "decision review parked"
+    # Keep the arbiter's outcome ahead of any internal ``[cause: ...]`` from the review, so
+    # the sender echo (which cuts at the first ``[cause:``) still shows what the arbiter did.
+    base_head, cause_sep, cause_tail = base_reason.partition(" [cause:")
+    base_cause = f"{cause_sep}{cause_tail}" if cause_sep else ""
     try:
         result = ClassificationArbiterAgent().arbitrate_classification(
             sorter=sorter,
@@ -1471,8 +1475,8 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
             "classification_arbiter_reasoning": (
                 f"classification arbiter failed ({type(exc).__name__}): {_cause(exc)}"
             ),
-            "escalation_reason": f"{base_reason}; classification arbiter failed "
-            f"({type(exc).__name__}) -- routing to human review [cause: {_cause(exc)}]",
+            "escalation_reason": f"{base_head}; classification arbiter failed "
+            f"({type(exc).__name__}) -- routing to human review [cause: {_cause(exc)}]{base_cause}",
             "transient_error": False,
         }
 
@@ -1527,8 +1531,9 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
             updates["error_message"] = None
     else:
         updates["escalation_reason"] = (
-            f"{base_reason}; classification arbiter: {decision} "
+            f"{base_head}; classification arbiter: {decision} "
             f"({_fmt_conf(confidence)}, cutoff {_fmt_conf(cutoff)}) -- routing to human review"
+            f"{base_cause}"
         )
     return updates
 

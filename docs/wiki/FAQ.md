@@ -12,7 +12,7 @@ Five live taxonomy classes (`doc_classes` in `src/config/taxonomy.yaml`):
 - **Merger Agreements** (MAUD — a distinct class with its own `merger_agreement_specialist`)
 - **Corporate Records** (articles, bylaws, powers of attorney, rights instruments, other)
 - **Correspondence** (demand letters, legal notices, memos — corpus from the CMU Enron dataset)
-- **Insurance Claims** (FNOL lines + CMS DE-SynPUF `carrier`/`inpatient`/`outpatient`/`pde` claim types; coverage determinations approved/denied/partial)
+- **Insurance Claims** (FNOL lines + CMS DE-SynPUF `carrier`/`inpatient`/`outpatient`/`pde` claim types; coverage determinations approved/denied/partial/pending)
 
 **Compliance filings**, **due diligence** and **court opinions** are retired classes (due diligence and court opinions since v0.5.0): they are not in the live taxonomy, they classify as `unknown` (human review), and there is no specialist dispatch for them. LegalBench remains the court-opinion benchmark surface.
 

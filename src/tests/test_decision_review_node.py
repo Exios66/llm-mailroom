@@ -342,6 +342,37 @@ def test_permanent_backend_error_ends_in_human_review_when_arbiter_fails(
     assert REVIEWER_UNAVAILABLE in collect_review_causes(merged)
 
 
+def test_sender_still_sees_the_arbiter_outcome_after_a_backend_error(
+    decision_config, no_llm_reviewer, monkeypatch
+):
+    """The arbiter's outcome is written ahead of the review's ``[cause: ...]``, so the
+    sender echo shows what the arbiter did while the exception text stays audit-only."""
+    import agents.arbiter as arbiter_mod
+    from graph.build_graph import classification_arbiter_node
+    from pipeline.gmail_intake import _sender_reason
+
+    class Rejects:
+        def arbitrate_classification(self, **kwargs):
+            return {"decision": "human_review", "confidence": 0.4, "reasoning": "unclear"}
+
+    class Down:
+        def arbitrate_classification(self, **kwargs):
+            raise RuntimeError("arbiter down")
+
+    for agent, outcome in ((Rejects, "classification arbiter: human_review"),
+                           (Down, "classification arbiter failed")):
+        monkeypatch.setattr(arbiter_mod, "ClassificationArbiterAgent", agent)
+        register_decision_backend(Spy(exc=RuntimeError("secret /srv/private")))
+        st = state()
+        merged = {**st, **review_classify_node(st)}
+        merged.update(classification_arbiter_node(merged))
+        reason = merged["escalation_reason"]
+        assert "secret /srv/private" in reason  # audit keeps it
+        seen = _sender_reason({"escalation_reason": reason})
+        assert outcome in seen
+        assert "/srv/private" not in seen and "[cause:" not in seen
+
+
 def test_arbiter_acceptance_clears_the_reviewer_error_it_resolved(
     decision_config, no_llm_reviewer, monkeypatch
 ):
