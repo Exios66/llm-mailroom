@@ -146,8 +146,9 @@ def _run_legacy(coro: Awaitable[T], timeout: float | None) -> T:
     except RuntimeError:
         return asyncio.run(_bounded(coro, timeout))
     # A loop is running in THIS thread; blocking on a future scheduled onto it
-    # would deadlock, so run on a fresh loop in a helper thread. The ``with``
-    # waits for the thread, so ``timeout`` only decides what is raised after.
+    # would deadlock, so run on a fresh loop in a helper thread. ``timeout`` is
+    # enforced inside that loop (the work is cancelled); the ``with`` still
+    # waits for the helper thread to finish its cancellation cleanup.
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         return _run_in_helper(pool, coro, timeout)
 
