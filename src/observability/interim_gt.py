@@ -22,7 +22,9 @@ Every label carries a ``status``:
 ``gap_fill``    the Hub has no label for the field; the value is a gate-accepted, grounded
                 extraction.
 ``derived``     computed from the row, with no model involved (``cms_source_table`` and
-                ``record_type`` / ``communication_type`` from ``expected_subclass``).
+                ``record_type`` / ``communication_type`` from ``expected_subclass``). The
+                catalog already derives ``cms_source_table`` from the Hub subclass (#283),
+                so such a label is superseded rather than applied.
 ``correction``  a documented ground-truth or scorer defect makes the Hub label unattainable.
 ``disputed``    the Hub and a gate-supported extraction disagree and no rule decides. This is
                 **not** truth; it is never applied and is kept for human review.

@@ -184,6 +184,8 @@ def test_cms_claim_type_health_is_correct_gold_not_a_defect(tmp_path):
     assert meta["sources"]["claim_type"] == "hub"
     assert meta["interim_gt"]["rejected"] == ["claim_type: a CMS row's claim_type is health"]
     assert fields["cms_source_table"] == "pde"
+    # The catalog derives the table from the Hub subclass (#283): the Hub, not the overlay.
+    assert meta["sources"]["cms_source_table"] == "hub"
 
 
 def test_hf_pilot_rows_and_report_record_the_overlay(monkeypatch, corp_overlay):
