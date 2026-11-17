@@ -864,3 +864,33 @@ def after_report(state: dict) -> Literal["catalog_write", "human_review"]:
         )
         return "human_review"
     return "catalog_write"
+
+
+def entry_route(state: dict) -> Literal["intake", "extract", "compile_report"]:
+    """Entry router: a review-resume re-invocation starts at fresh extraction
+    (doc_type already known from the manifest); everything else goes through
+    normal intake → classify.
+
+    The `review_decision == "approved"` guard is deliberate: only the
+    resume-from-review path sets it, so a crashed/partial run can never be
+    mistaken for a resume and skip classification (pilot: correspondence_01
+    ended with output=null when a degraded second run took the extract branch
+    without a real classification).
+    """
+    if (
+        state.get("resume_extraction")
+        and state.get("review_decision") == "approved"
+        and state.get("doc_type")
+    ):
+        return "extract"
+    # Stateless fallback for a human-applied review (the interrupt checkpoint
+    # is gone after a restart): the reviewer's fields enter the same tail the
+    # live interrupt resume reaches. Guarded by the explicit token + provenance,
+    # like the "approved" branch above.
+    if (
+        state.get("resume_extraction")
+        and state.get("doc_type")
+        and human_fields_applied(state)
+    ):
+        return "compile_report"
+    return "intake"
