@@ -124,17 +124,32 @@ def _get_shared() -> _SharedLoop:
         return state
 
 
+def _bounded(coro: Awaitable[T], timeout: float | None) -> Awaitable[T]:
+    """Apply ``timeout`` inside the coroutine's own loop, so expiry cancels it."""
+    return coro if timeout is None else asyncio.wait_for(coro, timeout)
+
+
+def _run_in_helper(pool: concurrent.futures.ThreadPoolExecutor, coro: Awaitable[T], timeout: float | None) -> T:
+    """``asyncio.run`` on a helper thread, in a copy of the caller's context.
+
+    The deadline is enforced inside the private loop (the work is cancelled),
+    so leaving the ``with`` block that owns ``pool`` does not wait for it.
+    """
+    ctx = contextvars.copy_context()
+    return pool.submit(ctx.run, asyncio.run, _bounded(coro, timeout)).result()
+
+
 def _run_legacy(coro: Awaitable[T], timeout: float | None) -> T:
     """The pre-bridge behaviour: asyncio.run per call, helper thread if a loop runs here."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)  # type: ignore[arg-type]
+        return asyncio.run(_bounded(coro, timeout))
     # A loop is running in THIS thread; blocking on a future scheduled onto it
     # would deadlock, so run on a fresh loop in a helper thread. The ``with``
     # waits for the thread, so ``timeout`` only decides what is raised after.
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result(timeout=timeout)  # type: ignore[arg-type]
+        return _run_in_helper(pool, coro, timeout)
 
 
 class _Escaped(Exception):
@@ -165,7 +180,7 @@ def run_sync(work: Awaitable[T] | Callable[[], Awaitable[T]], *, timeout: float 
             # deadlock the loop that has to run the work. Use a private loop.
             logger.debug("storage_loop_reentrant_fallback")
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, coro).result(timeout=timeout)  # type: ignore[arg-type]
+                return _run_in_helper(pool, coro, timeout)
 
         ctx = contextvars.copy_context()
         done: concurrent.futures.Future = concurrent.futures.Future()
