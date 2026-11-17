@@ -44,6 +44,9 @@ def watcher_env(temp_base_dir, monkeypatch):
     monkeypatch.setattr(watcher, "Observer", lambda: PollingObserver(timeout=0.05))
 
     watcher._active_files.clear()
+    # Workers another test left in the module-global pool were sized by that test's
+    # cap; retire them so this test's MAILROOM_MAX_CONCURRENT_DOCS is the one enforced.
+    watcher._dispatch.close()
     yield watcher
     watcher._active_files.clear()
 
