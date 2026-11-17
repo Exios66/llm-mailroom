@@ -160,3 +160,21 @@ def test_report_keeps_unknown_types_models_and_statuses_out_of_markdown():
     assert "No extraction schema: unknown: 1" in out  # the hostile type is the fixed bucket
     contract = out.split("## contract", 1)[1]
     assert "x?y??? Injected ?code? ?link??http://evil? ?b?" in contract  # markup characters are neutralized
+
+
+def test_cli_stdout_is_only_the_markdown_report(tmp_path):
+    """Review (PR #298): log lines (an unmigrated database warns) must go to stderr, not into the report."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONPATH": str(src), "MAILROOM_BASE_DIR": str(tmp_path),
+           "DATABASE_URL": f"sqlite+aiosqlite:///{tmp_path / 'm.db'}", "LOG_FORMAT": "json", "LOG_LEVEL": "INFO"}
+    env.pop("LOG_FILE", None)
+    done = subprocess.run([sys.executable, str(src / "scripts" / "audit_report.py")], capture_output=True,
+                          text=True, env=env, cwd=tmp_path, timeout=120)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.startswith("# Audit report") and "schema_ready" not in done.stdout
+    assert "schema_ready" in done.stderr

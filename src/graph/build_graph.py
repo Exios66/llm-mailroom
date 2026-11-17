@@ -4833,14 +4833,42 @@ def _stateless_reject_audit_row(manifest, file_path: str, label: dict | None) ->
     row says ``trace_incomplete`` rather than inventing it. Best-effort like every audit
     write: ``write_row`` never raises and marks the manifest.
     """
+    import contextvars
+    import time
     from datetime import datetime, timezone
 
     from audit.trace import visit
     from pipeline.bins import load_manifest
+    from pipeline.limits import reset_run_usage, set_run_started
 
     doc_id = manifest.doc_id
-    # Reload: ``_finalize_human_rejection`` just saved the failed stage, reason and label.
-    current = load_manifest(doc_id) or manifest
+    try:
+        # Reload: ``_finalize_human_rejection`` just saved the failed stage, reason and label.
+        current = load_manifest(doc_id) or manifest
+        state = _stateless_reject_state(current, file_path, label)
+        now = datetime.now(timezone.utc)
+        state["audit_trace"] = [visit("human_review", state, {}, started_at=now, ended_at=now)]
+
+        def write() -> None:
+            # This rejection made no LLM call and took no time of its own: account it from a fresh run, in an
+            # isolated context, so the previous document's usage and start time (still retained on this
+            # thread) never reach its metrics.
+            reset_run_usage()
+            set_run_started(time.time())
+            _terminal_audit_row(state, event="failed", actor="pipeline", terminal_node="audit_failed")
+
+        contextvars.copy_context().run(write)
+    except Exception:
+        # The file, catalog and manifest are already final: a row that cannot be built must not turn
+        # a completed rejection into a 500.
+        logger.exception("audit_row_build_failed", doc_id=doc_id, event_name="failed")
+    # ``_finalize_human_rejection`` exported before this row existed; export again with it.
+    _maybe_export_warehouse(doc_id)
+
+
+def _stateless_reject_state(current, file_path: str, label: dict | None) -> dict[str, Any]:
+    """The state of a stateless rejection's ``failed`` row, from the manifest ``_finalize_human_rejection`` saved."""
+    doc_id = current.doc_id
     state: dict[str, Any] = {
         "doc_id": doc_id,
         "matter_id": current.matter_id,
@@ -4863,16 +4891,7 @@ def _stateless_reject_audit_row(manifest, file_path: str, label: dict | None) ->
         **_manifest_evidence_state(current),
         **({"human_label": label} if label is not None else {}),
     }
-    try:
-        now = datetime.now(timezone.utc)
-        state["audit_trace"] = [visit("human_review", state, {}, started_at=now, ended_at=now)]
-        _terminal_audit_row(state, event="failed", actor="pipeline", terminal_node="audit_failed")
-    except Exception:
-        # The file, catalog and manifest are already final: a row that cannot be built must not turn
-        # a completed rejection into a 500.
-        logger.exception("audit_row_build_failed", doc_id=doc_id, event_name="failed")
-    # ``_finalize_human_rejection`` exported before this row existed; export again with it.
-    _maybe_export_warehouse(doc_id)
+    return state
 
 
 def _run_human_applied_stateless(manifest, review_file: Path, payload: dict) -> dict[str, Any]:

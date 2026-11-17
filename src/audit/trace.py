@@ -86,6 +86,9 @@ _ATTEMPT_COUNTERS: dict[str, tuple[str, str]] = {
     "arbiter": ("judge", "judge_pass_count"),
 }
 
+#: Nodes whose completed update advances their stage counter (the others read it unchanged).
+_COUNTER_ADVANCING = frozenset({"classify", "retry_classify", "extract", "retry_extract", "judge_verify"})
+
 
 class LLMCallInfo(TypedDict, total=False):
     """What the LLM wrapper recorded for the calls one node made (``pipeline.limits.record_usage``)."""
@@ -134,8 +137,10 @@ def attempt_id_for(state: dict, node: str) -> str | None:
         return None
     stage, counter = spec
     n = state.get(counter) or 0
-    if state.get("transient_error"):
-        n += 1  # a transient failure does not consume the counter: it is the attempt that runs next
+    if state.get("transient_error") and node in _COUNTER_ADVANCING:
+        # A transient failure does not consume the counter: it is the attempt that runs next. Only nodes that
+        # advance their counter on completion need this; reviewer and arbiter ids are stable across retries.
+        n += 1
     run = state.get("run_attempt") or 0
     return f"att-{state.get('doc_id') or 'unknown'}-{stage}-r{run}-{n}"
 
@@ -165,34 +170,37 @@ def _decision(question: str, type_: str, answer: Any, p: Any, source: str, *, ex
 def decisions_for(node: str, state: dict, update: dict, *, event: dict | None = None) -> list[dict]:
     """The node's decisions in the sandbox schema ``{question, type, answer, p, expected, options, source}``.
 
-    Only decisions the node actually made are listed (a ``None`` answer is skipped).
+    Only decisions this invocation made are listed: answers come from the node's own ``update``, never from
+    values carried in the merged state (a ``None`` or absent answer is skipped, so a transient retry that
+    returned no result records none). ``expected`` ground truth is read from the merged state.
     """
     s = {**(state or {}), **(update or {})}
+    u = update if isinstance(update, dict) else {}
     out: list[dict] = []
     if node in ("classify", "retry_classify"):
-        out.append(_decision("doc_type", "choice", s.get("doc_type"), s.get("classification_confidence"), node,
+        out.append(_decision("doc_type", "choice", u.get("doc_type"), u.get("classification_confidence"), node,
                              expected=_expected_class(s), options=_doc_type_options()))
     elif node == "review_classify":
-        out.append(_decision("doc_type", "choice", s.get("reviewer_doc_type"), s.get("reviewer_confidence"), node,
+        out.append(_decision("doc_type", "choice", u.get("reviewer_doc_type"), u.get("reviewer_confidence"), node,
                              expected=_expected_class(s), options=_doc_type_options()))
     elif node == "classification_arbiter":
-        out.append(_decision("classification_arbiter_decision", "choice", s.get("classification_arbiter_decision"),
-                             s.get("classification_arbiter_confidence"), node))
+        out.append(_decision("classification_arbiter_decision", "choice", u.get("classification_arbiter_decision"),
+                             u.get("classification_arbiter_confidence"), node))
     elif node == "intake":
-        bert = s.get("bert_triage") or {}
+        bert = u.get("bert_triage") or {}
         if isinstance(bert, dict):
             out.append(_decision("doc_type", "choice", bert.get("doc_type"),
                                  bert.get("calibrated_confidence") or bert.get("confidence"), "bert_triage",
                                  expected=_expected_class(s), options=_doc_type_options()))
     elif node in ("extract", "retry_extract"):
-        out.append(_decision("extraction_confidence", "score", s.get("extraction_confidence"), None, node))
+        out.append(_decision("extraction_confidence", "score", u.get("extraction_confidence"), None, node))
     elif node == "judge_verify":
-        out.append(_decision("judge_verdict", "choice", s.get("judge_verdict"), s.get("judge_score"), node))
-        out.append(_decision("judge_score", "score", s.get("judge_score"), None, node))
+        out.append(_decision("judge_verdict", "choice", u.get("judge_verdict"), u.get("judge_score"), node))
+        out.append(_decision("judge_score", "score", u.get("judge_score"), None, node))
     elif node == "arbiter":
-        out.append(_decision("arbiter_decision", "choice", s.get("arbiter_decision"), None, node))
+        out.append(_decision("arbiter_decision", "choice", u.get("arbiter_decision"), None, node))
     elif node == "human_review":
-        decision = s.get("review_decision")
+        decision = u.get("review_decision")
         if isinstance(decision, dict):
             decision = decision.get("disposition") or decision.get("decision")
         out.append(_decision("review_decision", "choice", decision, None, node))
@@ -272,15 +280,28 @@ def _latency_ms(started_at, ended_at) -> int | None:
 _current_event: contextvars.ContextVar[dict | None] = contextvars.ContextVar("audit_visit_event", default=None)
 
 
-def begin_visit() -> contextvars.Token:
-    """Called by ``traced_node`` before the node runs; opens an empty note slot."""
-    return _current_event.set({})
+def begin_visit() -> tuple[contextvars.Token, contextvars.Token]:
+    """Called by ``traced_node`` before the node runs; opens an empty note slot and a usage scope for the visit."""
+    from pipeline.limits import set_visit_scope
+
+    return _current_event.set({}), set_visit_scope(f"scope-{uuid.uuid4().hex}")
 
 
-def end_visit(token: contextvars.Token) -> dict | None:
+def current_visit_scope() -> str | None:
+    """The running visit's usage scope (LLM calls made under it are stamped with it), or ``None``."""
+    from pipeline.limits import get_visit_scope
+
+    return get_visit_scope()
+
+
+def end_visit(token: tuple[contextvars.Token, contextvars.Token]) -> dict | None:
     """Called by ``traced_node`` after the node ran; returns the note (or ``None``) and closes the slot."""
+    from pipeline.limits import reset_visit_scope
+
     note = _current_event.get()
-    _current_event.reset(token)
+    event_token, scope_token = token
+    _current_event.reset(event_token)
+    reset_visit_scope(scope_token)
     return note or None
 
 
@@ -300,15 +321,18 @@ def record_visit(event: str, *, actor: str = "pipeline", detail: dict | None = N
     slot.update({"event": event, "actor": actor, "detail": dict(detail or {})})
 
 
-def llm_info_since(start: int) -> LLMCallInfo | None:
+def llm_info_since(start: int, scope: str | None = None) -> LLMCallInfo | None:
     """Aggregate calls since ``start``, or return ``None`` when there are none.
+
+    With ``scope`` (the visit's :func:`current_visit_scope`), only calls made by that visit count: a call
+    that lands late from an earlier, timed-out visit stays with the visit that made it.
 
     Sum token counts and known costs, join captured I/O, and use the last
     call's model and prompt version. Cost stays ``None`` if every cost is unknown.
     """
     from pipeline.limits import call_cost_usd, run_calls
 
-    calls = run_calls()[start:]
+    calls = [c for c in run_calls()[start:] if scope is None or c.get("visit_scope") in (None, scope)]
     if not calls:
         return None
     prompts = [c.get("prompt") for c in calls if c.get("prompt") is not None]

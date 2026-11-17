@@ -150,28 +150,41 @@ class SqlSink:
             )
         return ref
 
-    def fetch_pending(self) -> list[dict]:
-        """Return spooled records with their references, oldest first; empty if no spool exists.
-
-        A row whose ``record`` is not a JSON object (corrupt or truncated) is logged
-        and skipped, so one bad row never hides the valid ones from ``audit-reconcile``.
-        """
+    def _read_spool(self) -> tuple[list[dict], list[str]]:
+        """``(valid records, refs of malformed rows)``; a row whose ``record`` is not a JSON object is malformed."""
         path = spool_path()
         if not path.exists():
-            return []
+            return [], []
         with _spool() as conn:
             rows = conn.execute("SELECT ref, record FROM pending_rows ORDER BY created_at, ref").fetchall()
         out: list[dict] = []
+        bad: list[str] = []
         for ref, record in rows:
             try:
                 parsed = json.loads(record)
             except (TypeError, ValueError):
                 parsed = None
             if not isinstance(parsed, dict):
-                logger.warning("audit_spool_row_malformed", ref=ref)
+                bad.append(ref)
                 continue
             out.append({**parsed, "ref": ref})  # the spool key wins over any ``ref`` inside the record
+        return out, bad
+
+    def fetch_pending(self) -> list[dict]:
+        """Return spooled records with their references, oldest first; empty if no spool exists.
+
+        A row whose ``record`` is not a JSON object (corrupt or truncated) is logged
+        and skipped, so one bad row never hides the valid ones from ``audit-reconcile``;
+        ``malformed_pending`` reports how many there are so reconcile can count them.
+        """
+        out, bad = self._read_spool()
+        for ref in bad:
+            logger.warning("audit_spool_row_malformed", ref=ref)
         return out
+
+    def malformed_pending(self) -> int:
+        """How many spooled rows cannot be read as a JSON object (``audit-reconcile`` counts them as failed)."""
+        return len(self._read_spool()[1])
 
     def missing_store(self) -> str | None:
         """The spool path when it does not exist (nothing was ever parked there, or its volume is gone)."""

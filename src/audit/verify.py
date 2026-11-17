@@ -214,6 +214,48 @@ def _recovered_digest(recovered: Any) -> str | None:
     return digest if isinstance(digest, str) and digest else None
 
 
+def _check_recovered_attempts(report: CheckReport, record, detail: dict[str, Any], inner: dict[str, Any], row) -> None:
+    """The attempts a ``recovered_detail`` addendum carries are exactly the ones its detail lists, hash for hash.
+
+    ``detail["sub_rows"]`` are the recovered row's attempts (their ids are the partial row's, so they cannot
+    be stored as sub-rows). Each one must hash, under the row's matter and actor, to its own ``entry_hash``
+    and to the hash ``inner["attempts"]`` lists for it; an attempt listed but not carried, or carried but
+    not listed, is a failure.
+    """
+    doc_id, seq = record.doc_id, record.seq
+    subs, listed = detail.get("sub_rows") or [], inner.get("attempts") or []
+    if not isinstance(subs, list) or not isinstance(listed, list):
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="attempts_malformed")
+        return
+    want = {e.get("attempt_id"): e.get("entry_hash") for e in listed if isinstance(e, dict)}
+    got: dict[Any, Any] = {}
+    for sub in subs:
+        attempt_id = sub.get("attempt_id") if isinstance(sub, dict) else None
+        if not isinstance(sub, dict) or not isinstance(attempt_id, str) or attempt_id in got:
+            report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="attempt_malformed")
+            continue
+        try:
+            digest = attempt_hash(sub, matter_id=row.matter_id, actor=row.actor)
+        except Exception as exc:
+            _hash_failure(report, exc, doc_id=doc_id, seq=seq, attempt_id=attempt_id)
+            got[attempt_id] = None
+            continue
+        got[attempt_id] = digest
+        if digest != sub.get("entry_hash"):
+            report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, attempt_id=attempt_id,
+                        reason="attempt_hash")
+    for attempt_id in want.keys() - got.keys():
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, attempt_id=attempt_id,
+                    reason="missing_attempt")
+    for attempt_id in got.keys() - want.keys():
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, attempt_id=attempt_id,
+                    reason="extra_attempt")
+    for attempt_id in want.keys() & got.keys():
+        if got[attempt_id] is not None and got[attempt_id] != want[attempt_id]:
+            report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, attempt_id=attempt_id,
+                        reason="attempt_not_listed_hash")
+
+
 def _check_addendum_recovery(report: CheckReport, record, detail: dict[str, Any], row) -> None:
     """Bind an addendum written by ``audit-reconcile`` to the digest it carries.
 
@@ -244,6 +286,7 @@ def _check_addendum_recovery(report: CheckReport, record, detail: dict[str, Any]
         return
     if not bound:
         report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq)
+    _check_recovered_attempts(report, record, detail, inner, row)
     row_recovered = (row.detail or {}).get("recovered_from") if isinstance(row.detail, dict) else None
     full = row_recovered.get("full_detail_sha256") if isinstance(row_recovered, dict) else None
     if not (isinstance(row_recovered, dict) and row_recovered.get("complete") is False and full):
@@ -268,12 +311,13 @@ async def _check_main(session, migrated: bool, doc_id: str | None = None) -> Che
     previous_hash = ""
     previous_seq = 0
     if doc_id is not None and rows:
-        # Scoped: the row must still link to whatever sits just before it in the chain.
-        previous_seq = rows[0].seq - 1
+        # Scoped: the row must be the genesis row (seq 1, no predecessor) or link to the row just before it,
+        # which must exist. Without one the chain starts at 0, so any other seq is reported as a gap.
         before = (
-            await session.execute(select(AuditLogRecord).where(AuditLogRecord.seq == previous_seq))
-        ).scalars().first() if previous_seq > 0 else None
-        previous_hash = before.entry_hash if before is not None else ""
+            await session.execute(select(AuditLogRecord).where(AuditLogRecord.seq == rows[0].seq - 1))
+        ).scalars().first() if rows[0].seq > 1 else None
+        if before is not None:
+            previous_seq, previous_hash = before.seq, before.entry_hash
     for record in rows:
         if record.doc_id in seen:
             report.fail(kind="duplicate_doc_id", doc_id=record.doc_id)

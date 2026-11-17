@@ -161,7 +161,7 @@ def test_entry_point_sink_loaded(monkeypatch, full_trace):
     assert (sink, also) == ("sql", ["memory"])
 
 
-def test_sink_failure_does_not_fail_node(monkeypatch):
+def test_sink_failure_does_not_fail_node(monkeypatch, full_trace):
     from audit.sinks import record_io
     from audit.sinks.sql import SqlSink
     from observability.tracing import traced_node
@@ -169,11 +169,15 @@ def test_sink_failure_does_not_fail_node(monkeypatch):
 
     monkeypatch.setenv("PHOENIX_TRACING", "disabled")
 
+    calls = []
+
     def boom(self, *a, **k):
+        calls.append(a)
         raise RuntimeError("disk full")
 
     monkeypatch.setattr(SqlSink, "record_io", boom)
     sink, sha, also = record_io(visit_id="v-x", doc_id="d", prompt="p", completion="c")
+    assert len(calls) == 1  # the sink really ran (full_trace is on); it is not a vacuous pass
     assert (sink, also) == (None, []) and sha
 
     class Usage:
@@ -187,6 +191,7 @@ def test_sink_failure_does_not_fail_node(monkeypatch):
         return {"doc_type": "contract"}
 
     (v,) = classify_node({"doc_id": "d", "audit_trace": [{"node": "intake"}]})["audit_trace"]
+    assert len(calls) == 2  # and again from inside the traced node, whose failure did not fail it
     assert v["trace_sink"] is None and v["io_sha256"] == sha
 
 
@@ -317,6 +322,7 @@ def test_one_malformed_spool_row_does_not_block_the_valid_ones(monkeypatch, tmp_
     pending = SqlSink().fetch_pending()
     assert sorted(p["doc_id"] for p in pending) == ["d-1", "d-2"]
     assert all(p["ref"].startswith("pend-") and p["ref"] not in ("pend-bad", "pend-list") for p in pending)
+    assert SqlSink().malformed_pending() == 2  # review (PR #298): reconcile can count what it cannot read
 
 
 class _Recording:
@@ -474,3 +480,49 @@ def test_every_built_in_sink_but_sql_is_marked_off_box():
 
     assert all(getattr(s, "off_box", False) for s in (BraintrustSink, LangfuseSink, OtlpSink, PhoenixSink))
     assert not getattr(SqlSink, "off_box", False)
+
+
+def test_braintrust_sink_records_nothing_on_the_noop_span():
+    """Review (PR #298): with no active span the sink must report no reference instead of a bogus one."""
+    import braintrust
+    from audit.sinks.braintrust import BraintrustSink
+
+    assert braintrust.current_span() is braintrust.NOOP_SPAN
+    sink = BraintrustSink()
+    assert sink.record_io("v1", "d", "p", "c") is None
+    assert sink.capture_pending({"doc_id": "d"}) is None
+
+
+def test_late_usage_is_attributed_to_the_visit_that_made_it(monkeypatch):
+    """Review (PR #298): a timed-out call's usage that lands during the next node must not become that node's."""
+    import contextvars
+
+    from observability.tracing import traced_node
+    from pipeline.limits import record_usage, reset_run_usage, usage_summary
+
+    monkeypatch.setenv("PHOENIX_TRACING", "disabled")
+
+    class Late:
+        prompt_tokens, completion_tokens = 100, 100
+
+    class Own:
+        prompt_tokens, completion_tokens = 1, 1
+
+    reset_run_usage()
+    held: list[contextvars.Context] = []
+
+    @traced_node("classify-document")
+    def classify_node(state):
+        held.append(contextvars.copy_context())  # the abandoned thread of a timed-out call keeps this context
+        return {"doc_type": "contract"}
+
+    @traced_node("extract-data")
+    def extract_node(state):
+        held[0].run(record_usage, Late(), "m")  # lands while the next node runs
+        record_usage(Own(), "m")
+        return {"extracted_data": {}}
+
+    classify_node({"doc_id": "d", "audit_trace": [{"node": "intake"}]})
+    (v,) = extract_node({"doc_id": "d", "audit_trace": [{"node": "intake"}]})["audit_trace"]
+    assert (v["prompt_tokens"], v["completion_tokens"]) == (1, 1)
+    assert usage_summary()["total"] == 202  # run-level totals (and so the budgets) still count every call

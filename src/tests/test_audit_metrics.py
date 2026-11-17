@@ -123,3 +123,19 @@ def test_recovered_flag_and_missing_fields_are_null():
     for key in ("first_pass", "class_correct", "overall_extraction_score", "prompt_tokens", "latency_ms",
                 "classification_attempts"):
         assert out[key] is None, key
+
+
+def test_recovered_detail_addendum_replaces_the_partial_rows_numbers_and_attempts():
+    """Review (PR #298): a completed partial row must report the recovered detail and its attempts."""
+    from audit.metrics import audit_row_metrics
+
+    partial = _row(scoring={}, trace=[], extraction={}, metrics={}, recovered_from={"complete": False})
+    partial_attempts = [{**_att("extraction", 1), "parent_id": "row-1"}]
+    full = _row()["detail"]
+    full_attempts = [_att("extraction", 1), _att("extraction", 2, "retry")]
+    addendum = {"kind": "recovered_detail", "seq": 1, "detail": {"detail": full, "sub_rows": full_attempts}}
+    out = audit_row_metrics(partial, [addendum], partial_attempts)
+    assert out["extraction_attempts"] == 2  # the recovered attempts replace, not add to, the partial one
+    assert out["overall_extraction_score"] == 0.5 and out["prompt_tokens"] == 40 and out["recovered"] is True
+    rescore = {"kind": "rescore", "seq": 2, "detail": {"scoring": _scoring(overall=0.9)}}
+    assert audit_row_metrics(partial, [addendum, rescore], partial_attempts)["overall_extraction_score"] == 0.9

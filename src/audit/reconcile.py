@@ -47,6 +47,8 @@ class ReconcileReport:
     quarantined: int = 0
     #: Copies the sinks hold in quarantine from this and earlier runs (informational: not a failure).
     quarantine_held: int = 0
+    #: Spooled records that are not a JSON object: unreadable, so never recovered (also counted in ``failed``).
+    malformed: int = 0
     #: Sinks whose pending records could not be read at all, and how many: the report is then
     #: incomplete, so the CLI exits nonzero rather than reporting a clean, all-zero run.
     sink_read_failed: int = 0
@@ -60,7 +62,7 @@ class ReconcileReport:
         """Return the counters, dry-run flag and per-document actions as a dict."""
         return {k: getattr(self, k) for k in ("recovered", "partial", "gap_closed", "resumed",
                                                "skipped_existing", "rejected_hash", "failed", "quarantined",
-                                               "quarantine_held", "sink_read_failed", "sink_read_failed_names",
+                                               "quarantine_held", "malformed", "sink_read_failed", "sink_read_failed_names",
                                                "spool_missing", "dry_run", "docs")}
 
 
@@ -125,6 +127,11 @@ def _gather(report: ReconcileReport | None = None) -> list[dict[str, Any]]:
             gone = missing() if callable(missing) else None
             if gone and report is not None:
                 report.spool_missing.append(str(gone))
+            bad = getattr(sink, "malformed_pending", None)
+            if callable(bad) and report is not None:
+                n = int(bad() or 0)
+                report.malformed += n
+                report.failed += n
             held = getattr(sink, "quarantined_count", None)
             if callable(held) and report is not None:
                 report.quarantine_held += int(held() or 0)
@@ -314,8 +321,8 @@ async def _write_repeat(doc_id: str, rec: dict[str, Any], known: set[str] | None
     Same shape as ``writer._as_resumed`` (the requested event rides in ``detail.event``, the attempt
     ids are new), plus ``recovered_from``. Its ``detail_sha256`` is what keeps a copy that turns up
     again from being written twice. Return whether a new addendum was written: ``write_addendum``
-    returns the existing one when a racing reconcile already recorded this copy (``known`` holds the
-    addendum ids seen before the write).
+    returns the existing one (``result.existing``) when a racing reconcile already recorded this copy;
+    ``known`` holds the addendum ids seen before the write.
     """
     from audit.models import Addendum
     from audit.writer import write_addendum
@@ -325,7 +332,7 @@ async def _write_repeat(doc_id: str, rec: dict[str, Any], known: set[str] | None
         detail={**rec["detail"], "event": rec["event"], "recovered_from": _recovered_from(rec)},
         attempts=_attempts(rec), reidentify_attempts=True,
     ))
-    created = result.entry_id not in (known or set())
+    created = not result.existing and result.entry_id not in (known or set())
     if created:
         logger.info("audit_repeat_write_recovered", doc_id=doc_id, sink=rec["_sink"], ref=rec.get("ref"),
                     complete=rec.get("complete", True))

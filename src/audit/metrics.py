@@ -105,6 +105,19 @@ def audit_row_metrics(
     extraction = _d(detail.get("extraction"))
     rescore = _latest(addenda, "rescore")
     resumed = _latest(addenda, "resumed")
+    recovered_add = _latest(addenda, "recovered_detail")
+    recovered = "recovered_from" in detail or recovered_add is not None
+    if recovered_add is not None:
+        # A partial row was completed later: the addendum carries the full detail and its attempts. They replace
+        # the partial row's own sub-rows (never combine with them); other addenda's attempts stay.
+        rdetail = _d(recovered_add.get("detail"))
+        if _d(rdetail.get("detail")):
+            detail = _d(rdetail["detail"])
+            metrics = _d(detail.get("metrics"))
+            extraction = _d(detail.get("extraction"))
+            row_id = row.get("entry_id")
+            attempts = [a for a in attempts if a.get("parent_id") != row_id] + [
+                s for s in rdetail.get("sub_rows") or [] if isinstance(s, Mapping)]
 
     scoring = _d(detail.get("scoring"))
     adherence = _d(extraction.get("adherence"))
@@ -158,7 +171,7 @@ def audit_row_metrics(
         "human_corrected": corrected,
         "rescored": rescore is not None,
         "resumed": resumed is not None,
-        "recovered": "recovered_from" in detail,
+        "recovered": recovered,
     }
     return out
 

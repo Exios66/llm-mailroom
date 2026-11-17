@@ -205,3 +205,38 @@ def test_stateless_rejection_exports_again_once_the_failed_row_exists(api, temp_
     seen = _export_sees_row(mocker)
     assert _resolve(api, doc_id, resolution="reject", reject_reason="spam").status_code == 200
     assert seen and seen[-1] is True
+
+
+def test_stateless_rejection_metrics_ignore_the_previous_documents_run_accounting(api, temp_base_dir, llm):
+    """Review (PR #298): a rejection made no LLM call; retained run usage/start must not reach its row's metrics."""
+    import time
+
+    from graph import build_graph as bg
+    from pipeline.bins import load_manifest
+    from pipeline.limits import record_usage, reset_run_usage, set_run_started
+
+    class Usage:
+        prompt_tokens, completion_tokens = 500, 500
+
+    doc_id = _extraction_park(temp_base_dir, "reject-metrics.txt")
+    manifest = load_manifest(doc_id)
+    reset_run_usage()
+    record_usage(Usage(), "m")  # the previous document's call, still on this thread's context
+    set_run_started(time.time() - 3600)
+    bg._stateless_reject_audit_row(manifest, "", None)
+    metrics = _row(doc_id)["detail"]["metrics"]
+    assert metrics["total_tokens"] == 0 and metrics["llm_call_count"] == 0
+    assert metrics["run_duration_seconds"] < 60
+
+
+def test_stateless_rejection_survives_an_unreadable_manifest_reload(api, temp_base_dir, llm, mocker):
+    """Review (PR #298): the manifest reload is part of the best-effort row build; the export still runs."""
+    from graph import build_graph as bg
+    from pipeline.bins import load_manifest
+
+    doc_id = _extraction_park(temp_base_dir, "reject-reload.txt")
+    manifest = load_manifest(doc_id)
+    mocker.patch("pipeline.bins.load_manifest", side_effect=ValueError("corrupt manifest"))
+    export = mocker.patch.object(bg, "_maybe_export_warehouse")
+    bg._stateless_reject_audit_row(manifest, "", None)  # no exception: the rejection is already final
+    export.assert_called_once_with(doc_id)

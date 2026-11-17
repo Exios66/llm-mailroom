@@ -121,7 +121,8 @@ def verify_legacy_chain(entries: list[AuditLogEntry]) -> bool:
 def verify_chain(entries: list[AuditLogEntry]) -> bool:
     """Per-event chain check, kept under its old name for the per-event readers.
 
-    INTERIM ALIAS (removed when the readers move over, roadmap M11). It accepts
+    STABLE ALIAS, still used by ``audit.verify`` (legacy section), ``pipeline.gmail_intake`` and
+    ``pipeline.relations``; it can go only once those callers call :func:`verify_legacy_chain`. It accepts
     only per-event ``AuditLogEntry`` chains and dispatches them to
     :func:`verify_legacy_chain`; unified rows, sub-rows and addenda are verified
     by ``audit.verify.verify_audit_db``. Raise ``TypeError`` for any other shape.

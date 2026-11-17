@@ -98,7 +98,13 @@ def _trigger(group: list[dict], previous: dict | None, seen_stage: bool) -> str:
 
 
 def _attempt_detail(stage: str, group: list[dict], state: Mapping[str, Any]) -> dict[str, Any]:
-    last = group[-1].get("decision") or {}
+    # Merge the group's decisions in visit order: a later node (an arbiter) overrides what it answered, but its
+    # missing (None) fields never blank an earlier node's answer (the judge's verdict, a classifier's confidence).
+    last: dict[str, Any] = {}
+    for v in group:
+        for k, val in (v.get("decision") or {}).items():
+            if val is not None or k not in last:
+                last[k] = val
     detail: dict[str, Any] = {
         "nodes": [v.get("node") for v in group],
         "visit_ids": [v.get("visit_id") for v in group],
@@ -424,9 +430,9 @@ def mark_manifest(doc_id: str, status: str, refs=(), *, preserve_partial: bool =
         manifest = load_manifest(doc_id)
         if manifest is None:
             return
-        # A later successful live write does not close a prior partial gap.
-        # Reconciliation clears it explicitly after recovering the full copy.
-        if preserve_partial and status == "written" and manifest.audit_written == "pending_partial":
+        # A later successful live write does not close a prior pending or partial gap (an earlier row that
+        # exists only in a sink). Reconciliation clears it explicitly after recovering the full copy.
+        if preserve_partial and status == "written" and manifest.audit_written in ("pending", "pending_partial"):
             return
         manifest.audit_written = _AUDIT_WRITTEN[status]
         manifest.audit_pending_refs = [dict(r) for r in refs]

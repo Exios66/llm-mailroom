@@ -446,7 +446,7 @@ The `chain_valid` field is `true` if all hash links are intact. `false` indicate
 }
 ```
 
-`unified.migrated` is `false` before the opt-in audit migration (then `unified` is empty and valid). `unified.chain_valid` applies the full verifier's own main, sub-row and addendum rules to this one document, so it is `false` for whatever `scripts/verify_audit_chains.py --doc <id>` rejects. `pending` names a parked-but-unwritten audit record; `warehouse` names the Parquet files the document was exported to.
+`unified.migrated` is `false` before the opt-in audit migration (then `unified` is empty and valid). `unified.chain_valid` applies the full verifier's own main, sub-row and addendum rules to this one document, so it is `false` for whatever those unified rules reject. It reflects only the unified checks: a break in the per-event chain shows in the top-level `chain_valid`, and `scripts/verify_audit_chains.py --doc <id>` also exits 1 for it. `pending` names a parked-but-unwritten audit record (`{"audit_written": "unavailable", "unavailable": true, ...}` when the manifest cannot be read); `warehouse` names the Parquet files the document was exported to.
 
 ***
 

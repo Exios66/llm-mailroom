@@ -22,6 +22,9 @@ logger = structlog.get_logger(__name__)
 
 PENDING_STATES = ("pending", "pending_partial")
 
+#: ``pending["audit_written"]`` when the document's manifest could not be read (its pending state is unknown).
+UNAVAILABLE = "unavailable"
+
 
 def _entries(row: dict[str, Any]) -> list[dict[str, Any]]:
     """Row, its sub-rows, then each addendum followed by its sub-rows; each with ``kind`` and ``parent_id``."""
@@ -59,8 +62,10 @@ def _pending(doc_id: str) -> dict[str, Any] | None:
         from pipeline.bins import load_manifest
 
         manifest = load_manifest(doc_id)
-    except Exception:
-        return None
+    except Exception as exc:
+        # An unreadable manifest is not "nothing pending": say so, so callers (and --fail-on-pending) can act on it.
+        logger.warning("audit_pending_unavailable", doc_id=doc_id, error=type(exc).__name__)
+        return {"audit_written": UNAVAILABLE, "refs": [], "unavailable": True, "error": type(exc).__name__}
     if manifest is None or getattr(manifest, "audit_written", None) not in PENDING_STATES:
         return None
     return {"audit_written": manifest.audit_written, "refs": list(manifest.audit_pending_refs or [])}
@@ -112,7 +117,8 @@ async def doc_view(doc_id: str) -> dict[str, Any]:
     unified = {
         "migrated": migrated,
         "chain_length": 1 + len(row.get("addenda") or []) if row else 0,
-        "chain_valid": await doc_valid(doc_id) if row else True,
+        # Migrated: still verify with no row, so orphaned sub-rows or addenda are caught (an empty doc is valid).
+        "chain_valid": await doc_valid(doc_id) if (row or migrated) else True,
         "entries": _entries(row) if row else [],
     }
     return {"doc_id": doc_id, **await _legacy(doc_id), "unified": unified,
@@ -137,21 +143,29 @@ def _rate(n: int, total: int) -> float | None:
     return round(n / total, 4) if total else None
 
 
-def _pending_count() -> int:
+def _pending_scan() -> tuple[int, int]:
+    """``(parked, unreadable)`` manifest counts: parked as pending / pending_partial, and not readable as JSON."""
     from pipeline.bins import manifests_dir
 
     mdir = manifests_dir()
     if not mdir.is_dir():
-        return 0
-    n = 0
+        return 0, 0
+    parked = unreadable = 0
     for path in mdir.glob("*.json"):
         try:
             data = json.loads(path.read_text())
         except (OSError, ValueError):
+            unreadable += 1
             continue
-        if isinstance(data, dict) and data.get("audit_written") in PENDING_STATES:
-            n += 1
-    return n
+        if not isinstance(data, dict):
+            unreadable += 1
+        elif data.get("audit_written") in PENDING_STATES:
+            parked += 1
+    return parked, unreadable
+
+
+def _pending_count() -> int:
+    return _pending_scan()[0]
 
 
 async def unified_summary(*, verify: bool = True) -> dict[str, Any]:
@@ -164,6 +178,7 @@ async def unified_summary(*, verify: bool = True) -> dict[str, Any]:
     from audit.metrics import metrics_for
 
     rows = await all_rows()
+    pending, unreadable = _pending_scan()
     by_event, by_outcome, add_kinds, per_stage = Counter(), Counter(), Counter(), Counter()
     retried = rescued = recovered = 0
     for row in rows:
@@ -184,7 +199,8 @@ async def unified_summary(*, verify: bool = True) -> dict[str, Any]:
         "attempts_by_stage": dict(per_stage),
         "retry_rate": _rate(retried, len(rows)),
         "rescue_rate": _rate(rescued, len(rows)),
-        "pending": _pending_count(),
+        "pending": pending,
+        "pending_unreadable": unreadable,
         "recovered": recovered,
         "checks": None,
     }

@@ -167,3 +167,11 @@ def test_each_scoring_node_has_trace_visit(run_graph):
     assert scoring["status"] == "scored" and scoring["overall_score"] == 1.0
     assert final["scoring"]["scorer"]["doc_type"] == "contract"
     assert final["extraction_adherence"]["parse_error"] is False
+
+
+def test_adherence_sees_the_parse_failure_markers():
+    """Review (PR #298): ``_parse_error`` / ``_raw`` must reach the assessor, or a parse failure scores as clean."""
+    out = sn.adherence_for({"doc_type": "contract",
+                            "extracted_data": {"_parse_error": True, "_raw": "not json", "_report": {"x": 1}}})
+    assert out["parse_error"] is True and out["schema_adherence"] == 0.0
+    assert sn.adherence_payload({"a": 1, "_report": {}}) == {"a": 1}

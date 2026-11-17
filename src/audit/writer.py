@@ -547,7 +547,7 @@ async def _write_addendum_once(
                         if isinstance(provenance, dict) and provenance.get("detail_sha256") == digest:
                             await session.commit()
                             return WriteResult(entry_id=prior.addendum_id, entry_hash=prior.entry_hash,
-                                               kind="addendum", seq=prior.seq)
+                                               kind="addendum", seq=prior.seq, existing=True)
                 tail = (
                     await session.execute(
                         select(AuditAddendumRecord.seq, AuditAddendumRecord.entry_hash)
@@ -778,14 +778,27 @@ def pending_record(row: TerminalRow, *, entry_id: str | None = None) -> dict[str
 
 
 def _decisions_view(visits: Any) -> list[dict[str, Any]]:
+    """Each visit's identity, ``decisions`` and ``decision``.
+
+    ``decision`` is reduced to its ``audit_event`` (the visit's audit event: review decision, actor,
+    disposition), so a decisions-only copy keeps who decided what without the visit's extraction payload.
+    """
     keep = ("visit_id", "node", "attempt_id", "status", "outcome", "decisions")
-    return [{k: v.get(k) for k in keep} for v in visits or [] if isinstance(v, dict)]
+    out = []
+    for v in visits or []:
+        if not isinstance(v, dict):
+            continue
+        view = {k: v.get(k) for k in keep}
+        event = (v.get("decision") or {}).get("audit_event") if isinstance(v.get("decision"), dict) else None
+        view["decision"] = {"audit_event": event} if event else {}
+        out.append(view)
+    return out
 
 
 def decisions_only_record(row: TerminalRow, full: dict[str, Any]) -> dict[str, Any]:
     """The decisions-only copy for a sink whose limit the full record exceeds (§5.6 step 1).
 
-    The trace keeps each visit's identity and ``decisions``; sub-rows keep their
+    The trace keeps each visit's identity, ``decisions`` and the ``audit_event`` of its ``decision``; sub-rows keep their
     nodes and decisions; extraction data, I/O and scoring detail are dropped. It
     carries its own ``detail_sha256`` and the full record's as ``full_detail_sha256``.
     """

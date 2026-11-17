@@ -90,3 +90,5 @@ class WriteResult:
     entry_hash: str
     kind: Literal["row", "addendum"]
     seq: int
+    #: True when an idempotent recovery record was already stored and nothing was appended.
+    existing: bool = False

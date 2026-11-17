@@ -58,6 +58,17 @@ def model_payload(extracted: Any) -> Any:
     return extracted
 
 
+def adherence_payload(extracted: Any) -> Any:
+    """The extraction as the adherence assessor sees it: ``model_payload`` plus the parse-failure markers.
+
+    ``_parse_error`` and ``_raw`` are how the assessor knows the model's output did not parse, so only the
+    pipeline's own ``_report`` is removed; stripping every ``_`` key would score a parse failure as clean.
+    """
+    if isinstance(extracted, Mapping):
+        return {k: v for k, v in extracted.items() if k != "_report"}
+    return extracted
+
+
 def human_corrected(state_like: Mapping[str, Any]) -> bool:
     """True when a person changed the fields (spec §5.4), not when they approved the model's as is.
 
@@ -80,7 +91,7 @@ def adherence_for(state_like: Mapping[str, Any]) -> dict[str, Any]:
     from schemas.documents import get_extraction_schema
 
     return assess_extraction_payload(
-        model_payload(state_like.get("extracted_data")),
+        adherence_payload(state_like.get("extracted_data")),
         state_like.get("doc_type") or "",
         state_like.get("doc_subclass"),
         schema_lookup=get_extraction_schema,

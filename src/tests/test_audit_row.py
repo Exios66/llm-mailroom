@@ -164,3 +164,36 @@ def test_validate_extraction_delegates_to_dojo_with_same_verdicts(mocker):
             got = validate_extraction(doc_type, payload)
             assert got["schema_valid"] is _old_validate(doc_type, payload), (doc_type, payload)
     assert spy.call_count > 0
+
+
+def test_attempt_detail_merges_decisions_in_visit_order():
+    """Review (PR #298): the arbiter's missing judge fields must not blank the judge's answers."""
+    from audit.row import attempts_from_trace
+
+    trace = [
+        _visit(0, "judge_verify", "att-d-judge-r0-1", judge_verdict="incomplete", judge_score=0.4,
+               judge_findings=["x"], arbiter_decision=None),
+        _visit(1, "arbiter", "att-d-judge-r0-1", judge_verdict=None, judge_score=None, judge_findings=None,
+               arbiter_decision="retry_extract", arbiter_fields_to_fix=["a"]),
+    ]
+    detail = attempts_from_trace(trace, {"doc_type": "contract"})[0].detail
+    assert (detail["judge_verdict"], detail["judge_score"], detail["judge_findings"]) == ("incomplete", 0.4, ["x"])
+    assert detail["arbiter_decision"] == "retry_extract" and detail["arbiter_fields_to_fix"] == ["a"]
+
+
+def test_mark_manifest_keeps_an_outstanding_pending_row_on_a_later_write(temp_base_dir):
+    """Review (PR #298): a distinct later write must not clear ``pending`` (the earlier row is only in a sink)."""
+    from audit.row import mark_manifest
+    from pipeline.bins import load_manifest, save_manifest
+    from schemas.manifest import DocumentManifest
+
+    for parked in ("pending", "pending_partial"):
+        m = DocumentManifest(doc_id=f"d-{parked}", matter_id="M", original_filename="p.pdf")
+        m.audit_written = parked
+        m.audit_pending_refs = [{"sink": "spool"}]
+        save_manifest(m)
+        mark_manifest(m.doc_id, "written", preserve_partial=True)
+        kept = load_manifest(m.doc_id)
+        assert kept.audit_written == parked and kept.audit_pending_refs == [{"sink": "spool"}]
+        mark_manifest(m.doc_id, "written")  # reconcile's explicit close
+        assert load_manifest(m.doc_id).audit_written is True

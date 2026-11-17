@@ -49,6 +49,24 @@ _run_deadline: contextvars.ContextVar = contextvars.ContextVar("run_deadline", d
 _run_started: contextvars.ContextVar = contextvars.ContextVar("run_started", default=None)
 
 
+#: Which traced-node visit the current context is running (set by ``audit.trace.begin_visit``). Calls are
+#: stamped with it, so usage that arrives late (an abandoned, timed-out call) is attributed to the visit
+#: that made it, not to whatever node runs when it lands. Run-level totals and budgets ignore it.
+_visit_scope: contextvars.ContextVar[str | None] = contextvars.ContextVar("visit_scope", default=None)
+
+
+def set_visit_scope(scope: str | None) -> contextvars.Token:
+    return _visit_scope.set(scope)
+
+
+def reset_visit_scope(token: contextvars.Token) -> None:
+    _visit_scope.reset(token)
+
+
+def get_visit_scope() -> str | None:
+    return _visit_scope.get()
+
+
 def reset_run_usage() -> None:
     """Start a fresh accumulator for the current run (called per _execute_run)."""
     _run_usage.set([])
@@ -160,6 +178,7 @@ def record_usage(
             "prompt": prompt,
             "completion": completion,
             "prompt_version": prompt_version,
+            "visit_scope": _visit_scope.get(),
         }
     )
 

@@ -52,4 +52,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # stdout is the Markdown report and nothing else: structured log lines go to stderr (level kept).
+    # Only the script entry point re-points the logs: main() is also called in-process.
+    import structlog
+
+    structlog.configure(logger_factory=structlog.PrintLoggerFactory(sys.stderr))
     sys.exit(main())

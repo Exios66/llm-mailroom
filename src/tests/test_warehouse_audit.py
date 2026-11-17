@@ -296,3 +296,29 @@ def test_addendum_only_change_is_exported_once_not_on_every_incremental_run(wh):
     add_addendum("d-1", "rescore")
     again = asyncio.run(wh.export_to_warehouse(stamp=DAY1))
     assert again["exported_documents"] == 1 and again["exported_audit_addenda"] == 2
+
+
+def test_legacy_alone_export_does_not_block_the_event_loop_thread(wh, monkeypatch):
+    """Review (PR #298): the lock and manifest I/O of the no-document legacy export run off the event loop."""
+    import threading
+
+    from storage import warehouse
+
+    seen: dict[str, int] = {}
+
+    async def fake_history():
+        return []
+
+    def fake_publish(legacy):
+        seen["publish"] = threading.get_ident()
+        return 0
+
+    monkeypatch.setattr(warehouse, "fetch_legacy_history", fake_history)
+    monkeypatch.setattr(warehouse, "_publish_legacy_alone", fake_publish)
+
+    async def run():
+        seen["loop"] = threading.get_ident()
+        return await warehouse._export_legacy_alone({})
+
+    assert asyncio.run(run()) == 0
+    assert seen["publish"] != seen["loop"]

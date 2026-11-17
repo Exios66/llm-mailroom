@@ -373,3 +373,23 @@ def test_unmigrated_park_keeps_its_routed_to_review_entry(run_graph):
     assert order[-1] == "__interrupt__" or "human_review" in order
     events = [e["event"] for e in asyncio.run(get_audit_chain(final["doc_id"]))]
     assert events.count("routed_to_review") == 1, events
+
+
+def test_decisions_come_from_the_nodes_own_update_not_carried_state():
+    """Review (PR #298): a transient retry_classify returns no result and must not record the carried doc_type."""
+    from audit.trace import decisions_for
+
+    state = {"doc_type": "contract", "classification_confidence": 0.9}
+    assert decisions_for("retry_classify", state, {"transient_error": True}) == []
+    out = decisions_for("retry_classify", state, {"doc_type": "invoice", "classification_confidence": 0.8})
+    assert [(d["question"], d["answer"], d["p"]) for d in out] == [("doc_type", "invoice", 0.8)]
+
+
+def test_attempt_id_is_stable_across_transient_retries_for_non_advancing_nodes():
+    """Review (PR #298): only nodes that advance their counter on completion take the transient +1."""
+    from audit.trace import attempt_id_for
+
+    base = {"doc_id": "d", "classification_attempts": 1, "run_attempt": 0}
+    for node in ("review_classify", "classification_arbiter"):
+        assert attempt_id_for({**base, "transient_error": True}, node) == attempt_id_for(base, node)
+    assert attempt_id_for({**base, "transient_error": True}, "retry_classify") != attempt_id_for(base, "retry_classify")

@@ -279,7 +279,7 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
 
         node = node_name(fn)
 
-        def keep_unapplied(node, state, started, calls_before, event, status):
+        def keep_unapplied(node, state, started, calls_before, scope, event, status):
             """Hand the visit of a node that raised or paused to the run's collector, if one is open."""
             from audit import trace
 
@@ -289,7 +289,7 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
             try:
                 bucket.append(trace.visit(
                     node, state, {}, started_at=started, ended_at=datetime.now(timezone.utc),
-                    status=status, llm=trace.llm_info_since(calls_before), event=event,
+                    status=status, llm=trace.llm_info_since(calls_before, scope), event=event,
                 ))
             except Exception:
                 logger.warning("audit_visit_failed", node=node, exc_info=True)
@@ -301,6 +301,7 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
             started = datetime.now(timezone.utc)
             calls_before = trace.run_calls_count()
             token = trace.begin_visit()
+            scope = trace.current_visit_scope()
             unapplied_status = None
             try:
                 result = fn(state)
@@ -310,7 +311,7 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
             finally:
                 event = trace.end_visit(token)
                 if unapplied_status:
-                    keep_unapplied(node, state, started, calls_before, event, unapplied_status)
+                    keep_unapplied(node, state, started, calls_before, scope, event, unapplied_status)
                 if unapplied_status == "paused" and event:
                     # A node that parks (``human_review`` -> ``interrupt()``) never returns, so
                     # its stage event goes to the per-event log here while the audit migration
@@ -331,7 +332,7 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
             try:
                 visit = trace.visit(
                     node, state, result, started_at=started, ended_at=datetime.now(timezone.utc),
-                    llm=trace.llm_info_since(calls_before), event=event,
+                    llm=trace.llm_info_since(calls_before, scope), event=event,
                 )
             except Exception:
                 logger.warning("audit_visit_failed", node=node, exc_info=True)

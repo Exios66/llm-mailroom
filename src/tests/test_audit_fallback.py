@@ -1439,14 +1439,84 @@ async def test_resumed_counts_only_copies_actually_written(sinks, db_down, monke
     known = {a["addendum_id"] for a in (await get_row("d-1"))["addenda"]}
     assert await rec._write_repeat("d-1", record, known=known) is False
 
-    # In a run: a racing reconcile wrote the copy between the row read and our write.
+
+async def test_a_copy_a_racing_sweep_wrote_after_our_row_snapshot_is_skipped_not_resumed(sinks, db_down, monkeypatch):
+    """Review (PR #298): the competing write lands after our snapshot, and our write keeps the original ``known``."""
+    from audit import reconcile as rec
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park, get_row, write_terminal_row
+
+    db_down[0] = None
+    await write_terminal_row(_row())  # d-1 already has its row, and no addendum yet
+    second = _row()
+    second.detail["trace"][0]["visit_id"] = "v-second"
+    db_down[0] = RuntimeError("database is locked")
+    await commit_or_park(second)  # a later terminal write that parked
+    db_down[0] = None
+
     real = rec._write_repeat
+    outcomes: list[bool] = []
 
     async def late(doc_id, rec_, known=None):
-        return await real(doc_id, rec_, {a["addendum_id"] for a in (await get_row(doc_id))["addenda"]})
+        outcomes.append(await real(doc_id, rec_, set()))  # the racing sweep: it really wrote the addendum
+        outcomes.append(await real(doc_id, rec_, known))  # ours: the original snapshot's ``known``, unchanged
+        return outcomes[-1]
 
     monkeypatch.setattr(rec, "_write_repeat", late)
-    monkeypatch.setattr(rec, "_fresh", lambda unique, present: list(unique))  # the stale view still shows it fresh
     report = await reconcile()
+    assert outcomes == [True, False]  # one resumed (the racing sweep's), one skipped_existing (ours)
     assert report.resumed == 0 and report.skipped_existing == 1
     assert len((await get_row("d-1"))["addenda"]) == 1
+
+
+def test_decisions_only_trace_keeps_the_visits_audit_event():
+    """Review (PR #298): a decisions-only copy must still say who decided (``decision.audit_event``)."""
+    from audit.writer import _decisions_view
+
+    event = {"event": "review_decision", "actor": "human_reviewer", "detail": {"disposition": "approve"}}
+    [view] = _decisions_view([{"visit_id": "v1", "node": "human_review", "decisions": [],
+                               "decision": {"audit_event": event, "extracted_data": {"big": "x" * 10}}}])
+    assert view["decision"] == {"audit_event": event}  # the payload fields stay out
+
+
+def test_reconcile_counts_malformed_spool_rows_as_failed(sinks, tmp_path):
+    """Review (PR #298): a corrupt spool row was only logged; the run must report it and exit nonzero."""
+    import sqlite3
+
+    from audit import reconcile as rec
+    from audit.sinks import capture_pending
+    from audit.sinks.sql import spool_path
+
+    capture_pending({"doc_id": "d-1", "event": "archived"})
+    with sqlite3.connect(spool_path()) as conn:
+        conn.execute("INSERT INTO pending_rows (ref, doc_id, record, created_at) VALUES "
+                     "('pend-bad', 'd-bad', '{\"truncated\": ', '2000-01-01T00:00:00+00:00')")
+    report = rec.ReconcileReport()
+    records = rec._gather(report)
+    assert [r["doc_id"] for r in records] == ["d-1"]  # the valid record is still processed
+    assert report.malformed == 1 and report.failed == 1 and report.as_dict()["malformed"] == 1
+
+
+@pytest.mark.parametrize("tamper", ["missing", "extra", "forged_detail"])
+async def test_a_recovered_detail_addendums_attempts_are_checked_against_their_hashes(sinks, db_down, tamper):
+    """Review (PR #298): the carried ``sub_rows`` must be exactly the attempts the detail lists, hash for hash."""
+    import copy
+
+    from audit.verify import verify_audit_db
+
+    await _closed_partial(sinks, db_down)
+    assert (await verify_audit_db()).ok
+
+    def mutate(d):
+        if tamper == "missing":
+            d["sub_rows"] = []
+        elif tamper == "extra":
+            d["sub_rows"] = d["sub_rows"] + [{**copy.deepcopy(d["sub_rows"][0]), "attempt_id": "ghost"}]
+        else:
+            d["sub_rows"][0]["detail"] = {"forged": True}
+
+    await _forge("addendum", mutate)
+    report = await verify_audit_db()
+    reasons = {f.get("reason") for f in report.addenda.failures}
+    assert not report.ok and "recovered_detail_mismatch" in _failure_kinds(report)
+    assert reasons & {"missing_attempt", "attempt_hash", "attempt_malformed", "extra_attempt"}

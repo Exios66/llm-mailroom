@@ -92,7 +92,10 @@ def _verify(doc_id: str, records: list[dict]) -> dict:
 
 def _pending_warning(count: int, *, fail: bool, doc: str | None = None, state: str | None = None) -> str:
     """The warning for manifests parked ``pending`` / ``pending_partial`` (never verified, never proof)."""
-    what = f"{doc} is parked as {state}" if doc else f"{count} manifest(s) are parked as pending / pending_partial"
+    if doc and state == "unavailable":
+        what = f"the pending state of {doc} could not be read (unreadable manifest)"
+    else:
+        what = f"{doc} is parked as {state}" if doc else f"{count} manifest(s) are parked as pending / pending_partial"
     tail = "failing (--fail-on-pending)" if fail else "not a failure unless --fail-on-pending is given"
     return (f"\nWARNING: {what}: the row exists only in a sink, so this verification proves nothing for it. "
             f"Run scripts/audit_reconcile.py before restoring ({tail}).")
@@ -115,14 +118,15 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.doc:
-        from audit.readers import _pending_count
+        from audit.readers import _pending_scan
         from audit.verify import SECTIONS, verify_audit_db
 
         report = asyncio.run(verify_audit_db(check_sinks=args.check_sinks))
-        pending = _pending_count()
-        fail_pending = bool(pending and args.fail_on_pending)
+        pending, unreadable = _pending_scan()
+        fail_pending = bool((pending or unreadable) and args.fail_on_pending)
         if args.json:
-            print(json.dumps({**report.as_dict(), "pending_manifests": pending}, indent=2, default=str))
+            print(json.dumps({**report.as_dict(), "pending_manifests": pending,
+                              "unreadable_manifests": unreadable}, indent=2, default=str))
             return 0 if report.ok and not fail_pending else 1
         print("audit verification:" + ("" if report.migrated else " (migration pending)"))
         for name in SECTIONS:
@@ -139,6 +143,9 @@ def main() -> int:
                 print(f"           {failure}")
         if pending:
             print(_pending_warning(pending, fail=args.fail_on_pending))
+        if unreadable:
+            tail = "failing (--fail-on-pending)" if args.fail_on_pending else "not a failure unless --fail-on-pending is given"
+            print(f"\nWARNING: {unreadable} manifest(s) could not be read, so their pending state is unknown ({tail}).")
         if not report.ok:
             print("\nAudit storage is broken — investigate before restore (see audit A-8).")
             return 1

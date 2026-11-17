@@ -478,3 +478,47 @@ def test_verify_cli_warns_on_pending_and_can_fail_on_it(client, monkeypatch, cap
     assert code == 0 and "d-park is parked as pending_partial" in out
     code, _ = _verify_cli(monkeypatch, capsys, "--doc", "d-park", "--fail-on-pending")
     assert code == 1
+
+
+def test_audit_doc_orphaned_addendum_is_invalid_on_a_migrated_database(client):
+    """Review (PR #298): with no unified row, ``chain_valid`` was hard-wired True; orphans must be caught."""
+    import sqlite3
+
+    _write("d-orphan", addenda=[("rescore", [])])
+    path = db._resolve_url().split("///", 1)[1]
+    with sqlite3.connect(path) as conn:  # raw connection: foreign keys off, so the row alone can be removed
+        conn.execute("DELETE FROM audit_log WHERE doc_id = 'd-orphan'")
+    unified = client.get("/audit/d-orphan", headers=AUTH).json()["unified"]
+    assert unified["entries"] == [] and unified["chain_valid"] is False
+    assert client.get("/audit/never-seen", headers=AUTH).json()["unified"]["chain_valid"] is True
+
+
+def test_unreadable_manifest_is_unavailable_and_fails_on_pending(client, monkeypatch, capsys):
+    """Review (PR #298): an unreadable manifest was reported as "nothing pending"."""
+    from pipeline.bins import manifests_dir
+
+    (manifests_dir() / "d-bad.json").write_text("{not json")
+    assert client.get("/audit/d-bad", headers=AUTH).json()["pending"]["unavailable"] is True
+    _write("d-ok")
+    code, out = _verify_cli(monkeypatch, capsys)
+    assert code == 0 and "could not be read" in out
+    code, out = _verify_cli(monkeypatch, capsys, "--fail-on-pending")
+    assert code == 1 and "could not be read" in out
+    code, _ = _verify_cli(monkeypatch, capsys, "--doc", "d-bad", "--fail-on-pending")
+    assert code == 1
+
+
+@pytest.mark.parametrize("seq", [7, 0])
+def test_doc_validity_needs_genesis_seq_one_or_an_existing_predecessor(client, seq):
+    """Review (PR #298): a scoped check must not accept a row whose predecessor is missing or whose genesis seq is not 1."""
+    from audit.verify import verify_audit_db
+
+    _write("a")
+    _write("b")
+
+    def detach(row, adds, subs):
+        row.seq, row.prev_hash = seq, ""
+
+    _rewrite("b", detach)
+    assert asyncio.run(verify_audit_db()).ok is False
+    assert client.get("/audit/b", headers=AUTH).json()["unified"]["chain_valid"] is False

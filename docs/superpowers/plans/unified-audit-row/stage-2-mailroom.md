@@ -376,7 +376,7 @@
 - Produces: `audit_row_metrics(row: dict, addenda: list[dict], attempts: list[dict]) -> dict` with exactly the spec §7 keys. `overall_extraction_score` is `scoring.headline_score` when set, else `scoring.overall_score`; `suite_overall_extraction_score` is `scoring.overall_score` (review item A1).
 
 - [x] **Step 1: Write the tests.**
-  - `test_audit_doc_contract`: the keys `doc_id`, `chain_length`, `chain_valid` and `entries` keep their names, and the new keys are `legacy`, `pending` and `warehouse`. Entries are ordered row, sub-rows, then each addendum with its sub-rows, and each has `kind` and `parent_id`.
+  - `test_audit_doc_contract`: the keys `doc_id`, `chain_length`, `chain_valid` and `entries` keep their names and meaning (the per-event chain, legacy history in the top-level `entries`), and the new keys are `unified`, `pending` and `warehouse` (no `legacy` key). `unified.entries` is ordered row, sub-rows, then each addendum with its sub-rows, and each has `kind` and `parent_id`. The `unified` summary of `GET /audit` needs `unified=true`.
   - `test_audit_summary_rates`.
   - `test_metrics_keys_exactly_spec`.
   - `test_latest_rescore_supplies_scores`.

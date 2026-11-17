@@ -672,6 +672,12 @@ async def _export_legacy_alone(wh_manifest: dict[str, Any]) -> int:
     legacy = await fetch_legacy_history()
     if legacy is None:
         return 0
+    # The file lock and the manifest and Parquet I/O block: keep them off the (shared) event loop.
+    return await asyncio.to_thread(_publish_legacy_alone, legacy)
+
+
+def _publish_legacy_alone(legacy) -> int:
+    """Under the publication lock, write the legacy history if no exporter stamped it meanwhile."""
     with _publication_lock(warehouse_dir()):
         # Load after acquiring the lock: another exporter may have stamped it meanwhile.
         manifest = load_warehouse_manifest()
