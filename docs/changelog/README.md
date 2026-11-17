@@ -55,7 +55,7 @@ Work landed on `main` since the last tagged release.
     - The sandbox derives `record_type` from the raw subclass, so 109 corporate labels (`charter_amendment`, `officer_certificate`, `board_resolution`, `indenture`, `subsidiary_list`) were outside the 5-token vocabulary. These are rejected.
   - **Checked offline** against the sandbox overlay and the cached Hub rows of revision `bc9eab2`, with a one-off script that is not committed:
     - all 1,111 overlay documents bind to their Hub text;
-    - 1,539 labels apply: 484 corporate and 386 correspondence gap fills, 88 merger gap fills, 45 contract corrections and 536 insurance `cms_source_table` (since #283 the pipeline derives `cms_source_table` from the Hub subclass itself, so the Hub now supersedes those 536 `derived` labels with the same value);
+    - 1,003 labels apply: 484 corporate and 386 correspondence gap fills, 88 merger gap fills and 45 contract corrections. The overlay's 536 insurance `cms_source_table` `derived` labels no longer apply, because since #283 the pipeline derives `cms_source_table` from the Hub subclass itself and the Hub supersedes them with the same value;
     - 109 are rejected, and the Hub supersedes the rest.
   - Off by default: no score moves unless a run opts in. Tests: `test_interim_gt.py`.
 
