@@ -25,6 +25,7 @@ from langchain_agents.doc_inventories import (
     COMMUNICATION_TYPE_DESCRIPTION,
     INTENT_DESCRIPTIONS,
     RECORD_TYPE_DESCRIPTION,
+    SUPPORTING_DOCUMENTS_DESCRIPTION,
 )
 from langchain_agents.prompts import get_prompt
 
@@ -612,7 +613,7 @@ INSURANCE_CLAIMS_SCHEMA = build_structured_schema({
     "damages_description": _nullable_string("Summary of the loss/damages as described"),
     "coverage_determination": _nullable_string("Outcome as stated: approved, denied, partial, pending"),
     "denial_reasons": _string_array("Stated denial/limitation grounds, if denied"),
-    "supporting_documents": _string_array("Referenced supporting documents"),
+    "supporting_documents": _string_array(SUPPORTING_DOCUMENTS_DESCRIPTION),
     "intent": _nullable_string(INTENT_DESCRIPTIONS["insurance_claim"]),
     "subject_matter": _nullable_string("One tight grounded sentence: what this claim document is about"),
     "keywords": _string_array(
