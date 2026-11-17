@@ -261,12 +261,41 @@ def _judge_can_review(state: dict) -> bool:
 
 
 def judge_should_run(state: dict) -> bool:
-    """The ambiguous band, a retry owed a re-judge, or an unsure extraction whose retries are spent."""
+    """The ambiguous band, a retry owed a re-judge, an unsure extraction whose retries are
+    spent, or a decision point that sent the document here."""
     return (
         judge_gate(state)
         or retry_rejudge_due(state)
         or (_judge_can_review(state) and _extraction_still_unsure(state))
+        or judge_requested_by_decision_point(state)
     )
+
+
+def judge_requested_by_decision_point(state: Mapping[str, Any]) -> bool:
+    """True when a decision point's applied hint routed the document to ``judge_verify``.
+
+    A redirect there spends the slot's override budget, so the judge must actually run
+    rather than record ``skipped`` and let an unverified extraction archive. The judge
+    lane's own limits still apply: the ``MAILROOM_JUDGE_VERIFY`` kill switch, a guardrail
+    failure, an empty extraction, a lost window and ``judge_max_passes``. Only an outcome
+    that was charged or allowed through counts (not ``capped`` and not ``shadowed``).
+    """
+    outcomes = state.get("decision_outcomes")
+    if not isinstance(outcomes, Mapping):
+        return False
+    requested = any(
+        isinstance(record, Mapping)
+        and record.get("vetted_route") == "judge_verify"
+        and not record.get("capped")
+        and not record.get("shadowed")
+        for record in outcomes.values()
+    )
+    if not requested:
+        return False
+    passes = int(state.get("judge_pass_count") or 0)
+    if passes >= _judge_max_passes(_thresholds_for(state)):
+        return False
+    return _judge_can_review(state)
 
 
 def _extraction_still_unsure(state: Mapping[str, Any]) -> bool:
@@ -864,3 +893,33 @@ def after_report(state: dict) -> Literal["catalog_write", "human_review"]:
         )
         return "human_review"
     return "catalog_write"
+
+
+def entry_route(state: dict) -> Literal["intake", "extract", "compile_report"]:
+    """Entry router: a review-resume re-invocation starts at fresh extraction
+    (doc_type already known from the manifest); everything else goes through
+    normal intake → classify.
+
+    The `review_decision == "approved"` guard is deliberate: only the
+    resume-from-review path sets it, so a crashed/partial run can never be
+    mistaken for a resume and skip classification (pilot: correspondence_01
+    ended with output=null when a degraded second run took the extract branch
+    without a real classification).
+    """
+    if (
+        state.get("resume_extraction")
+        and state.get("review_decision") == "approved"
+        and state.get("doc_type")
+    ):
+        return "extract"
+    # Stateless fallback for a human-applied review (the interrupt checkpoint
+    # is gone after a restart): the reviewer's fields enter the same tail the
+    # live interrupt resume reaches. Guarded by the explicit token + provenance,
+    # like the "approved" branch above.
+    if (
+        state.get("resume_extraction")
+        and state.get("doc_type")
+        and human_fields_applied(state)
+    ):
+        return "compile_report"
+    return "intake"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate one mailroom LLM agent in isolation (no 13-node graph).
+"""Evaluate one mailroom LLM agent in isolation (no 14-node graph).
 
 Live Langfuse evaluators stay pipeline-level (``pipeline-result``) by design.
 This script is the local methodology: load labeled cases, invoke a single

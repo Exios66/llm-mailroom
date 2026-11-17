@@ -13,7 +13,9 @@ Canonical tokens (Hub ``expected_subclass``):
   ``demand``, ``attorney_demand``, ``press_release``, ``meeting_request``
 - ``insurance_claim`` — CMS/DE-SynPUF file types ``pde``, ``inpatient``,
   ``outpatient``, ``carrier`` (plus the legacy FNOL lines
-  ``auto``/``property``/``liability``/``health``/``life``/``workers_comp``)
+  ``auto``/``property``/``liability``/``health``/``life``/``workers_comp``).
+  These are sorter subclasses; the extracted ``claim_type`` is the product line
+  only (``INSURANCE_PRODUCT_LINES``), and a CMS table's line is ``health`` (#174 §2).
 
 Contract / merger inventories stay in ``cuad_maud.py``; this module
 dispatches to them so graph handoff / enrich / Boss-skip share one entry.
@@ -69,6 +71,13 @@ INSURANCE_CLAIM_TYPES: tuple[str, ...] = (
     "workers_comp",
     "other",
 )
+
+#: The CMS/DE-SynPUF source-table tokens: sorter subclasses, never a ``claim_type``.
+CMS_CLAIM_TABLES: tuple[str, ...] = INSURANCE_CLAIM_TYPES[:4]
+#: The scored ``claim_type`` vocabulary (Dojo ``INSURANCE_PRODUCT_LINES``, #174 §2). Since
+#: llm-dojo-scoring#93 the CMS table is its own field and a table token on ``claim_type``
+#: scores 0; every CMS row's product line is ``health``.
+INSURANCE_PRODUCT_LINES: tuple[str, ...] = INSURANCE_CLAIM_TYPES[4:]
 
 INSURANCE_GT_KEYS: tuple[str, ...] = (
     "claim_number",
@@ -292,6 +301,7 @@ _INVENTORY_FIELDS = {
     "record_type",
     "communication_type",
     "claim_type",
+    "cms_source_table",
 }
 
 _CORPORATE_ALIASES = {
@@ -396,6 +406,33 @@ def normalize_claim_type(value: Any) -> str:
     return _normalize(value, INSURANCE_CLAIM_TYPES, _INSURANCE_ALIASES)
 
 
+def normalize_claim_line(value: Any) -> str:
+    """``claim_type`` as a product line: a CMS table token (or a table subclass) is ``health``."""
+    token = normalize_claim_type(value)
+    return "health" if token in CMS_CLAIM_TABLES else token
+
+
+def cms_source_table_for(subtype: Any, claim_type: Any = None) -> str | None:
+    """The CMS/DE-SynPUF source table of an insurance row, derived, never asked of the model.
+
+    Dojo scores ``cms_source_table`` as its own label (llm-dojo-scoring#93), derived from
+    ``expected_subclass``. The pipeline derives it the same way from the sorter subclass.
+    Only when no subclass is known does a table token the specialist wrote on
+    ``claim_type`` (the frozen v1 prompt still asks for one) stand in, read before that
+    token is folded onto ``health``. A row whose product line is not ``health`` is not a
+    CMS row, whatever the subclass says, so it carries no table.
+    """
+    sub = normalize_claim_type(subtype) if subtype else ""
+    own = normalize_claim_type(claim_type) if claim_type else ""
+    if sub and sub != "other":
+        table = sub if sub in CMS_CLAIM_TABLES else None
+    else:
+        table = own if own in CMS_CLAIM_TABLES else None
+    if table and own and own not in CMS_CLAIM_TABLES and own != "health":
+        return None
+    return table
+
+
 RECORD_TYPE_DESCRIPTION = (
     "Canonical Hub subclass. Emit exactly one of: articles_of_incorporation, "
     "bylaws, powers_of_attorney, rights_instrument, other. "
@@ -410,19 +447,29 @@ RECORD_TYPE_DESCRIPTION = (
 COMMUNICATION_TYPE_DESCRIPTION = (
     "Canonical Hub subclass. Emit exactly one of: email, letter, memo, "
     "notice, demand, attorney_demand, press_release, meeting_request. "
-    "Enron-style inbox messages are email. Internal memoranda are memo. "
-    "Calendar or meeting invites are meeting_request. News/press releases "
-    "are press_release. Formal demand letters are demand; attorney-signed "
-    "demands are attorney_demand."
+    "Type the content, not the carrier: a memo, letter, notice, demand, "
+    "press release or meeting request sent, forwarded or pasted in an email "
+    "takes that type. email only for ordinary email correspondence with no "
+    "other form inside it. Internal memoranda are memo. Calendar or meeting "
+    "invites are meeting_request. News/press releases are press_release. "
+    "Formal demand letters are demand; attorney-signed demands are "
+    "attorney_demand."
+)
+
+SUPPORTING_DOCUMENTS_DESCRIPTION = (
+    "Referenced supporting documents (police report, receipts, medical records, "
+    "estimates). On a CMS/DE-SynPUF claim row, list the identifier references "
+    "instead, one item each, in these exact forms: 'facility provider <id>', "
+    "'provider NPI <10 digits>', 'HCPCS detail (<n> codes)', and for a Part D "
+    "event the drug product as 'NDC <11 digits>'."
 )
 
 CLAIM_TYPE_DESCRIPTION = (
-    "Canonical claim-file / line token. For CMS/DE-SynPUF claim tables emit "
-    "exactly one of: pde (Part D Event / prescription), inpatient, "
-    "outpatient, carrier (professional/physician/carrier). For traditional "
-    "FNOL/policy documents emit: auto, property, liability, health, life, "
-    "workers_comp. Use other only when none of those fit. Never leave this "
-    "empty when table headers identify a CMS file type."
+    "Line of business. Emit exactly one of: auto, property, liability, "
+    "health, life, workers_comp, other. A CMS/DE-SynPUF claim table "
+    "(Part D event, inpatient, outpatient or carrier/physician claim) is "
+    "health; never put a table name (pde, inpatient, outpatient, carrier) "
+    "here. Use other only when none of those fit."
 )
 
 
@@ -446,18 +493,24 @@ def specialist_handoff(doc_type: str | None, subtype: str | None = None) -> str:
         return (
             "CORRESPONDENCE INVENTORY — set communication_type to exactly one of: "
             + ", ".join(CORRESPONDENCE_TYPES)
-            + ". Readable emails/memos/meeting requests are never unknown; "
-            "Enron-style inbox text is email."
+            + ". Readable emails/memos/meeting requests are never unknown. "
+            "Type the content, not the carrier: a memo, letter, notice, demand, "
+            "press release or meeting request sent or forwarded in an email "
+            "takes that type; email only for ordinary email correspondence."
         )
     if kind == "insurance_claim":
         return (
-            "INSURANCE CLAIM INVENTORY — set claim_type to a Hub token. "
-            "CMS/DE-SynPUF tables: "
-            + ", ".join(INSURANCE_CLAIM_TYPES[:4])
-            + ". Traditional FNOL lines: "
-            + ", ".join(INSURANCE_CLAIM_TYPES[4:])
-            + ". PDE/CLM_ID/DESYNPUF headers identify the CMS file type; "
-            "those tables are still insurance_claim claims."
+            "INSURANCE CLAIM INVENTORY — set claim_type to the line of business, "
+            "exactly one of: "
+            + ", ".join(INSURANCE_PRODUCT_LINES)
+            + ". CMS/DE-SynPUF tables (PDE/CLM_ID/DESYNPUF headers: "
+            + ", ".join(CMS_CLAIM_TABLES)
+            + ") are insurance_claim claims whose claim_type is health; "
+            "the table name is never a claim_type (the pipeline records it as "
+            "cms_source_table from the subclass). On those rows supporting_documents "
+            "holds the identifier references: facility provider <id>, provider NPI "
+            "<10 digits>, HCPCS detail (<n> codes), and on a Part D event the drug "
+            "product as NDC <11 digits>."
         )
     return ""
 
@@ -499,9 +552,16 @@ def enrich_extraction(
         if token and not (not own and token == "other"):
             result["communication_type"] = token
     elif kind == "insurance_claim":
-        token = normalize_claim_type(result.get("claim_type") or subtype)
+        own = result.get("claim_type")
+        token = normalize_claim_line(own or subtype)
         if token:
             result["claim_type"] = token
+        # Read the table before the fold above discards a table token on claim_type.
+        table = cms_source_table_for(subtype, own or token)
+        if table:
+            result["cms_source_table"] = table
+        else:
+            result.pop("cms_source_table", None)
     if kind in INTENT_LABELS:
         intent = normalize_intent(kind, result.get("intent"))
         if intent:

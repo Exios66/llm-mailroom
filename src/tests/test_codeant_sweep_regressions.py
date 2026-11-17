@@ -52,16 +52,33 @@ def test_rescan_reconciles_stale_claims_periodically(temp_base_dir, monkeypatch)
     calls = []
     watcher._reconcile_stale_claims = lambda: calls.append("reconcile")
 
-    clock = iter([0.0, 0.0, 61.0, 61.0])
-    sleeps = []
+    import threading
 
-    def fake_sleep(_seconds):
-        sleeps.append(_seconds)
-        if len(sleeps) >= 2:
+    # The loop reads the clock once at start and once per pass: 0.0 at start, 0.0 on
+    # pass 1 (no reconcile yet), 61.0 on pass 2 (past the 60 s interval: reconcile).
+    # The loop stops on that last read, not on a count of sleeps: code the loop calls
+    # may sleep on this thread too (that is what made this test flaky).
+    clock = iter([0.0, 0.0, 61.0])
+    # time.monotonic / time.sleep are process-wide: another thread must neither
+    # consume this scripted clock nor be stopped by it. Only this thread is faked.
+    me = threading.get_ident()
+    real_monotonic, real_sleep = time.monotonic, time.sleep
+
+    def fake_monotonic():
+        if threading.get_ident() != me:
+            return real_monotonic()
+        value = next(clock)
+        if value >= 61.0:
             watcher._running = False
+        return value
 
-    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+    def fake_sleep(seconds):
+        if threading.get_ident() != me:
+            real_sleep(seconds)
+
+    monkeypatch.setattr(time, "monotonic", fake_monotonic)
     monkeypatch.setattr(time, "sleep", fake_sleep)
+    monkeypatch.setattr(watcher_mod, "_status_detail", lambda: {})
     monkeypatch.setattr(watcher_mod, "touch_watcher_heartbeat", lambda **kwargs: None)
     monkeypatch.setattr(watcher_mod, "_get_manifest_index", lambda: {})
     monkeypatch.setattr(watcher_mod, "is_ingestion_paused", lambda: False)

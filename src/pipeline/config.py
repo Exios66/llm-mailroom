@@ -1,6 +1,8 @@
 import contextlib
 import contextvars
+import math
 import os
+import re
 import yaml
 from pathlib import Path
 from functools import lru_cache
@@ -9,10 +11,64 @@ from typing import Iterator, Literal
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "taxonomy.yaml"
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """``yaml.SafeLoader`` that refuses a mapping with the same key twice.
+
+    Plain YAML loaders keep the last occurrence silently, so a duplicated taxonomy key
+    (for example a decision-point slot declared twice, or ``on_failure:`` written twice in
+    one slot) would drop a setting without any error. Only the explicit keys of a mapping
+    are checked: merge keys (``<<:``) are skipped, so an explicit key that overrides a
+    merged one is not a duplicate. Used by :func:`load_config`, the runtime taxonomy reader.
+    """
+
+    def construct_mapping(self, node, deep=False):
+        if isinstance(node, yaml.MappingNode):
+            self._check_unique_keys(node)
+        return super().construct_mapping(node, deep=deep)
+
+    def _check_unique_keys(self, node) -> None:
+        # Each mapping node is checked once, before SafeLoader flattens its merges into it
+        # (flattening prepends the merged pairs, so a later look would see an explicit key
+        # beside the one it overrides and call that a duplicate).
+        checked = self.__dict__.setdefault("_unique_checked", set())
+        if id(node) in checked:
+            return
+        checked.add(id(node))
+        seen: set = set()
+        merges = 0
+        for key_node, value_node in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                merges += 1
+                if merges > 1:  # ``<<`` written twice: SafeLoader would quietly combine both
+                    raise yaml.constructor.ConstructorError(
+                        "while constructing a mapping", node.start_mark,
+                        "found duplicate key '<<'", key_node.start_mark,
+                    )
+                # The merge sources are mappings in their own right: an inline one is never
+                # constructed on its own, so its keys are checked here. An explicit key of
+                # ``node`` overriding a merged one stays legal.
+                sources = value_node.value if isinstance(value_node, yaml.SequenceNode) else [value_node]
+                for source in sources:
+                    if isinstance(source, yaml.MappingNode):
+                        self._check_unique_keys(source)
+                continue
+            key = self.construct_object(key_node, deep=True)
+            try:
+                duplicate = key in seen
+            except TypeError:  # unhashable key: let SafeLoader report it
+                continue
+            if duplicate:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping", node.start_mark,
+                    f"found duplicate key {key!r}", key_node.start_mark,
+                )
+            seen.add(key)
+
+
 @lru_cache(maxsize=1)
 def load_config() -> dict:
     with open(CONFIG_PATH) as f:
-        return yaml.safe_load(f)
+        return yaml.load(f, Loader=_UniqueKeyLoader)  # a SafeLoader subclass
 
 
 def clear_config_cache() -> None:
@@ -185,6 +241,156 @@ def get_review_mode(doc_type: str | None) -> Literal["llm", "decision_only"]:
     entry = cfg["by_class"].get(doc_type) if isinstance(doc_type, str) else None
     mode = entry.get("mode") if entry is not None else cfg["default_mode"]
     return "decision_only" if mode == "decision_only" else "llm"
+
+
+class DecisionPointConfigError(ValueError):
+    """taxonomy.yaml ``decision_points:`` is malformed (or disagrees with the graph)."""
+
+
+DECISION_POINT_ON_FAILURE = ("fail_open", "fail_safe")
+DECISION_POINT_MAX_TIMEOUT_SECONDS = 3600  # one hour; anything longer is a typo, not a decision call
+_DP_SLOT_NAME = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*\Z")
+_DP_SLOT_KEYS = frozenset({
+    "node", "backend", "enabled", "timeout_seconds", "on_failure", "allow", "min_confidence", "by_class",
+    "max_overrides",
+})
+_DP_CLASS_KEYS = frozenset({"enabled", "allow", "min_confidence"})
+
+
+def _dp_is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _dp_unit(value: object) -> bool:
+    # Bounds first: math.isfinite raises OverflowError on an oversized int.
+    return _dp_is_number(value) and 0.0 <= value <= 1.0 and math.isfinite(value)  # type: ignore[operator]
+
+
+def _dp_allow(value: object, where: str, problems: list[str]) -> list[str] | None:
+    if not isinstance(value, (list, tuple)) or not all(isinstance(v, str) and v for v in value):
+        problems.append(f"{where}: allow must be a list of destination names")
+        return None
+    if len(set(value)) != len(value):
+        problems.append(f"{where}: allow lists a destination twice")
+    return list(dict.fromkeys(value))
+
+
+def get_decision_points_config() -> dict[str, dict]:
+    """Pluggable decision points from taxonomy.yaml ``decision_points:``, normalised.
+
+    Returns ``{slot: {node, backend, enabled, timeout_seconds, on_failure, allow,
+    min_confidence, max_overrides, by_class}}`` in file order. A missing, empty or ``null`` section
+    is ``{}``: no decision point, no wrapper, no rule, the pipeline runs as before.
+    Defaults: ``enabled`` true (declaring a slot turns it on), ``timeout_seconds``
+    ``None`` (``run_limits.llm_call_timeout_seconds`` at call time; a set value is above 0
+    and at most ``DECISION_POINT_MAX_TIMEOUT_SECONDS``, 3600), ``on_failure``
+    ``fail_open``, ``allow`` empty (the outcome is recorded and never routes),
+    ``min_confidence`` ``None``, ``max_overrides`` 1 (how often the slot may redirect a
+    document to a non-park destination), ``by_class`` ``{}`` holding only the keys a
+    class sets. Every structural problem is reported at once in one
+    :class:`DecisionPointConfigError`. Whether a slot's node and destinations exist is
+    checked against the graph by ``graph.decision_points.validate_slot_policies``.
+    The taxonomy is ``lru_cache``d: edits need a watcher/API restart.
+    """
+    block = load_config().get("decision_points")
+    if block is None:
+        return {}
+    if not isinstance(block, dict):
+        raise DecisionPointConfigError("decision_points must be a mapping of slot name to slot settings")
+    classes = get_sorter_label_set()
+    problems: list[str] = []
+    out: dict[str, dict] = {}
+    for slot, raw in block.items():
+        where = f"decision_points.{slot}"
+        if not isinstance(slot, str) or not _DP_SLOT_NAME.match(slot):
+            problems.append(f"{where}: slot names are lower-case words joined by dots, e.g. 'extract.post'")
+            continue
+        if not isinstance(raw, dict):
+            problems.append(f"{where}: must be a mapping")
+            continue
+        unknown = sorted(str(k) for k in raw if k not in _DP_SLOT_KEYS)
+        if unknown:
+            problems.append(f"{where}: unknown key(s) {unknown}; allowed: {sorted(_DP_SLOT_KEYS)}")
+        entry: dict = {
+            "node": None, "backend": None, "enabled": True, "timeout_seconds": None,
+            "on_failure": "fail_open", "allow": [], "min_confidence": None, "by_class": {},
+            "max_overrides": 1,
+        }
+        for key in ("node", "backend"):
+            value = raw.get(key)
+            if not isinstance(value, str) or not value.strip():
+                problems.append(f"{where}: {key} is required (a non-empty string)")
+            else:
+                entry[key] = value.strip()
+        if "enabled" in raw:
+            if not isinstance(raw["enabled"], bool):
+                problems.append(f"{where}: enabled must be true or false")
+            else:
+                entry["enabled"] = raw["enabled"]
+        if raw.get("timeout_seconds") is not None:
+            t = raw["timeout_seconds"]
+            # Bounds first: math.isfinite raises OverflowError on an int too large for a float.
+            if not _dp_is_number(t) or not 0 < t <= DECISION_POINT_MAX_TIMEOUT_SECONDS:  # type: ignore[operator]
+                problems.append(
+                    f"{where}: timeout_seconds must be a number above 0 and at most "
+                    f"{DECISION_POINT_MAX_TIMEOUT_SECONDS}"
+                )
+            else:
+                entry["timeout_seconds"] = float(t)  # type: ignore[arg-type]
+        if "on_failure" in raw:
+            if raw["on_failure"] not in DECISION_POINT_ON_FAILURE:
+                problems.append(f"{where}: on_failure must be one of {list(DECISION_POINT_ON_FAILURE)}")
+            else:
+                entry["on_failure"] = raw["on_failure"]
+        if raw.get("allow") is not None:
+            allow = _dp_allow(raw["allow"], where, problems)
+            if allow is not None:
+                entry["allow"] = allow
+        if raw.get("min_confidence") is not None:
+            if not _dp_unit(raw["min_confidence"]):
+                problems.append(f"{where}: min_confidence must be a number from 0 to 1")
+            else:
+                entry["min_confidence"] = float(raw["min_confidence"])
+        if "max_overrides" in raw:
+            m = raw["max_overrides"]
+            if not isinstance(m, int) or isinstance(m, bool) or m < 0:
+                problems.append(f"{where}: max_overrides must be an integer of 0 or more")
+            else:
+                entry["max_overrides"] = m
+        by_class = raw.get("by_class")
+        if by_class is not None and not isinstance(by_class, dict):
+            problems.append(f"{where}: by_class must be a mapping of class to overrides")
+        for cls, override in (by_class or {}).items() if isinstance(by_class, dict) else ():
+            cwhere = f"{where}.by_class.{cls}"
+            if cls not in classes:
+                problems.append(f"{cwhere}: unknown class; known: {sorted(classes)}")
+                continue
+            if not isinstance(override, dict):
+                problems.append(f"{cwhere}: must be a mapping")
+                continue
+            unknown = sorted(str(k) for k in override if k not in _DP_CLASS_KEYS)
+            if unknown:
+                problems.append(f"{cwhere}: unknown key(s) {unknown}; allowed: {sorted(_DP_CLASS_KEYS)}")
+            item: dict = {}
+            if "enabled" in override:
+                if not isinstance(override["enabled"], bool):
+                    problems.append(f"{cwhere}: enabled must be true or false")
+                else:
+                    item["enabled"] = override["enabled"]
+            if override.get("allow") is not None:
+                allow = _dp_allow(override["allow"], cwhere, problems)
+                if allow is not None:
+                    item["allow"] = allow
+            if override.get("min_confidence") is not None:
+                if not _dp_unit(override["min_confidence"]):
+                    problems.append(f"{cwhere}: min_confidence must be a number from 0 to 1")
+                else:
+                    item["min_confidence"] = float(override["min_confidence"])
+            entry["by_class"][cls] = item
+        out[slot] = entry
+    if problems:
+        raise DecisionPointConfigError("invalid decision_points config:\n  - " + "\n  - ".join(problems))
+    return out
 
 
 def get_all_doc_types() -> list[str]:
