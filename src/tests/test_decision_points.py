@@ -39,6 +39,25 @@ def _clean_registries():
     dp._abandoned_threads.clear()
 
 
+@pytest.fixture(autouse=True)
+def _route_logs_stay_out_of_structlog(monkeypatch):
+    """Keep ``route_spec``'s module logger from being first used here.
+
+    structlog binds a module logger on first use (``cache_logger_on_first_use``), and
+    ``structlog.testing.capture_logs`` cannot see a logger bound earlier. Running a rule
+    through ``decide_route`` logs ``route_rule_applied``; if that were the first log the
+    process sees from ``route_spec``, ``test_route_spec.py``'s capture tests would miss
+    their events whenever this file runs before it.
+    """
+    import graph.route_spec as route_spec
+
+    class _Silent:
+        def __getattr__(self, level):
+            return lambda *a, **k: None
+
+    monkeypatch.setattr(route_spec, "logger", _Silent())
+
+
 @pytest.fixture
 def decision_points(monkeypatch):
     """Set the taxonomy ``decision_points:`` section: ``decision_points({...})``."""
