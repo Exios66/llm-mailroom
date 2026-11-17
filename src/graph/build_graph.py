@@ -2287,10 +2287,11 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
     Window results kept for a node retry (``agents.source_windows``) are dropped as soon as
     the node returns anything but a transient error.
     """
-    update = _judge_verify(state)
-    if not update.get("transient_error"):
-        from agents.source_windows import forget_document
+    from agents.source_windows import forget_document, resume_cache
 
+    with resume_cache():
+        update = _judge_verify(state)
+    if not update.get("transient_error"):
         forget_document(str(state.get("doc_text") or ""))
     return update
 
@@ -2436,10 +2437,11 @@ def _judge_verify(state: DocumentState) -> dict[str, Any]:
 
 def arbiter_node(state: DocumentState) -> dict[str, Any]:
     """Lane B arbitration; see ``_arbiter``. Drops the retry resume cache once the node is done."""
-    update = _arbiter(state)
-    if not update.get("transient_error"):
-        from agents.source_windows import forget_document
+    from agents.source_windows import forget_document, resume_cache
 
+    with resume_cache():
+        update = _arbiter(state)
+    if not update.get("transient_error"):
         forget_document(str(state.get("doc_text") or ""))
     return update
 

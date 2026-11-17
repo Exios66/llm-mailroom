@@ -473,3 +473,19 @@ def test_the_node_records_its_coverage_on_the_attempt_history(monkeypatch):
     history = attempts.record_attempt({}, kind="extract", extracted={"parties": ["A"]}, confidence=0.3, guard=guard)
     update = run_node(long_text(), **{attempts.HISTORY_KEY: history})
     assert update[attempts.HISTORY_KEY][-1]["judge_coverage"] == update["judge_coverage"]
+
+
+def test_a_direct_caller_never_gets_a_cached_verdict(monkeypatch):
+    """Only a graph node's retry resumes; offline scoring and scripts always judge afresh."""
+    import agents.source_windows as sw
+
+    replies = iter([
+        {"completeness": 1.0, "completeness_label": "complete", "reasoning": "first"},
+        {"completeness": 0.4, "completeness_label": "incomplete", "reasoning": "second"},
+    ])
+    ScriptedJudge(monkeypatch, completeness=lambda i: next(replies), window_chars=100_000)
+    judge = judge_mod.CompletenessJudge()
+    first = judge.judge_completeness("contract", {"parties": ["A"]}, "same text")
+    second = judge.judge_completeness("contract", {"parties": ["A"]}, "same text")
+    assert first["reasoning"] == "first" and second["reasoning"] == "second"
+    assert not sw._cache

@@ -13,6 +13,8 @@ window is sent whole, exactly as before.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import copy
 import hashlib
 import json
@@ -79,6 +81,21 @@ def valid_unit(value: object) -> float | None:
 # as soon as it returns anything but a transient error; the size bound only guards a crash
 # between a transient error and its retry.
 
+# The cache is used only inside ``resume_cache()``, which the graph nodes open around one
+# node run. A direct caller (offline scoring, a script, a test) always gets a fresh verdict.
+_resume_active: contextvars.ContextVar[bool] = contextvars.ContextVar("window_resume_active", default=False)
+
+
+@contextlib.contextmanager
+def resume_cache():
+    """Let the judge and arbiter reuse and keep window results inside this block."""
+    token = _resume_active.set(True)
+    try:
+        yield
+    finally:
+        _resume_active.reset(token)
+
+
 _CACHE_MAX_ENTRIES = 2048
 _cache: OrderedDict[tuple, dict] = OrderedDict()
 _cache_lock = threading.Lock()
@@ -91,7 +108,9 @@ def text_digest(value: object) -> str:
 
 
 def cached_window(key: tuple) -> dict | None:
-    """A copy of the stored result for ``key``, or None."""
+    """A copy of the stored result for ``key``, or None (always None outside ``resume_cache()``)."""
+    if not _resume_active.get():
+        return None
     with _cache_lock:
         hit = _cache.get(key)
         if hit is None:
@@ -101,6 +120,8 @@ def cached_window(key: tuple) -> dict | None:
 
 
 def store_window(key: tuple, result: dict) -> None:
+    if not _resume_active.get():
+        return
     with _cache_lock:
         _cache[key] = copy.deepcopy(result)
         _cache.move_to_end(key)
