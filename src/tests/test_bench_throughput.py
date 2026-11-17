@@ -206,11 +206,31 @@ def test_run_documents_records_error_text_of_returned_failures(tmp_path):
 # -- provenance ------------------------------------------------------------------
 
 
-def test_provenance_changed_compares_commit_and_cleanliness():
-    before = {"commit": "abc", "tree_clean": True}
-    assert bench.provenance_changed(before, {"commit": "abc", "tree_clean": True}) is False
-    assert bench.provenance_changed(before, {"commit": "def", "tree_clean": True}) is True
-    assert bench.provenance_changed(before, {"commit": "abc", "tree_clean": False}) is True
+def test_provenance_changed_compares_commit_cleanliness_and_fingerprint():
+    before = {"commit": "abc", "tree_clean": True, "tree_fingerprint": "f0"}
+    assert bench.provenance_changed(before, dict(before)) is False
+    assert bench.provenance_changed(before, {**before, "commit": "def"}) is True
+    assert bench.provenance_changed(before, {**before, "tree_clean": False}) is True
+
+
+def test_provenance_changed_flags_a_dirty_tree_that_changes_but_stays_dirty():
+    before = {"commit": "abc", "tree_clean": False, "tree_fingerprint": "f1"}
+    assert bench.provenance_changed(before, {**before, "tree_fingerprint": "f2"}) is True
+
+
+def test_provenance_changed_treats_unverifiable_commit_as_changed():
+    snap = {"commit": "", "tree_clean": True, "tree_fingerprint": "f0"}
+    assert bench.provenance_changed(snap, dict(snap)) is True
+
+
+def test_git_state_fingerprint_tracks_dirty_content(monkeypatch):
+    outputs = {"status": " M a.py", "diff": "+x", "rev-parse": "abc"}
+    monkeypatch.setattr(bench, "_git", lambda *a: outputs[a[0]])
+    first = bench.git_state()
+    outputs["diff"] = "+y"
+    second = bench.git_state()
+    assert first["tree_clean"] is second["tree_clean"] is False
+    assert first["tree_fingerprint"] != second["tree_fingerprint"]
 
 
 def _fake_main_env(monkeypatch, snapshots):
@@ -236,7 +256,7 @@ def test_main_captures_provenance_before_levels_and_flags_a_change(monkeypatch, 
         [{"commit": "aaa", "tree_clean": True}, {"commit": "bbb", "tree_clean": False}],
     )
     out = tmp_path / "r.json"
-    assert bench.main(["--levels", "1,2", "--docs", "1", "--json-out", str(out)]) == 0
+    assert bench.main(["--levels", "1,2", "--docs", "1", "--json-out", str(out)]) == 3  # changed provenance fails
     assert calls == ["git", "machine", "level", "level", "git"]  # provenance first, re-check last
     report = json.loads(out.read_text())
     assert report["commit"] == "aaa" and report["tree_clean"] is True  # as measured at the start
@@ -245,7 +265,7 @@ def test_main_captures_provenance_before_levels_and_flags_a_change(monkeypatch, 
 
 
 def test_main_marks_unchanged_provenance(monkeypatch, tmp_path, capsys):
-    snap = {"commit": "aaa", "tree_clean": True}
+    snap = {"commit": "aaa", "tree_clean": True, "tree_fingerprint": "f0"}
     _fake_main_env(monkeypatch, [snap, dict(snap)])
     out = tmp_path / "r.json"
     assert bench.main(["--levels", "1", "--docs", "1", "--json-out", str(out)]) == 0
@@ -256,7 +276,7 @@ def test_main_marks_unchanged_provenance(monkeypatch, tmp_path, capsys):
 
 def test_markdown_warns_when_provenance_changed(monkeypatch, tmp_path, capsys):
     _fake_main_env(monkeypatch, [{"commit": "a", "tree_clean": True}, {"commit": "b", "tree_clean": True}])
-    bench.main(["--levels", "1", "--docs", "1"])
+    assert bench.main(["--levels", "1", "--docs", "1"]) == 3
     assert "provenance changed" in capsys.readouterr().out.lower()
 
 

@@ -54,6 +54,7 @@ import argparse
 import collections
 import contextvars
 import functools
+import hashlib
 import json
 import math
 import os
@@ -621,12 +622,19 @@ def _git(*args: str) -> str:
 
 def git_state() -> dict:
     """The commit and cleanliness the benchmark is measuring."""
-    return {"commit": _git("rev-parse", "HEAD"), "tree_clean": _git("status", "--porcelain") == ""}
+    status = _git("status", "--porcelain")
+    # Fingerprint the working-tree content too, so a dirty tree that changes while
+    # the levels run (and stays dirty) is still caught.
+    dirty = hashlib.sha256((status + "\n" + _git("diff", "HEAD")).encode()).hexdigest()
+    return {"commit": _git("rev-parse", "HEAD"), "tree_clean": status == "", "tree_fingerprint": dirty}
 
 
 def provenance_changed(before: dict, after: dict) -> bool:
-    """True when HEAD or the working tree moved while the levels ran."""
-    return before.get("commit") != after.get("commit") or before.get("tree_clean") != after.get("tree_clean")
+    """True when HEAD or the working tree moved while the levels ran, or either side is unknown."""
+    keys = ("commit", "tree_clean", "tree_fingerprint")
+    if not before.get("commit") or not after.get("commit"):
+        return True  # unverifiable provenance counts as changed
+    return any(before.get(k) != after.get(k) for k in keys)
 
 
 def machine_notes() -> dict:
@@ -809,6 +817,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.md_out:
         Path(args.md_out).write_text(markdown)
     print(markdown, end="")
+    if changed:
+        return 3  # results are written for inspection, but the run is not a valid measurement
     return 0 if len(ok_levels) == len(levels) else 1
 
 
