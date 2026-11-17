@@ -178,7 +178,7 @@ Source: [`observability/classification_scoring.py`](https://github.com/Exios66/l
 
 There are three layers of LLM judging. None of them use numeric thresholds computed in code except where stated.
 
-**1. In-pipeline completeness judge (Lane B).** `CompletenessJudge.judge_completeness` in [`agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py), run by the `judge_verify` node. It sees the schema field list, the extraction and up to 16,000 characters of source text, at temperature 0. It returns:
+**1. In-pipeline completeness judge (Lane B).** `CompletenessJudge.judge_completeness` in [`agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py), run by the `judge_verify` node. It sees the schema field list, the extraction and the source text, at temperature 0. The source is read whole: a document that fits the judge's `max_input_chars` (`agents.judge` in `taxonomy.yaml`) is one call, a longer one is read in overlapping windows of that size (overlap `chunking.overlap_chars`), one call per window, and the verdicts are combined with the worst window winning (lowest score, worst label, every non-complete window's reasoning kept). A second, accuracy pass (`judge_extraction_correctness`) runs the same way when the completeness verdict is `complete`. Each window returns:
 
 | Output | Values |
 |---|---|
@@ -186,7 +186,9 @@ There are three layers of LLM judging. None of them use numeric thresholds compu
 | `completeness_label` | `complete` (score at least 0.95), `partial` (at least 0.5), else `incomplete` |
 | `reasoning` | gaps or fabrications found |
 
-The label thresholds are part of the prompt; the code trusts the label the model returns. A parse failure becomes `0.0` / `incomplete`.
+The label thresholds are part of the prompt; the code trusts the label the model returns. A parse failure becomes `0.0` / `incomplete` for that window and, in the pipeline, the document cannot archive: `judge_verify_node` records `judge_error` and routes it to human review. A provider error in any window is handled the same way (a transient one retries the node first).
+
+`judge_source_verified`, the only thing that clears an unsure extraction (`extraction_confidence` missing or below `low`), is true only when the verdict is `complete` and `accurate` and every window was checked in both passes. The windows read and the calls and tokens spent are recorded as `judge_coverage` (`windows_total`, `windows_checked`, `calls`, `prompt_tokens`, `completion_tokens`) on the document state and manifest. A judge that reports no coverage verifies nothing. A document of 450,000 characters is about nine windows at the default 60,000-character budget (overlap 7,500), so about 18 judge calls when it comes back clean and fewer when the first pass already finds a gap.
 
 **2. Offline per-dimension judges.** [`scripts/run_quality_judges.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/run_quality_judges.py) runs the same judge class over a pilot report on three dimensions and writes per-class means:
 
@@ -203,7 +205,7 @@ The label thresholds are part of the prompt; the code trusts the label the model
 
 On grounded runs the deterministic scorer runs first. If no field is in the ambiguous band, the `pipeline-result` generation is not emitted, so the hosted judges do not run (a class mismatch always forces the judge). The pipeline also writes a `deterministic_verdict` score: `MISS` on class mismatch, `PARTIAL` when a field is ambiguous or there is no score, `CORRECT` when `overall_score >= 0.85`, `MISS` when `overall_score <= 0.5`, otherwise `PARTIAL`.
 
-**Arbiter.** When the in-pipeline judge returns `partial` or `incomplete`, the arbiter ([`agents/arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py)) picks exactly one of `accept_with_caveats`, `retry_extraction` or `human_review`. Any other answer is forced to `human_review`.
+**Arbiter.** When the in-pipeline judge returns `partial` or `incomplete`, the arbiter ([`agents/arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py)) picks exactly one of `accept_with_caveats`, `retry_extraction` or `human_review`. Any other answer is forced to `human_review`. It reads the whole document too, in windows of its own `max_input_chars` (100,000 characters by default, so most documents are one call). Across windows `human_review` from any window wins, then `retry_extraction` (the fix-lists are unioned), and only when every window accepts does it accept; the read stops at the first `human_review`. A provider error in any window escalates to human review. Its windows, calls and tokens are recorded as `arbiter_coverage`. The classification arbiter (a parked decision review) reads the same windows and accepts a class only when every window accepts the same answer; its coverage is `classification_arbiter_coverage`.
 
 **Sorter reviewer (Lane A).** A blind second classification ([`agents/sorter_reviewer.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/sorter_reviewer.py)). Agreement is computed in code, not by the model.
 
