@@ -442,6 +442,20 @@ def test_property_grid_unknown_class_always_named():
 # leave a cause that collect_review_causes can see, whatever the router proposed.
 
 
+@pytest.fixture(autouse=True)
+def _route_logs_stay_out_of_structlog(monkeypatch):
+    """The decision-point sweeps run rules through ``decide_route``, which logs; keep
+    ``route_spec``'s module logger unbound so ``test_route_spec.py``'s ``capture_logs``
+    tests still see their events (structlog binds a logger on first use)."""
+    import graph.route_spec as route_spec
+
+    class _Silent:
+        def __getattr__(self, level):
+            return lambda *a, **k: None
+
+    monkeypatch.setattr(route_spec, "logger", _Silent())
+
+
 def _decision_point_sweep(n: int = 3000, seed: int = 20260202):
     """Yield (spec, state, base destination, final destination) with a stored outcome."""
     import graph.decision_points as dpm
