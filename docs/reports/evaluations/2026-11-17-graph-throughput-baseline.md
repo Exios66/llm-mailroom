@@ -3,7 +3,9 @@
 - **Date**: 2026-11-17 (UTC)
 - **Kind**: evaluations (offline load benchmark; no real model, no hosted service)
 - **Status**: baseline recorded. **Measured at commit `df127446e0449a134e1de8c5cd9fdce18504ad7e`**
-  (`df12744`, branch `claude/project-thread-lwyq6k`), with `tree_clean: true` in each JSON. That flag was
+  (`df12744`, branch `claude/project-thread-lwyq6k`), with `tree_clean: true` in each JSON. #286 was
+  squash-merged, so `df12744` is not on `v0.30.0` or `main`; its code is in the #286 squash (`49425a3`).
+  #283, #284 and #288 landed on `v0.30.0` before that squash but after the measurement. That flag was
   sampled after each run finished, not before, so it does not prove the tree stayed clean during
   the run (the script now checks before and after, and fails a run whose provenance moved). The commit that adds this report changes only the report, its three JSON
   files, `CHANGELOG.md` and the generated `docs/changelog/`; no pipeline code and no script differs
