@@ -27,9 +27,10 @@ How the pieces fit (``build_graph()`` calls :func:`prepare_slots`, :func:`wrap_n
   ``ok``, the hint is in the slot's ``allow`` (per class: ``by_class``), its confidence
   meets ``min_confidence`` when set, and a hint to ``human_review`` carries causes. The
   rule additionally never overrides the router's own ``human_review`` park, a
-  self-loop of the node, or a proposed ``retry_extract`` (the extraction integrity gate:
-  lost windows, an invalid schema, a hollow extraction): those carry the pipeline's
-  safety budgets and guarantees (see ``route_spec``'s rule semantics).
+  self-loop of the node, or a proposed verification gate (:data:`GATE_PROPOSALS`:
+  ``retry_extract``, ``judge_verify``, ``arbiter``, ``boss_escalation``): those carry the
+  pipeline's safety budgets and guarantees (see ``route_spec``'s rule semantics). A hint
+  can add scrutiny, never remove it.
 * **Staleness.** The wrapper rewrites the slot's entry on every pass of its node, and
   drops it when the node asked for a transient retry (nothing is consulted: the node's
   result is not usable and will be redone, and the router will retry or park it). A person
@@ -134,10 +135,12 @@ __all__ = [
 ]
 
 PARK = "human_review"
-#: Router proposals a hint never overrides besides a park and a self-loop: an extraction
-#: retry is an integrity gate (lost windows, an invalid schema or a hollow extraction), so
-#: a hint must not let a partial extraction proceed. A hint *to* a retry is still allowed.
-GATE_PROPOSALS = frozenset({"retry_extract"})
+#: Router proposals a hint never overrides besides a park and a self-loop: each is a gate a
+#: document must pass before it may be archived. ``retry_extract`` redoes a lost window, an
+#: invalid schema or a hollow extraction; ``judge_verify`` and ``arbiter`` verify an unsure
+#: or partial extraction; ``boss_escalation`` adjudicates a matter conflict. A hint may add
+#: scrutiny (a hint *to* one of these is allowed), never remove it.
+GATE_PROPOSALS = frozenset({"retry_extract", "judge_verify", "arbiter", "boss_escalation"})
 RULE_PREFIX = "decision_point:"
 OUTCOMES_KEY = "decision_outcomes"
 OVERRIDES_KEY = "decision_override_counts"
@@ -765,13 +768,13 @@ def rule_for(policy: SlotPolicy) -> RouteRule:
 
     Pure and synchronous: it reads ``state["decision_outcomes"][slot]`` (written by the
     node wrapper) and the policy, nothing else. It keeps the router's proposal when that
-    is a park (``human_review``), a self-loop of the node or an extraction retry
+    is a park (``human_review``), a self-loop of the node or a verification gate
     (:data:`GATE_PROPOSALS`).
     """
 
     def decide(state: Mapping[str, Any], proposed: str) -> "str | None":
         if proposed == PARK or proposed == policy.node or proposed in GATE_PROPOSALS:
-            return None  # parks, transient retries and extraction gates keep their budgets
+            return None  # parks, transient retries and verification gates are kept
         outcomes = state.get(OUTCOMES_KEY)
         record = outcomes.get(policy.slot) if isinstance(outcomes, Mapping) else None
         if not isinstance(record, Mapping):
@@ -1017,7 +1020,7 @@ def _proposal(node: str, state: Mapping[str, Any]) -> "str | None":
 def _rule_answers(node: str, proposed: "str | None", hint: str) -> bool:
     """Whether the slot's rule would return ``hint`` against the router's ``proposed``.
 
-    Mirrors :func:`rule_for`: nothing for a proposed park, self-loop or extraction retry,
+    Mirrors :func:`rule_for`: nothing for a proposed park, self-loop or verification gate,
     nothing when the hint equals the proposal. An unknown proposal counts as an answer (the budget errs on
     the side of spending).
     """

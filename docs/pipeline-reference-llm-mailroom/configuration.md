@@ -24,7 +24,7 @@ reviewer:                      # classification reviewer mode per class
 decision_points:               # pluggable decision-model slots (empty by default)
 ```
 
-Duplicate keys are an error: the loader refuses a mapping that names the same key twice anywhere in the file, instead of silently keeping the last value. YAML merge keys (`<<:`) still work.
+Duplicate keys are an error at runtime: `load_config` (the pipeline, watcher and API reader) refuses a mapping that names the same key twice anywhere in the file, instead of silently keeping the last value. YAML merge keys (`<<:`) still work.
 
 ### `pipeline.bins`
 
@@ -252,7 +252,7 @@ agents:
 
 ### `decision_points`
 
-Pluggable decision points (`graph/decision_points.py`). Empty by default (`decision_points: {}`): no node is wrapped and routing is unchanged. A slot lets a decision model, registered with `register_decision_point_backend(name, fn)` or named by an import spec, look at a node's result right after the node returns and hint where the document goes next. The base router still decides first; the hint only refines its proposal, and it never overrides a park (`human_review`), a self-loop of the node, or a proposed `retry_extract` (the extraction integrity gate for lost windows, an invalid schema or a hollow extraction).
+Pluggable decision points (`graph/decision_points.py`). Empty by default (`decision_points: {}`): no node is wrapped and routing is unchanged. A slot lets a decision model, registered with `register_decision_point_backend(name, fn)` or named by an import spec, look at a node's result right after the node returns and hint where the document goes next. The base router still decides first; the hint only refines its proposal, and it never overrides a park (`human_review`), a self-loop of the node, or a proposed verification gate: `retry_extract` (a lost window, an invalid schema or a hollow extraction), `judge_verify` or `arbiter` (an unsure or partial extraction) and `boss_escalation` (a matter conflict). A hint can add scrutiny, never remove it.
 
 | Key | Default | Meaning |
 |:---|:---|:---|

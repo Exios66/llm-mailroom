@@ -16,9 +16,9 @@ class _UniqueKeyLoader(yaml.SafeLoader):
 
     Plain YAML loaders keep the last occurrence silently, so a duplicated taxonomy key
     (for example a decision-point slot declared twice, or ``on_failure:`` written twice in
-    one slot) would drop a setting without any error. Merge keys (``<<:``) still work:
-    the mapping is flattened before the check, and a key that an explicit entry overrides
-    from a merged mapping is not a duplicate.
+    one slot) would drop a setting without any error. Only the explicit keys of a mapping
+    are checked: merge keys (``<<:``) are skipped, so an explicit key that overrides a
+    merged one is not a duplicate. Used by :func:`load_config`, the runtime taxonomy reader.
     """
 
     def construct_mapping(self, node, deep=False):
