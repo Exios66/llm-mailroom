@@ -132,8 +132,10 @@ def _bounded(coro: Awaitable[T], timeout: float | None) -> Awaitable[T]:
 def _run_in_helper(pool: concurrent.futures.ThreadPoolExecutor, coro: Awaitable[T], timeout: float | None) -> T:
     """``asyncio.run`` on a helper thread, in a copy of the caller's context.
 
-    The deadline is enforced inside the private loop (the work is cancelled),
-    so leaving the ``with`` block that owns ``pool`` does not wait for it.
+    The deadline is enforced inside the private loop by cancelling the work,
+    so the helper finishes once that cancellation completes. A coroutine that
+    delays or suppresses cancellation can still hold the helper (and the
+    ``with`` block that owns ``pool``) past the deadline.
     """
     ctx = contextvars.copy_context()
     return pool.submit(ctx.run, asyncio.run, _bounded(coro, timeout)).result()
@@ -166,8 +168,11 @@ def run_sync(work: Awaitable[T] | Callable[[], Awaitable[T]], *, timeout: float 
 
     ``work`` is a coroutine or a zero-argument callable that returns one. The
     caller blocks; exceptions raised by the coroutine are re-raised here.
-    ``timeout`` (seconds) bounds the wait: on expiry the task is cancelled and
-    ``TimeoutError`` is raised. ``None`` waits indefinitely.
+    ``timeout`` (seconds): on expiry the task is cancelled and
+    ``TimeoutError`` is raised. On the shared loop the caller stops waiting at
+    the deadline; on the private-loop fallbacks it waits for the cancellation
+    to finish, so a coroutine that delays or suppresses cancellation can
+    overrun the deadline (or return its result). ``None`` waits indefinitely.
     """
     # A coroutine object is not callable; a factory is.
     coro = work() if callable(work) else work
