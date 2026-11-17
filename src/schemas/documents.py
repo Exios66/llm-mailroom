@@ -139,10 +139,15 @@ class InsuranceClaimExtraction(BaseModel):
     damages_description: str | None = None
     coverage_determination: str | None = None  # closed label: approved, denied, partial, pending
     denial_reasons: list[str] = Field(default_factory=list)
+    # On a CMS row: identifier references ("provider NPI <npi>", "NDC <ndc>", ...), Dojo cms_doc_ref.
     supporting_documents: list[str] = Field(default_factory=list)
     intent: str | None = None
     subject_matter: str | None = None
     keywords: list[str] = Field(default_factory=list)
+    # CMS/DE-SynPUF source table (pde, inpatient, outpatient, carrier), its own Dojo label since
+    # llm-dojo-scoring#93. Derived from the sorter subclass by doc_inventories.enrich_extraction;
+    # not in the structured-output schema, so the model is never asked for it. Null off CMS rows.
+    cms_source_table: str | None = None
     # Fixed claim checklist as "<Category>: <answer/evidence>" (present only).
     claim_checklist: list[str] = Field(default_factory=list)
     confidence: float = 0.0

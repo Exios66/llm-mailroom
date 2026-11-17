@@ -510,9 +510,30 @@ def extract_insurance_fields(text: str) -> dict[str, Any]:
                 token = token.strip()
                 if token.isdigit():
                     extras.append(f"provider NPI {token}")
+        hcpcs = _hcpcs_codes(head)
+        if hcpcs:
+            extras.append(f"HCPCS detail ({len(hcpcs)} codes)")
+        # Part D event: the drug product is the row's one reference (Dojo cms_doc_ref "NDC <11 digits>").
+        ndc = re.search(r"\(NDC\)\s*:\s*(\d[\d-]{8,12}\d)", head, re.IGNORECASE) or re.search(
+            r"\bNDC\s*:?\s*(\d[\d-]{8,12}\d)", head, re.IGNORECASE
+        )
+        if ndc:
+            extras.append(f"NDC {ndc.group(1)}")
         if extras:
             out["supporting_documents"] = extras[:8]
     return out
+
+
+def _hcpcs_codes(text: str) -> list[str]:
+    """HCPCS codes a CMS notice lists: itemized ``HCPCS <code>`` lines or a ``(HCPCS):`` list.
+
+    Blank code placeholders (``----``) are not codes, so a claim whose lines carry none
+    gets no ``HCPCS detail`` reference (the Hub labels it the same way).
+    """
+    listed = re.search(r"\(HCPCS\)\s*:\s*([^\n]+)", text, re.IGNORECASE)
+    if listed:
+        return [c for c in re.split(r"[,;\s]+", listed.group(1)) if re.fullmatch(r"[A-Z0-9]{5}", c)]
+    return re.findall(r"\bHCPCS\s+([A-Z0-9]{5})\b", text)
 
 
 def extract_merger_fields(text: str) -> dict[str, Any]:
