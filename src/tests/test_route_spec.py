@@ -448,10 +448,29 @@ class TestRuleEvaluation:
                 raise RuntimeError("hash exploded")
 
         spec = _spec(router, DESTS, rules=[RouteRule("unhashable", lambda s, p: UnhashableStr("review"))])
-        with structlog.testing.capture_logs() as logs:
-            assert decide_route(spec, {}) == "keep"
-        assert [l["event"] for l in logs] == ["route_rule_unknown_destination"]
+        answer = decide_route(spec, {})
+        assert answer == "review" and type(answer) is str  # canonicalised, never the subclass
         assert len(calls) == 1
+
+    def test_str_subclass_that_turns_hostile_after_the_check_is_canonicalised(self):
+        router, _ = _counting_router()
+        hashes = []
+
+        class LateHostileStr(str):
+            def __hash__(self):
+                hashes.append(1)
+                if len(hashes) > 1:  # passes the membership check, fails any later lookup
+                    raise RuntimeError("hash exploded later")
+                return str.__hash__(self)
+
+            def __eq__(self, other):
+                return str.__eq__(self, other)
+
+        spec = _spec(router, DESTS, rules=[RouteRule("late", lambda s, p: LateHostileStr("review"))])
+        answer = decide_route(spec, {})
+        assert type(answer) is str and answer == "review"
+        assert {answer: 1}[answer] == 1  # a branch-map lookup is safe
+        assert hashes == []  # the subclass's __hash__ was never consulted
 
     def test_rules_see_a_read_only_view_and_the_state_is_not_mutated(self):
         router, calls = _counting_router()
