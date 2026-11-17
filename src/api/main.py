@@ -377,8 +377,9 @@ async def upload_document(
     if provider_problem:
         raise HTTPException(
             503,
-            f"No LLM provider resolves ({provider_problem}); uploads are refused until the "
-            "provider is configured — see GET /health",
+            f"No usable LLM provider for the sorter ({provider_problem}): it does not resolve "
+            "or the spend guardrail blocks its model; uploads are refused until that is fixed "
+            "— the llm check of GET /health names the cause",
         )
 
     _rate_limit_upload()

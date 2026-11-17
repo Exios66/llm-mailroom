@@ -94,7 +94,9 @@ def test_guard_on_refuses_a_model_the_free_only_guardrail_blocks(client, monkeyp
 
     monkeypatch.setattr("llm.client.check_spend_guardrail", blocked)
     r = _upload(client)
-    assert r.status_code == 503 and "RuntimeError" in r.json()["detail"]
+    detail = r.json()["detail"]
+    assert r.status_code == 503 and "RuntimeError" in detail
+    assert "spend guardrail" in detail and "GET /health" in detail
 
 
 async def test_health_names_a_guardrail_block_without_probing(monkeypatch, mocker):
