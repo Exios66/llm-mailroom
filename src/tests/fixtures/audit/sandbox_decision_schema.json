@@ -1,0 +1,32 @@
+{
+  "_source": "Compared with the sandbox's job/node_trace.py (DECISION_TYPES and normalize_decision) at local-mailroom-sandbox commit 900c38a: the seven keys, their order and the three types are identical. Refresh it from that file when the sandbox schema changes; test_fixture_matches_the_sandbox_node_trace_when_a_checkout_is_given re-checks it against a checkout (MAILROOM_SANDBOX_CHECKOUT).",
+  "keys": [
+    "question",
+    "type",
+    "answer",
+    "p",
+    "expected",
+    "options",
+    "source"
+  ],
+  "types": [
+    "noul",
+    "choice",
+    "score"
+  ],
+  "string_keys": [
+    "question",
+    "type",
+    "source"
+  ],
+  "nullable_keys": [
+    "p",
+    "expected",
+    "options"
+  ],
+  "known_value_differences": [
+    "source: the sandbox keeps only 'agent' or 'decisions'; this repo records the node that made the decision (e.g. 'classify').",
+    "expected: the sandbox means the expected score (a number); this repo records the ground-truth class (a string) for doc_type decisions.",
+    "options: the sandbox means per-option probabilities (a mapping); this repo lists the doc types it chose from (a list)."
+  ]
+}

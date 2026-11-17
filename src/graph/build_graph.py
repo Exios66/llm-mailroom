@@ -14,6 +14,8 @@ from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command, interrupt
 
+from audit.trace import record_visit
+
 from graph.state import DocumentState
 # Wires taxonomy.yaml into llm-dojo-scoring at import time (#192): without it
 # field scoring / judge gating run on package defaults, not the calibrated map.
@@ -568,8 +570,8 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
        (messy / over-sorter-budget): TRIAGE (advisory read), CLEAN
        (structural repair, re-normalized), PREPARE (section map) — sliding
        windows, never truncated.
-    4. Write the processing manifest + catalog record + the ``ingested``
-       compliance audit event (A-1/A-7).
+    4. Write the processing manifest and catalog record, and note ``ingested``
+       on this node's audit visit with the file hash and size (A-1/A-7).
 
     The intake work product is what the sorter depends on: the advisory
     triage rides ``state.intake_prep`` and is fed to ``classify`` as a labeled
@@ -744,13 +746,7 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
     # hash (sha256) + size so post-archive substitution is detectable.
     file_hash = _file_sha256(file_path)
     ingest_detail = {"file_sha256": file_hash, "size_bytes": _file_size(file_path)}
-    _emit_stage_audit(
-        {"doc_id": manifest.doc_id, "matter_id": matter_id, "stage": PipelineStage.PROCESSING.value,
-         "original_filename": file_path.name},
-        "ingested",
-        actor="pipeline",
-        detail=ingest_detail,
-    )
+    record_visit("ingested", actor="pipeline", detail=ingest_detail)
     # Carry the hash in state so archive verification + provenance persistence
     # can compare against it (A-7).
     intake_state = {
@@ -792,6 +788,12 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
 
 
 def classify_node(state: DocumentState) -> dict[str, Any]:
+    """Classify the document and note successful decisions on the audit visit.
+
+    Empty text and non-transient errors return a low-confidence review result;
+    transient provider errors return a retryable state without consuming a
+    classification attempt.
+    """
     doc_text = state.get("doc_text", "")
     if not doc_text or not doc_text.strip():
         logger.warning("empty_doc_text_classify", doc_id=state.get("doc_id"))
@@ -947,7 +949,7 @@ def classify_node(state: DocumentState) -> dict[str, Any]:
     }
     # A-1: the classification decision (incl. guardrail issues) is part of the
     # compliance record.
-    _emit_stage_audit({**state, **result}, "classified", actor="sorter",
+    record_visit("classified", actor="sorter",
                       detail={"attempts": attempts, "guardrail_issues": guard["issues"] or None})
     return result
 
@@ -1916,6 +1918,12 @@ def _detect_conflict(state: dict, extracted_data: dict | None) -> tuple[bool, li
 
 
 def extract_node(state: DocumentState) -> dict[str, Any]:
+    """Dispatch to the document specialist and return its guarded extraction.
+
+    Successful attempts note the decision on the audit visit. Transient
+    provider errors return a retryable state without consuming an extraction
+    attempt; other specialist errors become parse-level failures for routing.
+    """
     doc_type = state.get("doc_type", "")
     doc_text = state.get("doc_text", "")
     doc_pages = state.get("doc_pages") or []
@@ -2020,9 +2028,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
     except Exception:
         pass
     # A-1: record the extraction decision (attempt, guardrail issues, conflict).
-    _emit_stage_audit(
-        {**state, **result_dict},
-        "extracted",
+    record_visit("extracted",
         actor=state.get("doc_type", "specialist"),
         detail={"attempts": attempts, "guardrail_issues": guard["issues"] or None,
                 "conflict_detected": bool(conflict_detected),
@@ -2451,8 +2457,8 @@ def _arbiter(state: DocumentState) -> dict[str, Any]:
 
     Bounded decisions only (accept_with_caveats / retry with fix-list up to
     ``arbiter_retry_max`` / human_review). Any arbiter failure escalates
-    fail-safe. Decisions are audited immediately and later copied onto the
-    terminal manifest (archive or review/failed).
+    fail-safe. Successful decisions are noted on this node's audit visit and
+    later copied onto the terminal manifest (archive or review/failed).
     """
     from agents.arbiter import ArbiterAgent
     from llm.retry import is_transient_error
@@ -2525,9 +2531,7 @@ def _arbiter(state: DocumentState) -> dict[str, Any]:
         decision=decision,
         retry_count=updates.get("arbiter_retry_count", state.get("arbiter_retry_count", 0)),
     )
-    _emit_stage_audit(
-        {**state, **updates},
-        "arbiter_decided",
+    record_visit("arbiter_decided",
         actor="arbiter",
         detail={
             "decision": decision,
@@ -2885,9 +2889,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
         "file_path": str(dest) if dest is not None else file_path_str,
     }
     if newly_parked:
-        _emit_stage_audit(
-            {**state, **parked},
-            "routed_to_review",
+        record_visit("routed_to_review",
             actor="pipeline",
             detail={
                 "reason": esc_reason,
@@ -3172,6 +3174,11 @@ def _finalize_human_rejection(
 
 
 def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
+    """Adjudicate with archived matter context and note the decision on the audit visit.
+
+    Transient provider errors return a retryable state; other adjudication
+    errors default to human review.
+    """
     from agents.boss import BossAgent
 
     boss = BossAgent()
@@ -3241,7 +3248,7 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
     }
     # A-1: Boss adjudication is part of the compliance record ("who decided
     # what, based on what").
-    _emit_stage_audit({**state, **result}, "boss_adjudicated", actor="boss",
+    record_visit("boss_adjudicated", actor="boss",
                       detail={"decision": decision, "reasoning": reasoning,
                               "context_records": len(matter_context)})
     return result
@@ -3432,6 +3439,7 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
     The manifest and catalog row carry any reviewer evidence from the state
     (``with_review_evidence``), so an approved or auto-accepted document keeps
     both reviewers' opinions and causes after it leaves the review bin.
+    Writes the terminal audit row and returns its metrics with the archived stage.
     """
     from pipeline.review_resolve import with_review_evidence
 
@@ -3518,6 +3526,22 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
         update_only=True,
     )
 
+    # Unified audit row (spec §5.3): the document's one row, built from the
+    # final state and its trace. The per-event ``archived`` entry above stays
+    # until the readers move to rows (roadmap M11).
+    audit_metrics = _terminal_audit_row(
+        {**state, "doc_id": manifest.doc_id, "stage": PipelineStage.ARCHIVED.value},
+        event="archived",
+        actor="archivist",
+        terminal_node="archive",
+        refs={
+            "archive_path": str(archive_path),
+            "manifest_path": (audit_entry.detail or {}).get("manifest_path"),
+            "sidecar_path": (audit_entry.detail or {}).get("archive_sidecar"),
+            "file_sha256": (audit_entry.detail or {}).get("file_sha256"),
+        },
+    )
+
     logger.info("pipeline_complete", doc_id=manifest.doc_id, archive=str(archive_path))
     # Completion echo (HUB-037): Gmail-intake documents get the outcome
     # (archive entry + audit chain) replied onto their source email thread.
@@ -3531,7 +3555,46 @@ def archive_node(state: DocumentState) -> dict[str, Any]:
 
     dispatch_relations_scan(manifest.model_dump(mode="json"))
     _maybe_export_warehouse(manifest.doc_id)
-    return {"stage": PipelineStage.ARCHIVED.value}
+    return {"stage": PipelineStage.ARCHIVED.value, "audit_metrics": audit_metrics}
+
+
+def _terminal_audit_row(state: dict, *, event: str, actor: str, terminal_node: str | None = None,
+                        refs: dict | None = None) -> dict | None:
+    """Write a terminal audit row and return its metrics, even if writing fails.
+
+    A metrics computation error is logged and returns ``None`` for the metrics;
+    row writing is best-effort.
+    """
+    from audit.row import EVENT_STAGE, row_metrics, write_row
+
+    try:
+        metrics = row_metrics(state, stage=EVENT_STAGE.get(event, state.get("stage") or ""))
+    except Exception:
+        logger.exception("audit_row_metrics_failed", doc_id=state.get("doc_id"), event_name=event)
+        metrics = None
+    write_row(state, event=event, actor=actor, refs=refs, metrics=metrics, terminal_node=terminal_node)
+    return metrics
+
+
+def audit_failed_node(state: DocumentState) -> dict[str, Any]:
+    """Terminal node of every stop edge (spec §5.1): writes the document's ``failed`` row.
+
+    The node that stopped the run already moved the file and saved the
+    manifest; this only records the outcome.
+    """
+    from schemas.manifest import PipelineStage
+
+    metrics = _terminal_audit_row(
+        {**state, "stage": PipelineStage.FAILED.value},
+        event="failed",
+        actor="pipeline",
+        terminal_node="audit_failed",
+    )
+    if state.get("review_decision") == "rejected":
+        # A rejection exported when it flipped the catalog to ``failed`` (``_finalize_human_rejection``),
+        # before this row existed: export again so the cold store carries the row.
+        _maybe_export_warehouse(state.get("doc_id", ""))
+    return {"stage": PipelineStage.FAILED.value, "audit_metrics": metrics}
 
 
 def _maybe_export_warehouse(doc_id: str) -> None:
@@ -3615,48 +3678,6 @@ def _write_audit_log(entry):
         _run_coro(_write)
     except Exception:
         logger.exception("audit_log_write_error")
-
-
-def _emit_stage_audit(state: dict, event: str, actor: str = "pipeline", detail: dict | None = None) -> None:
-    """Append a hash-chained audit entry for a stage transition (audit A-1).
-
-    Before this, only the archivist and review decisions produced audit
-    entries — classify/extract/retries/guardrails/Boss/review-routing/failures
-    existed only in state + Langfuse. This gives every stage transition a
-    chained, durable record so the compliance log answers "what decisions were
-    made about this document, and when".
-
-    Best-effort by design (an audit-write failure must never fail the run),
-    but unlike the old swallow, the failure is logged with the event name so
-    an operator can detect a gap (AUDIT_GAP).
-    """
-    doc_id = state.get("doc_id")
-    if not doc_id:
-        return
-    try:
-        from schemas.audit import build_audit_entry
-
-        entry = build_audit_entry(
-            doc_id=doc_id,
-            matter_id=state.get("matter_id", "DEFAULT"),
-            event=event,
-            actor=actor,
-            detail={
-                **(detail or {}),
-                "stage": state.get("stage"),
-                "doc_type": state.get("doc_type"),
-                "contract_subtype": state.get("contract_subtype"),
-            "doc_subclass": state.get("doc_subclass"),
-                "classification_confidence": state.get("classification_confidence"),
-                "extraction_confidence": state.get("extraction_confidence"),
-                "escalation_reason": state.get("escalation_reason"),
-                "run_attempt": state.get("run_attempt"),
-            },
-            prev_hash=_latest_audit_hash(doc_id),
-        )
-        _write_audit_log(entry)
-    except Exception:
-        logger.warning("audit_gap", event=event, doc_id=doc_id, exc_info=True)
 
 
 def _persist_scores(state: dict, scores: dict):
@@ -3808,6 +3829,7 @@ def _touch_heartbeat(state: dict) -> None:
 
 
 def build_graph(checkpointer=None):
+    """Compile the document graph with scoring before catalog write and audit rows at terminal nodes."""
     if checkpointer is None:
         checkpointer = _build_checkpointer()
 
@@ -3855,6 +3877,14 @@ def build_graph(checkpointer=None):
     workflow.add_node("compile_report", traced_node("compile-report")(_bounded(_dp("compile_report", compile_report_node))))
     workflow.add_node("catalog_write", traced_node("write-catalog")(_bounded(catalog_write_node)))
     workflow.add_node("archive", traced_node("archive-document")(_bounded(archive_node)))
+    # Not _bounded on purpose: the terminal "failed" row must be written even when the
+    # run deadline or token budget has just been spent.
+    workflow.add_node("audit_failed", traced_node("audit-failed")(audit_failed_node))
+    # Unified audit row (spec 5.1): the report is scored before it is catalogued. Nodes only;
+    # their edges are declared in route_spec.scoring_topology().
+    from graph.scoring_nodes import add_scoring_nodes
+
+    add_scoring_nodes(workflow, wrap=lambda span, fn: traced_node(span)(_bounded(fn)))
 
     # Edge topology is declared once, in graph/route_spec.py (ROUTE_SPECS / PLAIN_EDGES):
     # validated against the nodes above, then wired. Routers keep their names and logic.
@@ -3916,13 +3946,51 @@ def _abort_review_evidence(state: dict, doc_id: str | None) -> dict[str, Any]:
     }
 
 
-def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | None = None) -> dict:
+def _checkpoint_values(graph, config, unapplied: list[dict] | None = None) -> dict:
+    """The last checkpointed state of this run (its trace and decisions), or ``{}``.
+
+    ``unapplied`` are the visits of nodes that raised (see
+    ``tracing.collect_unapplied_visits``); the checkpoint never saw them, so they
+    are added to the returned ``audit_trace``.
+    """
+    try:
+        snapshot = graph.get_state(config)
+        values = getattr(snapshot, "values", None)
+        checkpoint = dict(values) if isinstance(values, dict) else {}
+    except Exception:
+        checkpoint = {}
+    if unapplied:
+        checkpoint["audit_trace"] = [*(checkpoint.get("audit_trace") or []), *unapplied]
+    return checkpoint
+
+
+def _append_unapplied_visits(graph, config, unapplied: list[dict]) -> None:
+    """Add the visits of a node that paused in ``interrupt()`` to the parked checkpoint.
+
+    The node's own update (and so its visit) is dropped when it pauses; the same
+    ``update_state`` append that records a review decision on a parked document
+    (``audit.events``) puts it back. Best-effort: a pause is never failed by it.
+    """
+    if not unapplied:
+        return
+    try:
+        graph.update_state(config, {"audit_trace": list(unapplied)})
+    except Exception:
+        logger.warning("audit_visit_unrecorded", exc_info=True)
+
+
+def _finalize_aborted(
+    initial_state: dict, reason: str, *, failure_class: str | None = None, checkpoint: dict | None = None
+) -> dict:
     """Turn a run that hit a hard limit (or crashed) into a failed result.
 
     Moves the file to the failed bin with a manifest noting the abort, and
     returns a result dict that still carries doc/attempt fields so the run is
     scored (run_aborted=1) and visible in the catalog instead of stranding in
     processing/. ``failure_class`` distinguishes timeout vs auth vs I/O.
+    ``checkpoint`` supplies the last trace and decisions for the failed audit
+    row; only the abort's own outcome fields (stage, error, failure class) are
+    laid over it, never the rest of ``initial_state``.
     """
     from pipeline.bins import move_to_failed, save_manifest
     from schemas.manifest import DocumentManifest, PipelineStage
@@ -3969,6 +4037,13 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
         manifest.escalation_reason = tagged
         state["error_message"] = tagged
         state["escalation_reason"] = tagged
+    # What the abort itself decided. Only these keys are laid over the checkpoint
+    # for the audit row: the rest of ``state`` is the run's initial-state defaults
+    # (``doc_type=None``, counters at 0) and must not hide what the run had decided.
+    abort_outcome = {k: state[k] for k in ("doc_id", "stage", "run_aborted", "error_message")}
+    if failure_class:
+        abort_outcome["failure_class"] = state["failure_class"]
+        abort_outcome["escalation_reason"] = state["escalation_reason"]
 
     file_path_str = state.get("file_path") or ""
     if file_path_str and not Path(file_path_str).exists():
@@ -4004,19 +4079,21 @@ def _finalize_aborted(initial_state: dict, reason: str, *, failure_class: str | 
         _write_catalog_record(state, manifest)
     except Exception:
         logger.exception("abort_catalog_write_error", doc_id=manifest.doc_id)
-    # A-1: a failed/aborted run is a compliance-record event (previously only
-    # archived/reviewed runs left audit entries).
-    try:
-        _emit_stage_audit(
-            state,
-            "run_aborted",
-            actor="pipeline",
-            detail={"reason": reason, "failure_class": failure_class or "unexpected"},
-        )
-    except Exception:
-        logger.exception("abort_audit_write_error", doc_id=manifest.doc_id)
+    # An unmigrated audit database cannot take the unified failed row below, so the abort also
+    # keeps the per-event ``run_aborted`` entry it always had (no-op once migrated).
+    from audit.legacy_events import emit_stage_event
+
+    emit_stage_event(
+        {**state, "doc_id": manifest.doc_id}, "run_aborted", actor="pipeline",
+        detail={"reason": reason, "failure_class": failure_class or "unexpected"},
+    )
+    # Unified audit row (spec §5.3): the failed row, from the last checkpoint
+    # (its trace and decisions) overlaid with the abort outcome.
+    state["audit_metrics"] = _terminal_audit_row(
+        {**state, **(checkpoint or {}), **abort_outcome}, event="failed", actor="pipeline"
+    )
     # Completion echo (HUB-037): failed Gmail-intake runs report on-thread
-    # too — AFTER the run_aborted audit entry so the trail is complete.
+    # too.
     from pipeline.gmail_intake import dispatch_intake_echo
 
     dispatch_intake_echo(manifest.model_dump(mode="json"))
@@ -4284,7 +4361,8 @@ def _execute_run(
 
     ``invoke_input`` + ``thread_id`` resume a paused ``interrupt()`` via
     ``Command(resume=...)``. An interrupt pause is a successful review park,
-    not an aborted run.
+    not an aborted run. Terminal audit metrics are reused for emitted scores
+    when available, and scoring-block scores are emitted separately.
     """
     import os
     from pipeline import limits
@@ -4316,6 +4394,7 @@ def _execute_run(
     deadline = started_at + float(limits.get_deadline_seconds())
     limits.reset_run_usage()
     limits.set_run_deadline(deadline)
+    limits.set_run_started(started_at)
     thread_id = (
         thread_id
         or initial_state.get("checkpoint_thread_id")
@@ -4424,8 +4503,12 @@ def _execute_run(
         if invoke_input is None:
             payload = initial_state
         _run_log.bind_contextvars(trace_id=state_trace_id)
+        # A node that raises or pauses in ``interrupt()`` returns no update, so
+        # LangGraph drops its visit; the collector hands those visits back here.
+        unapplied: list[dict] = []
         try:
-            result = graph.invoke(payload, config)
+            with tracing.collect_unapplied_visits() as unapplied:
+                result = graph.invoke(payload, config)
         except GraphInterrupt:
             result = {**initial_state, "__interrupt__": True}
         except (limits.RunDeadlineExceeded, limits.RunBudgetExceeded) as exc:
@@ -4443,6 +4526,7 @@ def _execute_run(
                 initial_state,
                 classified["reason"],
                 failure_class=classified["failure_class"],
+                checkpoint=_checkpoint_values(graph, config, unapplied),
             )
         except Exception as exc:
             from pipeline.failures import classify_run_failure
@@ -4457,8 +4541,10 @@ def _execute_run(
                 initial_state,
                 classified["reason"],
                 failure_class=classified["failure_class"],
+                checkpoint=_checkpoint_values(graph, config, unapplied),
             )
         if _result_is_interrupted(result):
+            _append_unapplied_visits(graph, config, unapplied)
             result = _paused_review_result(result, initial_state, thread_id, state_trace_id)
         elif result.get("stage") in {PipelineStage.ARCHIVED.value, PipelineStage.FAILED.value}:
             _discard_checkpoints(graph, thread_id)
@@ -4473,10 +4559,26 @@ def _execute_run(
         # failure to the watcher (the run itself succeeded).
         try:
             metrics = pipeline_scores.compute_run_metrics(result, started_at, time.time())
-            score_values = pipeline_scores.emit_pipeline_scores(_model_scoring_view(result), metrics)
+            row_scores = result.get("audit_metrics")
+            score_values = pipeline_scores.emit_pipeline_scores(
+                _model_scoring_view(result),
+                metrics,
+                # The terminal node already computed these for the audit row:
+                # emit the same numbers (``subclass_correct`` is row-only).
+                precomputed=(
+                    {k: v for k, v in row_scores.items() if k != "subclass_correct"}
+                    if isinstance(row_scores, dict) else None
+                ),
+            )
             _persist_scores(result, score_values)
         except Exception:
             logger.exception("post_run_scoring_failed", doc_id=result.get("doc_id"))
+        # The row's scoring block under its registered names (unified audit row spec §7).
+        try:
+            pipeline_scores.emit_scoring_scores(
+                result.get("scoring"), result.get("extraction_adherence"), trace_id=result.get("trace_id"))
+        except Exception:
+            logger.exception("scoring_block_emit_failed", doc_id=result.get("doc_id"))
         # A-10: persist end-to-end provenance (doc → run → trace → prompt →
         # model → cost) to the catalog row so the chain is reconstructable even
         # with tracing off (the live-DB audit found trace_id empty 60/60).
@@ -4817,6 +4919,7 @@ def _resolve_rejection(manifest, review_file: Path, payload: dict) -> dict[str, 
     )
     if thread_id:
         _discard_checkpoints(graph, thread_id)
+    _stateless_reject_audit_row(manifest, outcome["file_path"], label if isinstance(label, dict) else None)
     logger.info("review_stateless_reject", doc_id=manifest.doc_id)
     return {
         "doc_id": manifest.doc_id,
@@ -4825,6 +4928,78 @@ def _resolve_rejection(manifest, review_file: Path, payload: dict) -> dict[str, 
         "review_decision": "rejected",
         "file_path": outcome["file_path"],
     }
+
+
+def _stateless_reject_audit_row(manifest, file_path: str, label: dict | None) -> None:
+    """Write the ``failed`` row of a rejection that has no live checkpoint (spec §5.1, §5.3).
+
+    The live rejection reaches ``audit_failed`` through the graph. After a restart the
+    checkpoint is gone, so this builds the same row from what the manifest kept: the
+    parked decisions and the reviewer's rejection as a ``human_review`` visit, then the
+    ``audit_failed`` terminal node. The parked trace is lost with the checkpoint, so the
+    row says ``trace_incomplete`` rather than inventing it. Best-effort like every audit
+    write: ``write_row`` never raises and marks the manifest.
+    """
+    import contextvars
+    import time
+    from datetime import datetime, timezone
+
+    from audit.trace import visit
+    from pipeline.bins import load_manifest
+    from pipeline.limits import reset_run_usage, set_run_started
+
+    doc_id = manifest.doc_id
+    try:
+        # Reload: ``_finalize_human_rejection`` just saved the failed stage, reason and label.
+        current = load_manifest(doc_id) or manifest
+        state = _stateless_reject_state(current, file_path, label)
+        now = datetime.now(timezone.utc)
+        state["audit_trace"] = [visit("human_review", state, {"review_decision": state["review_decision"]},
+                                       started_at=now, ended_at=now)]
+
+        def write() -> None:
+            # This rejection made no LLM call and took no time of its own: account it from a fresh run, in an
+            # isolated context, so the previous document's usage and start time (still retained on this
+            # thread) never reach its metrics.
+            reset_run_usage()
+            set_run_started(time.time())
+            _terminal_audit_row(state, event="failed", actor="pipeline", terminal_node="audit_failed")
+
+        contextvars.copy_context().run(write)
+    except Exception:
+        # The file, catalog and manifest are already final: a row that cannot be built must not turn
+        # a completed rejection into a 500.
+        logger.exception("audit_row_build_failed", doc_id=doc_id, event_name="failed")
+    # ``_finalize_human_rejection`` exported before this row existed; export again with it.
+    _maybe_export_warehouse(doc_id)
+
+
+def _stateless_reject_state(current, file_path: str, label: dict | None) -> dict[str, Any]:
+    """The state of a stateless rejection's ``failed`` row, from the manifest ``_finalize_human_rejection`` saved."""
+    doc_id = current.doc_id
+    state: dict[str, Any] = {
+        "doc_id": doc_id,
+        "matter_id": current.matter_id,
+        "original_filename": current.original_filename,
+        "stage": PipelineStage.FAILED.value,
+        "review_decision": "rejected",
+        "escalation_reason": current.escalation_reason,
+        "trace_id": current.trace_id,
+        "doc_type": current.doc_type,
+        "contract_subtype": current.contract_subtype,
+        "doc_subclass": getattr(current, "doc_subclass", None),
+        "classification_confidence": current.classification_confidence,
+        "classification_attempts": current.classification_attempts,
+        "extracted_data": current.extracted_data,
+        "extraction_confidence": current.extraction_confidence,
+        "extraction_attempts": current.extraction_attempts,
+        "file_path": file_path,
+        "file_sha256": (_file_sha256(file_path) if file_path else "") or None,
+        "trace_incomplete": True,
+        **_manifest_evidence_state(current),
+        **({"human_label": label} if label is not None else {}),
+    }
+    return state
 
 
 def _run_human_applied_stateless(manifest, review_file: Path, payload: dict) -> dict[str, Any]:

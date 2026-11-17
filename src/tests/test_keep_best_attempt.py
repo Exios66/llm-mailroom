@@ -435,7 +435,7 @@ def _manifest(run_graph, final):
     return json.loads((run_graph.base / "manifests" / f"{final['doc_id']}.json").read_text())
 
 
-FULL_PATH = ["intake", "classify", "extract", "judge_verify", "arbiter", "retry_extract", "judge_verify", "arbiter", "compile_report", "catalog_write", "archive"]
+FULL_PATH = ["intake", "classify", "extract", "judge_verify", "arbiter", "retry_extract", "judge_verify", "arbiter", "compile_report", "score_common", "score_contract", "catalog_write", "archive"]
 
 
 def test_knob_on_archives_the_better_judged_first_attempt(run_graph):
@@ -558,7 +558,6 @@ def test_an_aborted_run_keeps_the_attempt_history_it_carries(temp_base_dir, mock
     from pipeline.bins import load_manifest
 
     mocker.patch.object(bg, "_write_catalog_record")
-    mocker.patch.object(bg, "_emit_stage_audit")
     mocker.patch.object(bg, "_maybe_export_warehouse")
     mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
     mocker.patch("pipeline.relations.dispatch_relations_scan")
@@ -581,7 +580,6 @@ def test_an_aborted_live_resume_keeps_the_parked_history(temp_base_dir, mocker):
 
     manifest, review_file, history = _parked_with_history(temp_base_dir)
     mocker.patch.object(bg, "_write_catalog_record")
-    mocker.patch.object(bg, "_emit_stage_audit")
     mocker.patch.object(bg, "_maybe_export_warehouse")
     mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
     mocker.patch("pipeline.relations.dispatch_relations_scan")

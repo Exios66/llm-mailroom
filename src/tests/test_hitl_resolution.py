@@ -217,6 +217,42 @@ def test_restart_fallback_reaches_same_tail(api, temp_base_dir, llm, mocker, bod
     assert events.index("review_resolved") < events.index("archived")
 
 
+def test_restart_fallback_reject_writes_the_failed_row(api, temp_base_dir, llm, migrated_audit_db):
+    """A rejection with no live checkpoint (restart) still ends in the document's one ``failed`` row.
+
+    Regression: ``_resolve_rejection`` ran ``_finalize_human_rejection`` directly and never reached
+    ``audit_failed``, so the manifest said ``failed`` while the audit log had no row and
+    ``audit_written`` stayed ``None``.
+    """
+    from audit.writer import get_row
+    from graph.build_graph import reset_compiled_graph
+    from pipeline.bins import load_manifest
+
+    doc_id = _extraction_park(temp_base_dir, "fr.txt")
+    assert asyncio.run(get_row(doc_id)) is None  # a park is not terminal
+    reset_compiled_graph()  # the MemorySaver is lost, as after a restart
+    assert not _interrupted(doc_id)
+    r = _resolve(api, doc_id, resolution="reject", reject_reason="spam", reviewer="pat")
+    assert r.status_code == 200, r.text
+    m = load_manifest(doc_id)
+    assert m.stage.value == "failed" and m.reject_reason == "spam"
+    assert m.audit_written is True
+    row = asyncio.run(get_row(doc_id))
+    assert row is not None and row["event"] == "failed" and row["actor"] == "pipeline"
+    detail = row["detail"]
+    assert detail["stage"] == "failed" and detail["pipeline_success"] is False
+    assert detail["review_decision"] == "rejected"
+    assert detail["doc_type"] == m.doc_type
+    # The lost checkpoint's trace is not invented: the row says it is incomplete, and keeps
+    # the reviewer's decision as the human_review visit, then the terminal node, as the live path does.
+    assert detail["trace_incomplete"] is True
+    assert detail["nodes_visited"] == ["human_review", "audit_failed"]
+    assert [a for a in row["addenda"] if a["kind"] == "resumed"] == []
+    from audit.row import ROW_DETAIL_KEYS
+
+    assert tuple(detail) == ROW_DETAIL_KEYS  # the live reject's row shape
+
+
 def test_concurrent_double_approve_archives_once(api, temp_base_dir, llm, mocker):
     doc_id = _extraction_park(temp_base_dir, "d.txt")
     _forbid_llm(mocker, llm)

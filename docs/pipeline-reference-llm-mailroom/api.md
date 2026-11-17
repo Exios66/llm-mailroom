@@ -308,7 +308,9 @@ GET /audit?verify=true&recent=20
 
 Summarize every row in the local audit log: event/actor histograms, per-doc hash-chain health, review-related event counts, and recent entries. CLI twin: `PYTHONPATH=src python src/scripts/analyze_audit_db.py`.
 
-Per-document chain (unchanged): `GET /audit/{doc_id}`.
+Add `unified=true` to get a `unified` key as well: the unified audit rows by event and outcome, addenda by kind, attempts per stage, retry and rescue rates, pending and recovered counts and, with `verify=true`, the full verifier's checks. It is off by default because it reads every unified row (a fixed number of queries, not one per document) and runs the full verifier. Every other key is unchanged.
+
+Per-document chain (keys unchanged, `unified` added): `GET /audit/{doc_id}`.
 
 ***
 
@@ -426,6 +428,25 @@ Retrieve the full hash-chained audit trail for a document, including a validity 
 ```
 
 The `chain_valid` field is `true` if all hash links are intact. `false` indicates tampering or corruption.
+
+`entries`, `chain_length` and `chain_valid` are the document's per-event chain, exactly as before. The unified audit row sits beside them under additive keys:
+
+```json
+{
+    "unified": {
+        "migrated": true,
+        "chain_length": 2,
+        "chain_valid": true,
+        "entries": [{"kind": "row", "parent_id": null, "event": "archived", "...": "..."},
+                    {"kind": "attempt", "parent_id": "row-...", "stage": "extraction", "...": "..."},
+                    {"kind": "addendum", "addendum_kind": "rescore", "parent_id": "row-...", "...": "..."}]
+    },
+    "pending": null,
+    "warehouse": null
+}
+```
+
+`unified.migrated` is `false` before the opt-in audit migration (then `unified` is empty and valid). `unified.chain_valid` applies the full verifier's own main, sub-row and addendum rules to this one document, so it is `false` for whatever those unified rules reject. It reflects only the unified checks: a break in the per-event chain shows in the top-level `chain_valid`, and `scripts/verify_audit_chains.py --doc <id>` also exits 1 for it. `pending` names a parked-but-unwritten audit record (`{"audit_written": "unavailable", "unavailable": true, ...}` when the manifest cannot be read); `warehouse` names the Parquet files the document was exported to.
 
 ***
 
