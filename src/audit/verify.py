@@ -252,21 +252,28 @@ def _check_addendum_recovery(report: CheckReport, record, detail: dict[str, Any]
         report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="not_the_rows_full_record")
 
 
-async def _check_main(session, migrated: bool) -> CheckReport:
+async def _check_main(session, migrated: bool, doc_id: str | None = None) -> CheckReport:
+    """The main chain; with ``doc_id``, only that document's row (and its link to the row before it)."""
     if not migrated:
         return CheckReport(
             collected=False,
             note="migration marker absent: audit_log still holds the per-event rows (see legacy)",
         )
-    rows = (
-        (await session.execute(select(AuditLogRecord).order_by(AuditLogRecord.seq)))
-        .scalars()
-        .all()
-    )
+    query = select(AuditLogRecord).order_by(AuditLogRecord.seq)
+    if doc_id is not None:
+        query = query.where(AuditLogRecord.doc_id == doc_id)
+    rows = (await session.execute(query)).scalars().all()
     report = CheckReport(checked=len(rows))
     seen: set[str] = set()
     previous_hash = ""
     previous_seq = 0
+    if doc_id is not None and rows:
+        # Scoped: the row must still link to whatever sits just before it in the chain.
+        previous_seq = rows[0].seq - 1
+        before = (
+            await session.execute(select(AuditLogRecord).where(AuditLogRecord.seq == previous_seq))
+        ).scalars().first() if previous_seq > 0 else None
+        previous_hash = before.entry_hash if before is not None else ""
     for record in rows:
         if record.doc_id in seen:
             report.fail(kind="duplicate_doc_id", doc_id=record.doc_id)
@@ -318,14 +325,23 @@ async def _check_main(session, migrated: bool) -> CheckReport:
     return report
 
 
-async def _check_subrows(session, migrated: bool) -> CheckReport:
+def _scoped(query, model, doc_id: str | None):
+    return query if doc_id is None else query.where(model.doc_id == doc_id)
+
+
+async def _check_subrows(session, migrated: bool, doc_id: str | None = None) -> CheckReport:
+    """Sub-rows against their parents; with ``doc_id``, one document's rows, addenda and attempts."""
     if not migrated:
         return CheckReport(
             collected=False, note="migration marker absent: no unified sub-rows exist yet"
         )
-    rows = (await session.execute(select(AuditLogRecord))).scalars().all()
-    addenda = (await session.execute(select(AuditAddendumRecord))).scalars().all()
-    attempts = (await session.execute(select(AuditAttemptRecord))).scalars().all()
+    rows = (await session.execute(_scoped(select(AuditLogRecord), AuditLogRecord, doc_id))).scalars().all()
+    addenda = (
+        await session.execute(_scoped(select(AuditAddendumRecord), AuditAddendumRecord, doc_id))
+    ).scalars().all()
+    attempts = (
+        await session.execute(_scoped(select(AuditAttemptRecord), AuditAttemptRecord, doc_id))
+    ).scalars().all()
     report = CheckReport(checked=len(attempts))
 
     parents: dict[str, tuple[Any, str, str, str]] = {}
@@ -483,20 +499,27 @@ async def _check_subrows(session, migrated: bool) -> CheckReport:
     return report
 
 
-async def _check_addenda(session, migrated: bool) -> CheckReport:
+async def _check_addenda(session, migrated: bool, doc_id: str | None = None) -> CheckReport:
+    """Addendum chains; with ``doc_id``, only that document's."""
     if not migrated:
         return CheckReport(
             collected=False, note="migration marker absent: no unified addenda exist yet"
         )
     rows = {
         record.doc_id: record
-        for record in (await session.execute(select(AuditLogRecord))).scalars().all()
+        for record in (
+            await session.execute(_scoped(select(AuditLogRecord), AuditLogRecord, doc_id))
+        ).scalars().all()
     }
     addenda = (
         (
             await session.execute(
-                select(AuditAddendumRecord).order_by(
-                    AuditAddendumRecord.doc_id, AuditAddendumRecord.seq
+                _scoped(
+                    select(AuditAddendumRecord).order_by(
+                        AuditAddendumRecord.doc_id, AuditAddendumRecord.seq
+                    ),
+                    AuditAddendumRecord,
+                    doc_id,
                 )
             )
         )
@@ -749,3 +772,40 @@ async def verify_audit_db(*, check_sinks: bool = False) -> VerifyReport:
         trace_io_checked=trace_io.checked,
     )
     return report
+
+
+@dataclass
+class DocumentReport:
+    """One document's unified storage checks: the same rules as :func:`verify_audit_db`, scoped."""
+
+    main: CheckReport
+    subrows: CheckReport
+    addenda: CheckReport
+    migrated: bool
+
+    @property
+    def ok(self) -> bool:
+        return all(s.ok for s in (self.main, self.subrows, self.addenda) if s.collected)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"ok": self.ok, "migrated": self.migrated, **{
+            name: getattr(self, name).as_dict() for name in ("main", "subrows", "addenda")}}
+
+
+async def verify_document(doc_id: str) -> DocumentReport:
+    """Run the main, sub-row and addendum rules of :func:`verify_audit_db` on ONE document.
+
+    These are the verifier's own check functions with a ``doc_id`` scope, so a document
+    cannot pass here while the full verifier rejects its row, its link to the previous
+    row in the chain, an unknown event/stage/trigger/addendum kind, an addendum seq gap
+    or a recovered-detail digest binding. It runs in one read-only snapshot and does not
+    initialize or migrate the schema (callers that serve HTTP must not). Section errors
+    become failed sections; database errors before the snapshot propagate.
+    """
+    async with async_session() as session:
+        await _begin_read_snapshot(session)
+        migrated = await _is_migrated(session)
+        main = await _safe_check("main", lambda: _check_main(session, migrated, doc_id))
+        subrows = await _safe_check("subrows", lambda: _check_subrows(session, migrated, doc_id))
+        addenda = await _safe_check("addenda", lambda: _check_addenda(session, migrated, doc_id))
+    return DocumentReport(main=main, subrows=subrows, addenda=addenda, migrated=migrated)

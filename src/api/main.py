@@ -1234,9 +1234,11 @@ async def get_matter(matter_id: str):
 
 @app.get("/audit/{doc_id}", dependencies=[Depends(_require_token)])
 async def get_audit_trail(doc_id: str):
-    """Return a document's unified audit entries and legacy chain (spec §7).
+    """Return a document's per-event audit chain, and its unified row beside it (spec §7).
 
-    An unknown document has empty unified entries. Invalid IDs raise HTTP 400;
+    ``entries``, ``chain_length`` and ``chain_valid`` are the per-event chain, as before.
+    ``unified`` holds the unified row, sub-rows and addenda with its own ``chain_length`` and
+    ``chain_valid`` (verifier rules scoped to this document). Invalid IDs raise HTTP 400;
     failures reading the audit view become HTTP 500.
     """
     _validate_doc_id(doc_id)
@@ -1253,21 +1255,29 @@ async def get_audit_trail(doc_id: str):
 async def analyze_audit_database(
     verify: bool = Query(default=True, description="Verify every hash chain"),
     recent: int = Query(default=20, ge=1, le=200, description="Recent events to include"),
+    unified: bool = Query(
+        default=False,
+        description="Also summarize the unified audit rows under `unified` (reads every row; "
+        "verifies them too when `verify` is true)",
+    ),
 ):
     """Parse and summarize the full local audit DB (catalog companion).
 
     Returns event/actor histograms, per-doc chain health, review-related event
     counts, and the newest entries — for operator audits without opening sqlite3.
-    ``unified`` adds the unified-row summary (spec §7): rows by event and outcome,
+    With ``unified=true`` it adds a ``unified`` key (spec §7): rows by event and outcome,
     addenda by kind, attempts per stage, retry and rescue rates, pending and
-    recovered counts, and the verifier's checks.
+    recovered counts, and the verifier's checks. It is off by default because it reads
+    every unified row (a fixed number of queries) and, with ``verify``, runs the full verifier.
     """
     try:
-        from audit.readers import unified_summary
         from storage.audit_log import analyze_audit_db
 
         report = await analyze_audit_db(verify_chains=verify, event_limit=recent)
-        report["unified"] = await unified_summary(verify=verify)
+        if unified:
+            from audit.readers import unified_summary
+
+            report["unified"] = await unified_summary(verify=verify)
         return report
     except Exception:
         logger.exception("audit_analyze_failed")

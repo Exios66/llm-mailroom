@@ -131,3 +131,32 @@ def test_run_pipeline_emits_the_row_scoring_block(temp_base_dir, mocker, monkeyp
     args, kwargs = spy.call_args
     assert args[0] == result.get("scoring") and args[1] == result.get("extraction_adherence")
     assert kwargs["trace_id"] == result.get("trace_id")
+
+
+def test_outcome_outside_the_closed_vocabulary_is_one_unknown_bucket():
+    """Regression (PR #239 review): a ``resumed`` addendum's free-form ``event`` became the outcome unchecked."""
+    from audit.metrics import audit_row_metrics, metrics_for
+
+    row = {"event": "failed", "detail": {}}
+    resumed = {"kind": "resumed", "seq": 1, "detail": {"event": "<script>alert(1)</script>"}}
+    assert audit_row_metrics(row, [resumed], [])["outcome"] == "unknown"
+    ok = {"kind": "resumed", "seq": 1, "detail": {"event": "archived"}}
+    assert audit_row_metrics(row, [ok], [])["outcome"] == "archived"
+    assert metrics_for({**row, "event": "bogus", "addenda": []})["outcome"] == "unknown"
+
+
+def test_report_keeps_unknown_types_models_and_statuses_out_of_markdown():
+    from audit.report import build_report
+
+    hostile = "x|y\n## Injected `code` [link](http://evil) <b>"
+    out = build_report([
+        {"doc_type": hostile, "outcome": hostile, "model": hostile, "scoring_status": hostile},
+        {"doc_type": "contract", "outcome": "archived", "model": hostile, "scoring_status": hostile},
+    ])
+    assert not [line for line in out.splitlines() if "Injected" in line and not line.startswith("| ")]
+    for bad in ("|y", "\n## Injected", "`code`", "](http", "<b>", "<script"):
+        assert bad not in out
+    assert "unknown 1" in out and "archived 1" in out  # the outcomes line shows only vocabulary words
+    assert "No extraction schema: unknown: 1" in out  # the hostile type is the fixed bucket
+    contract = out.split("## contract", 1)[1]
+    assert "x?y??? Injected ?code? ?link??http://evil? ?b?" in contract  # markup characters are neutralized

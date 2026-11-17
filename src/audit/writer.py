@@ -644,6 +644,11 @@ async def get_row(doc_id: str) -> dict[str, Any] | None:
                 .order_by(AuditAddendumRecord.seq)
             )
         ).scalars().all()
+    return _row_dict(row, subs, adds)
+
+
+def _row_dict(row: AuditLogRecord, subs: list[AuditAttemptRecord], adds: list[AuditAddendumRecord]) -> dict[str, Any]:
+    """One document's row, with the sub-rows of it and of each addendum, as ``get_row`` returns it."""
     return {
         "entry_id": row.entry_id,
         "doc_id": row.doc_id,
@@ -671,6 +676,42 @@ async def get_row(doc_id: str) -> dict[str, Any] | None:
             for a in adds
         ],
     }
+
+
+async def get_rows(*, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
+    """Rows in chain (``seq``) order, each shaped like :func:`get_row`, from a fixed number of queries.
+
+    One read-only snapshot and four statements however many documents there are (a
+    per-document ``get_row`` loop costs a snapshot and three statements each). ``limit`` and
+    ``offset`` page the chain. Raise ``AuditMigrationPending`` before the migration.
+    """
+    ensure_schema()
+    async with async_session() as session:
+        await begin_read_snapshot(session)
+        await _take_migration_gate(session)
+        await _require_migrated(session)
+        query = select(AuditLogRecord).order_by(AuditLogRecord.seq)
+        if limit is not None:
+            query = query.limit(limit).offset(offset)
+        rows = (await session.execute(query)).scalars().all()
+        if not rows:
+            return []
+        subs_query = select(AuditAttemptRecord).order_by(
+            AuditAttemptRecord.stage, AuditAttemptRecord.attempt_no, AuditAttemptRecord.attempt_id)
+        adds_query = select(AuditAddendumRecord).order_by(AuditAddendumRecord.doc_id, AuditAddendumRecord.seq)
+        if limit is not None:
+            doc_ids = [r.doc_id for r in rows]
+            subs_query = subs_query.where(AuditAttemptRecord.doc_id.in_(doc_ids))
+            adds_query = adds_query.where(AuditAddendumRecord.doc_id.in_(doc_ids))
+        subs = (await session.execute(subs_query)).scalars().all()
+        adds = (await session.execute(adds_query)).scalars().all()
+    subs_by_doc: dict[str, list[AuditAttemptRecord]] = {}
+    for sub in subs:
+        subs_by_doc.setdefault(sub.doc_id, []).append(sub)
+    adds_by_doc: dict[str, list[AuditAddendumRecord]] = {}
+    for add in adds:
+        adds_by_doc.setdefault(add.doc_id, []).append(add)
+    return [_row_dict(r, subs_by_doc.get(r.doc_id, []), adds_by_doc.get(r.doc_id, [])) for r in rows]
 
 
 # ---------------------------------------------------------------- write-failure fallback (§5.6)

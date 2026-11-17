@@ -173,3 +173,35 @@ def test_abort_failed_row_includes_the_node_that_raised(run_graph, temp_base_dir
     failing = trace[-1]
     assert [v["node"] for v in trace][:2] == ["intake", "classify"]
     assert len(trace) == 3 and failing["status"] == "error" and failing["outcome"] == "fail"
+
+
+def _export_sees_row(mocker):
+    """Record, for each warehouse export the graph requests, whether the document's ``failed`` row existed."""
+    import graph.build_graph as bg
+
+    seen: list[bool] = []
+
+    def spy(doc_id):
+        seen.append(_row(doc_id) is not None)
+
+    mocker.patch.object(bg, "_maybe_export_warehouse", side_effect=spy)
+    return seen
+
+
+def test_live_rejection_exports_again_once_the_failed_row_exists(api, temp_base_dir, llm, mocker):
+    """Regression (PR #239 review): ``_finalize_human_rejection`` exports before ``audit_failed`` writes the row;
+    the last export of a rejection must come after it, or the cold store never carries the row."""
+    doc_id = _extraction_park(temp_base_dir, "reject-export.txt")
+    seen = _export_sees_row(mocker)
+    assert _resolve(api, doc_id, resolution="reject", reject_reason="spam").status_code == 200
+    assert seen and seen[-1] is True
+
+
+def test_stateless_rejection_exports_again_once_the_failed_row_exists(api, temp_base_dir, llm, mocker):
+    from graph.build_graph import reset_compiled_graph
+
+    doc_id = _extraction_park(temp_base_dir, "reject-export-stateless.txt")
+    reset_compiled_graph()  # the checkpoint is gone, as after a restart
+    seen = _export_sees_row(mocker)
+    assert _resolve(api, doc_id, resolution="reject", reject_reason="spam").status_code == 200
+    assert seen and seen[-1] is True

@@ -13,6 +13,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Iterable, Mapping
 
+from audit.models import EVENTS
+
 #: The record's keys, in order (spec §7).
 METRIC_KEYS: tuple[str, ...] = (
     "outcome", "pipeline_success", "first_pass", "doc_type", "doc_subclass", "class_correct", "subclass_correct",
@@ -26,6 +28,13 @@ METRIC_KEYS: tuple[str, ...] = (
 )
 
 _SUCCESS_EVENTS = ("archived", "triage_archived")
+
+#: ``outcome`` for an event outside the closed ``EVENTS`` vocabulary (a stored or recovered value cannot add buckets).
+UNKNOWN_OUTCOME = "unknown"
+
+
+def _outcome(value: Any) -> str:
+    return value if isinstance(value, str) and value in EVENTS else UNKNOWN_OUTCOME
 
 
 def _d(value: Any) -> dict[str, Any]:
@@ -103,10 +112,11 @@ def audit_row_metrics(
         scoring = _d(_d(rescore.get("detail")).get("scoring")) or scoring
         adherence = _d(_d(rescore.get("detail")).get("extraction_adherence")) or adherence
 
-    outcome, success = row.get("event"), detail.get("pipeline_success")
+    outcome, success = _outcome(row.get("event")), detail.get("pipeline_success")
     if resumed is not None:
         rdetail = _d(resumed.get("detail"))
-        outcome = rdetail.get("event", outcome)
+        # The resumed event is free-form stored detail: only a known event may become the outcome.
+        outcome = _outcome(rdetail["event"]) if "event" in rdetail else outcome
         success = rdetail.get("pipeline_success", outcome in _SUCCESS_EVENTS)
 
     ordered = sorted(attempts, key=lambda a: (str(a.get("ended_at") or a.get("started_at") or ""),
@@ -160,4 +170,4 @@ def metrics_for(full_row: Mapping[str, Any]) -> dict[str, Any]:
     return audit_row_metrics(full_row, addenda, attempts)
 
 
-__all__ = ["METRIC_KEYS", "audit_row_metrics", "metrics_for"]
+__all__ = ["METRIC_KEYS", "UNKNOWN_OUTCOME", "audit_row_metrics", "metrics_for"]

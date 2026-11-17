@@ -415,16 +415,20 @@ async def fetch_terminal_documents(
     *,
     doc_ids: list[str] | None = None,
     since: datetime | None = None,
+    exported: dict[str, str] | None = None,
 ) -> list:
     """Terminal catalog documents: the requested ``doc_ids``, else those changed after ``since``.
 
-    "Changed" is a catalog update or a newer audit addendum: an addendum (rescore,
-    review decision, ...) never touches the catalog row, so the catalog watermark
-    alone would leave that document's exported audit row stale. Database errors propagate.
+    "Changed" is a catalog update, a unified row or addendum newer than ``since``, or (with
+    ``exported``, the warehouse manifest's ``doc_id -> entry_hash`` map) a unified row the
+    warehouse does not hold yet. An addendum (rescore, review decision, ...) never touches the
+    catalog row, and a rejected review's ``failed`` row is written after the catalog flips to
+    ``failed`` (and after the routine export ran), so the catalog watermark alone would leave that
+    document's exported audit row stale or missing. Database errors propagate.
     """
     from sqlalchemy import or_, select
 
-    from storage.audit_log import AuditAddendumRecord
+    from storage.audit_log import AuditAddendumRecord, AuditLegacyRecord, AuditLogRecord, event_log_model
     from storage.catalog import DocumentRecord
     from storage.db import async_session, ensure_schema
 
@@ -449,14 +453,29 @@ async def fetch_terminal_documents(
         query = select(DocumentRecord).where(
             DocumentRecord.stage.in_(tuple(TERMINAL_STAGES))
         )
+        stale: list[str] = []
         if since is not None:
-            addendum_docs = select(AuditAddendumRecord.doc_id).where(AuditAddendumRecord.timestamp > since)
-            query = query.where(
-                or_(DocumentRecord.updated_at > since, DocumentRecord.doc_id.in_(addendum_docs))
+            newer = (
+                select(AuditAddendumRecord.doc_id).where(AuditAddendumRecord.timestamp > since)
             )
+            migrated = await event_log_model(session) is AuditLegacyRecord
+            if migrated:
+                newer = newer.union(select(AuditLogRecord.doc_id).where(AuditLogRecord.timestamp > since))
+                if exported is not None:
+                    held = (await session.execute(
+                        select(AuditLogRecord.doc_id, AuditLogRecord.entry_hash))).all()
+                    stale = [d for d, h in held if exported.get(d) != h]
+            query = query.where(or_(DocumentRecord.updated_at > since, DocumentRecord.doc_id.in_(newer)))
         query = query.order_by(DocumentRecord.updated_at)
-        result = await session.execute(query)
-        return list(result.scalars().all())
+        records = list((await session.execute(query)).scalars().all())
+        if stale:
+            have = {r.doc_id for r in records}
+            for chunk in _doc_id_chunks([d for d in stale if d not in have]):
+                extra = await session.execute(select(DocumentRecord).where(
+                    DocumentRecord.doc_id.in_(chunk), DocumentRecord.stage.in_(tuple(TERMINAL_STAGES))))
+                records.extend(extra.scalars().all())
+            records.sort(key=lambda record: (record.updated_at is None, record.updated_at, record.doc_id))
+        return records
 
 
 async def fetch_audit_rows_for_doc_ids(doc_ids: list[str]) -> list[dict[str, Any]]:
@@ -518,8 +537,9 @@ async def export_to_warehouse(
     """Export terminal documents and their audit history to Parquet.
 
     ``stamp`` selects the daily files and defaults to today's UTC date. With no
-    IDs or ``since``, the manifest watermark selects documents whose catalog row
-    or audit addenda changed after it; ``full`` clears the ``since`` filter. Any
+    IDs or ``since``, the manifest watermark selects documents whose catalog row,
+    unified row or audit addenda changed after it, plus those whose unified row the
+    manifest does not hold; ``full`` clears the ``since`` filter. Any
     export, even one that selects no document, also records migrated legacy
     history once. Return status and export counts, or a skipped status when
     export is disabled. Database and write errors propagate, including a missing
@@ -531,17 +551,26 @@ async def export_to_warehouse(
     stamp = stamp or datetime.now(timezone.utc).date()
     wh_manifest = load_warehouse_manifest()
 
+    from_watermark = False
     if full:
         since = None
     elif since is None and not doc_ids:
         raw = wh_manifest.get("last_doc_updated_at")
+        from_watermark = bool(raw)
         if raw:
             try:
                 since = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
             except ValueError:
                 since = None
 
-    records = await fetch_terminal_documents(doc_ids=doc_ids, since=since)
+    # Only the manifest watermark also selects unified rows the warehouse does not hold yet;
+    # an explicit ``since`` is exactly the filter the caller asked for.
+    exported = {
+        doc: entry.get("entry_hash")
+        for doc, entry in (wh_manifest.get("documents") or {}).items()
+        if isinstance(entry, dict)
+    } if from_watermark else None
+    records = await fetch_terminal_documents(doc_ids=doc_ids, since=since, exported=exported)
     if not records:
         # No document to export, but the one-time migrated history must not wait for one.
         return {
@@ -557,13 +586,19 @@ async def export_to_warehouse(
     audit_raw = await fetch_audit_rows_for_doc_ids(ids)
     audit_rows = [audit_to_row(e) for e in audit_raw]
 
-    unified = [unified_to_rows(full) for full in await fetch_unified_rows(ids)]
+    fulls = await fetch_unified_rows(ids)
+    unified = [unified_to_rows(full) for full in fulls]
     legacy = None if "legacy_export" in wh_manifest else await fetch_legacy_history()
 
     doc_path = daily_documents_path(stamp)
     audit_path = daily_audit_path(stamp)
+    # The watermark covers what this batch exported: catalog updates and also the unified rows and
+    # addenda it carried. Otherwise a document selected for an addendum newer than the catalog row
+    # would be selected again by every later incremental run.
     latest_updated = max(
-        (r.updated_at for r in records if r.updated_at is not None),
+        [r.updated_at for r in records if r.updated_at is not None]
+        + [t for full in fulls for t in _audit_times(full)],
+        key=_as_utc,
         default=None,
     )
     n_docs, n_audit, wh_manifest, n_legacy = _publish_export(
@@ -592,6 +627,21 @@ async def export_to_warehouse(
         "total_audit_in_file": n_audit,
         "manifest": wh_manifest,
     }
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def _audit_times(full: dict[str, Any]) -> list[datetime]:
+    """The row and addendum timestamps of one ``get_row`` result (ISO strings), parsed; unreadable ones skipped."""
+    out = []
+    for raw in [full.get("timestamp"), *[a.get("timestamp") for a in full.get("addenda") or []]]:
+        try:
+            out.append(datetime.fromisoformat(str(raw).replace("Z", "+00:00")))
+        except ValueError:
+            continue
+    return out
 
 
 def _publish_unified(stamp, unified, manifest) -> None:

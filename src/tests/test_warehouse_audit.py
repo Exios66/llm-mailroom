@@ -245,3 +245,54 @@ def test_incremental_export_reselects_a_document_whose_addendum_is_newer_than_th
     # Re-selecting is idempotent: the same addendum merges by key, never duplicates.
     asyncio.run(wh.export_to_warehouse(stamp=DAY1))
     assert len(wh._read_parquet_rows(wh.daily_audit_addenda_path(DAY1))) == 1
+
+
+def _catalog(doc, stage):
+    from storage.catalog import write_document_record
+
+    asyncio.run(write_document_record({"doc_id": doc, "matter_id": "M", "original_filename": f"{doc}.txt",
+                                       "stage": stage, "doc_type": "contract"}))
+
+
+def _row(doc, event):
+    from audit.row import build_row
+    from audit.writer import write_terminal_row
+
+    row = build_row({"doc_id": doc, "matter_id": "M", "doc_type": "contract"}, event=event, actor="pipeline")
+    asyncio.run(write_terminal_row(row))
+
+
+def test_incremental_export_picks_up_a_rejection_row_written_after_the_routine_export(wh):
+    """Regression (PR #239 review): a rejected review exports when the catalog flips to ``failed``, before the
+    ``failed`` audit row exists, and a later document moves the watermark past that row. The next incremental
+    export must still carry the row."""
+    _catalog("rejected", "failed")
+    routine = asyncio.run(wh.export_to_warehouse(doc_ids=["rejected"], stamp=DAY1))  # the hook in the reject path
+    assert routine["exported_documents"] == 1 and routine["exported_audit_rows"] == 0
+    assert "rejected" not in (wh.load_warehouse_manifest().get("documents") or {})
+
+    _row("rejected", "failed")  # the audit_failed node, after the hook
+    seed("later")  # its catalog update is newer than the failed row
+    asyncio.run(wh.export_to_warehouse(doc_ids=["later"], stamp=DAY1))  # advances the watermark past the row
+
+    incremental = asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    assert incremental["exported_audit_rows"] == 1
+    rows = wh._read_parquet_rows(wh.daily_audit_rows_path(DAY1))
+    assert sorted((r["doc_id"], r["event"]) for r in rows) == [("later", "archived"), ("rejected", "failed")]
+    assert wh.load_warehouse_manifest()["documents"]["rejected"]["files"] == ["audit_rows_2026-11-03.parquet"]
+
+    # Nothing is selected the next time: the row is exported and its hash is in the manifest.
+    assert asyncio.run(wh.export_to_warehouse(stamp=DAY1))["exported_documents"] == 0
+
+
+def test_addendum_only_change_is_exported_once_not_on_every_incremental_run(wh):
+    """Regression (PR #239 review): the watermark did not cover the addendum timestamp, so the document
+    was selected (and rewritten) on every incremental run."""
+    seed("d-1")
+    asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    add_addendum("d-1", "review_decision")
+    assert asyncio.run(wh.export_to_warehouse(stamp=DAY1))["exported_documents"] == 1
+    assert asyncio.run(wh.export_to_warehouse(stamp=DAY1))["exported_documents"] == 0
+    add_addendum("d-1", "rescore")
+    again = asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    assert again["exported_documents"] == 1 and again["exported_audit_addenda"] == 2

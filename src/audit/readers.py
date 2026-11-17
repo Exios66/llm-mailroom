@@ -1,8 +1,10 @@
 """Readers over the unified audit row (spec §7): ``GET /audit/{doc_id}`` and ``GET /audit``.
 
-``doc_view`` is one document's row, sub-rows and addenda as a flat ``entries``
-list, with the legacy per-event chain, any pending record and its warehouse
-export beside it. ``unified_summary`` is what ``GET /audit`` and
+``doc_view`` keeps the keys ``GET /audit/{doc_id}`` always had (``entries``,
+``chain_length``, ``chain_valid``: the document's per-event chain) and adds the
+unified view under new keys only: ``unified`` (the row, sub-rows and addenda as
+a flat ``entries`` list, its own ``chain_length`` / ``chain_valid``), ``pending``
+and ``warehouse``. ``unified_summary`` is what ``GET /audit?unified=true`` and
 ``analyze_audit_db.py`` add to the legacy summary: rows by event and outcome,
 addenda by kind, attempts per stage, retry and rescue rates, pending and
 recovered counts, and the results of the verifier's checks.
@@ -76,184 +78,59 @@ def _warehouse(doc_id: str) -> dict[str, Any] | None:
     return {"export_date": entry.get("export_date"), "files": list(entry.get("files") or [])}
 
 
-def _listed_attempts(detail: Any, report: Any, parent_id: str) -> dict[str, str]:
-    """``attempt_id -> entry_hash`` from a parent's stored ``detail.attempts``, failing malformed shapes.
-
-    Mirrors the verifier's sub-row section: a tampered ``detail`` is reported on
-    ``report``, never raised, so ``GET /audit/{doc_id}`` answers ``chain_valid: false``.
-    """
-    listed: dict[str, str] = {}
-    if not isinstance(detail, dict):
-        report.fail(kind="detail_not_object", parent_id=parent_id, actual_type=type(detail).__name__)
-        return listed
-    refs = detail.get("attempts")
-    if refs is None:
-        return listed
-    if not isinstance(refs, list):
-        report.fail(kind="attempts_not_a_list", parent_id=parent_id)
-        return listed
-    for ref in refs:
-        if not isinstance(ref, dict):
-            report.fail(kind="attempt_ref_malformed", parent_id=parent_id)
-            continue
-        attempt_id, ref_hash = ref.get("attempt_id"), ref.get("entry_hash")
-        if not isinstance(attempt_id, str) or not attempt_id:
-            report.fail(kind="attempt_ref_malformed", parent_id=parent_id, reason="attempt_id_not_string")
-        elif not isinstance(ref_hash, str) or not ref_hash:
-            report.fail(kind="attempt_ref_malformed", parent_id=parent_id, attempt_id=attempt_id,
-                        reason="entry_hash_not_string")
-        elif attempt_id in listed:
-            report.fail(kind="duplicate_attempt_ref", parent_id=parent_id, attempt_id=attempt_id)
-        else:
-            listed[attempt_id] = ref_hash
-    return listed
-
-
 async def doc_valid(doc_id: str) -> bool:
-    """The document's row, addenda chain and sub-rows recompute to their stored hashes.
+    """The document's row, addenda and sub-rows pass the verifier's rules, scoped to this document.
 
-    A per-document scope of the same rules the full verifier applies: the row
-    hash, each addendum's hash and its link to the row/per-document chain, every
-    sub-row's hash under its own parent's matter id and actor, and the parent's
-    ``detail.attempts`` membership (each sub-row listed exactly once with its
-    stored hash). Database read errors propagate.
+    This is ``audit.verify.verify_document``: the full verifier's own main, sub-row and
+    addendum checks (row hash, link and ``seq`` to the previous row, known event, stage,
+    trigger and addendum kind, addendum ``seq`` and links, sub-row hashes and
+    ``detail.attempts`` membership, recovered-detail digest bindings), so the API cannot
+    report valid a document ``verify_audit_chains.py`` rejects. Database errors propagate.
     """
-    from sqlalchemy import select
+    from audit.verify import verify_document
 
-    from audit import verify
-    from storage.audit_log import AuditAddendumRecord, AuditAttemptRecord, AuditLogRecord
-    from storage.db import async_session
-
-    async with async_session() as session:
-        rows = (await session.execute(select(AuditLogRecord).where(AuditLogRecord.doc_id == doc_id))).scalars().all()
-        adds = (await session.execute(
-            select(AuditAddendumRecord).where(AuditAddendumRecord.doc_id == doc_id).order_by(AuditAddendumRecord.seq)
-        )).scalars().all()
-        subs = (await session.execute(
-            select(AuditAttemptRecord).where(AuditAttemptRecord.doc_id == doc_id))).scalars().all()
-
-    row_report, add_report, sub_report = (
-        verify.CheckReport(), verify.CheckReport(), verify.CheckReport()
-    )
-
-    for row in rows:
-        try:
-            if verify._row_hash(row) != row.entry_hash:
-                row_report.fail(kind="entry_hash_mismatch", doc_id=doc_id)
-        except Exception as exc:  # invalid stored timestamp/type
-            verify._hash_failure(row_report, exc, doc_id=doc_id, entry_id=row.entry_id)
-
-    row = rows[0] if len(rows) == 1 else None
-    matter_id = row.matter_id if row is not None else (rows[0].matter_id if rows else "")
-    prev_hash = row.entry_hash if row is not None else ""
-    for add in adds:
-        add_report.checked += 1
-        if add.prev_hash != prev_hash:
-            add_report.fail(kind="prev_hash_mismatch", addendum_id=add.addendum_id)
-        try:
-            if verify._addendum_hash(add, matter_id=matter_id) != add.entry_hash:
-                add_report.fail(kind="entry_hash_mismatch", addendum_id=add.addendum_id)
-        except Exception as exc:
-            verify._hash_failure(add_report, exc, addendum_id=add.addendum_id)
-        prev_hash = add.entry_hash
-
-    # parent_id -> (matter_id, actor, detail) for the row and every addendum.
-    parents: dict[str, tuple[str, str, Any]] = {}
-    if row is not None:
-        parents[row.entry_id] = (row.matter_id, row.actor, row.detail)
-    for add in adds:
-        parents[add.addendum_id] = (matter_id, add.actor, add.detail)
-
-    sub_report.checked = len(subs)
-    # Check every parent's listing, including a parent whose last sub-row
-    # was deleted. Inspecting only existing sub-rows cannot detect that gap.
-    listed_by_parent = {
-        parent_id: _listed_attempts(detail, sub_report, parent_id)
-        for parent_id, (_, _, detail) in parents.items()
-    }
-    present = {(sub.parent_id, sub.attempt_id) for sub in subs}
-    for parent_id, listed in listed_by_parent.items():
-        for attempt_id in listed:
-            if (parent_id, attempt_id) not in present:
-                sub_report.fail(kind="missing_subrow", parent_id=parent_id, attempt_id=attempt_id)
-    for sub in subs:
-        parent = parents.get(sub.parent_id)
-        if parent is None:
-            sub_report.fail(kind="parent_missing", attempt_id=sub.attempt_id, parent_id=sub.parent_id)
-            continue
-        sub_matter, sub_actor, _detail = parent
-        if not isinstance(sub.detail, dict):
-            sub_report.fail(kind="detail_not_object", attempt_id=sub.attempt_id)
-        else:
-            try:
-                expected = verify.attempt_hash(
-                    verify._attempt_sub(sub), matter_id=sub_matter, actor=sub_actor
-                )
-            except Exception as exc:
-                verify._hash_failure(sub_report, exc, attempt_id=sub.attempt_id)
-            else:
-                if sub.entry_hash != expected:
-                    sub_report.fail(kind="hash_mismatch", attempt_id=sub.attempt_id)
-        if sub.doc_id != doc_id:
-            sub_report.fail(
-                kind="doc_mismatch", attempt_id=sub.attempt_id, expected=doc_id, actual=sub.doc_id
-            )
-        if listed_by_parent[sub.parent_id].get(sub.attempt_id) != sub.entry_hash:
-            sub_report.fail(
-                kind="not_listed_by_parent", attempt_id=sub.attempt_id, parent_id=sub.parent_id
-            )
-
-    return row_report.ok and add_report.ok and sub_report.ok
+    return (await verify_document(doc_id)).ok
 
 
 async def doc_view(doc_id: str) -> dict[str, Any]:
     """Build the ``GET /audit/{doc_id}`` view (spec §7).
 
-    With no unified row, ``entries`` is empty and ``chain_valid`` is ``True``;
-    the legacy chain and any pending or warehouse references are still read.
-    Only a pending audit migration is treated as an absent unified row.
+    ``entries``, ``chain_length`` and ``chain_valid`` keep their original meaning: the
+    document's per-event chain. The unified row, sub-rows and addenda are under
+    ``unified`` (``entries``, ``chain_length``, ``chain_valid``, ``migrated``); with no
+    unified row (or before the migration) that is empty and valid. Pending and warehouse
+    references are read as before.
     """
     from audit.models import AuditMigrationPending
     from audit.writer import get_row
 
+    migrated = True
     try:
         row = await get_row(doc_id)
     except AuditMigrationPending:
-        row = None  # before the migration every entry is still legacy
-    entries = _entries(row) if row else []
-    return {
-        "doc_id": doc_id,
+        row, migrated = None, False  # before the migration every entry is still per-event
+    unified = {
+        "migrated": migrated,
         "chain_length": 1 + len(row.get("addenda") or []) if row else 0,
         "chain_valid": await doc_valid(doc_id) if row else True,
-        "entries": entries,
-        "legacy": await _legacy(doc_id),
-        "pending": _pending(doc_id),
-        "warehouse": _warehouse(doc_id),
+        "entries": _entries(row) if row else [],
     }
+    return {"doc_id": doc_id, **await _legacy(doc_id), "unified": unified,
+            "pending": _pending(doc_id), "warehouse": _warehouse(doc_id)}
 
 
-async def all_rows() -> list[dict[str, Any]]:
-    """Every document's ``get_row`` result, in chain order (empty before the migration)."""
-    from sqlalchemy import select
+async def all_rows(*, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
+    """Every document's ``get_row`` result, in chain order (empty before the migration).
 
+    A fixed number of queries however many documents there are; ``limit`` / ``offset`` page the chain.
+    """
     from audit.models import AuditMigrationPending
-    from audit.writer import get_row
-    from storage.audit_log import AuditLogRecord
-    from storage.db import async_session, ensure_schema
+    from audit.writer import get_rows
 
-    ensure_schema()
-    async with async_session() as session:
-        doc_ids = [d for (d,) in (await session.execute(
-            select(AuditLogRecord.doc_id).order_by(AuditLogRecord.seq))).all()]
-    out = []
-    for doc_id in doc_ids:
-        try:
-            row = await get_row(doc_id)
-        except AuditMigrationPending:
-            return []
-        if row is not None:
-            out.append(row)
-    return out
+    try:
+        return await get_rows(limit=limit, offset=offset)
+    except AuditMigrationPending:
+        return []
 
 
 def _rate(n: int, total: int) -> float | None:

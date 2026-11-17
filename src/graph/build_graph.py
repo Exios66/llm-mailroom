@@ -3483,6 +3483,10 @@ def audit_failed_node(state: DocumentState) -> dict[str, Any]:
         actor="pipeline",
         terminal_node="audit_failed",
     )
+    if state.get("review_decision") == "rejected":
+        # A rejection exported when it flipped the catalog to ``failed`` (``_finalize_human_rejection``),
+        # before this row existed: export again so the cold store carries the row.
+        _maybe_export_warehouse(state.get("doc_id", ""))
     return {"stage": PipelineStage.FAILED.value, "audit_metrics": metrics}
 
 
@@ -4865,6 +4869,8 @@ def _stateless_reject_audit_row(manifest, file_path: str, label: dict | None) ->
         # The file, catalog and manifest are already final: a row that cannot be built must not turn
         # a completed rejection into a 500.
         logger.exception("audit_row_build_failed", doc_id=doc_id, event_name="failed")
+    # ``_finalize_human_rejection`` exported before this row existed; export again with it.
+    _maybe_export_warehouse(doc_id)
 
 
 def _run_human_applied_stateless(manifest, review_file: Path, payload: dict) -> dict[str, Any]:

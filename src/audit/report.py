@@ -12,11 +12,13 @@ same report.
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from audit.metrics import METRIC_KEYS
+from audit.metrics import METRIC_KEYS, UNKNOWN_OUTCOME
+from audit.models import EVENTS
 
 NOT_COLLECTED = "not collected"
 #: Text-valued keys: shown as counts (scoring status) or used for grouping, never averaged.
@@ -24,6 +26,33 @@ _TEXT_KEYS = ("outcome", "doc_type", "doc_subclass", "scoring_status", "model_sc
 #: F1 and F2 first, then the rest in ``METRIC_KEYS`` order.
 REPORT_METRICS: tuple[str, ...] = ("extraction_f1", "extraction_f2") + tuple(
     k for k in METRIC_KEYS if k not in _TEXT_KEYS + ("extraction_f1", "extraction_f2"))
+
+
+UNKNOWN = "unknown"
+_SAFE_TEXT = re.compile(r"[^A-Za-z0-9._:/@+ -]")
+
+
+def _text(value: Any) -> str:
+    """Free text (a model name, a scoring status) as a Markdown-safe table cell.
+
+    Records can come from parquet files and stored detail, so no character that is markup
+    (``| ` * _ [ ] < >``, newlines, backslashes, ...) is passed on: each becomes ``?``, and the
+    result is capped at 80 characters.
+    """
+    return _SAFE_TEXT.sub("?", str(value))[:80]
+
+
+def _outcome(value: Any) -> str:
+    return value if isinstance(value, str) and value in EVENTS else UNKNOWN_OUTCOME
+
+
+def _doc_type(value: Any) -> str:
+    """``value`` when it is a taxonomy class (or the routing token ``unknown``), else ``unknown``."""
+    from pipeline.config import UNKNOWN_DOC_TYPE, get_doc_class
+
+    if isinstance(value, str) and (value == UNKNOWN_DOC_TYPE or get_doc_class(value) is not None):
+        return value
+    return UNKNOWN
 
 
 def _record(detail: Mapping[str, Any], metrics: Mapping[str, Any]) -> dict[str, Any]:
@@ -86,8 +115,9 @@ def build_report(records: list[Mapping[str, Any]]) -> str:
     modal = _modal_aliases()
     by_type: dict[str, list[Mapping[str, Any]]] = {}
     for rec in records:
-        by_type.setdefault(str(rec.get("doc_type") or "(unclassified)"), []).append(rec)
-    outcomes = Counter(str(r.get("outcome")) for r in records)
+        # The type only ever reaches the report as a taxonomy class, ``unknown`` or the unclassified bucket.
+        by_type.setdefault(_doc_type(rec["doc_type"]) if rec.get("doc_type") else "(unclassified)", []).append(rec)
+    outcomes = Counter(_outcome(r.get("outcome")) for r in records)
     lines = ["# Audit report", "",
              f"Documents: {len(records)} ({', '.join(f'{k} {n}' for k, n in sorted(outcomes.items())) or 'none'})",
              ""]
@@ -98,12 +128,12 @@ def build_report(records: list[Mapping[str, Any]]) -> str:
         if not schema:
             other.append(f"{doc_type}: {len(recs)}")
             continue
-        models = [r["model"] for r in recs if r.get("model")]
+        models = [str(r["model"]) for r in recs if r.get("model")]
         lines += [f"## {doc_type}", "", "| Field | Value |", "|:---|:---|",
                   f"| Schema | {schema} |", f"| n | {len(recs)} |",
-                  f"| Model | {_counts(models)} |",
+                  f"| Model | {_counts(_text(m) for m in models)} |",
                   f"| Route | {_counts('Modal' if m in modal else 'API' for m in models)} |",
-                  f"| Scoring status | {_counts(str(r['scoring_status']) for r in recs if r.get('scoring_status'))} |"]
+                  f"| Scoring status | {_counts(_text(r['scoring_status']) for r in recs if r.get('scoring_status'))} |"]
         lines += [f"| {key} | {_cell([r.get(key) for r in recs])} |" for key in REPORT_METRICS]
         lines.append("")
     if other:

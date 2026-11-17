@@ -16,8 +16,7 @@ T0 = datetime(2026, 11, 3, 9, 0, tzinfo=timezone.utc)
 AUTH = {"Authorization": "Bearer test-token-123"}
 
 
-@pytest.fixture
-def client(monkeypatch, temp_base_dir, tmp_path):
+def _client(monkeypatch, tmp_path, *, migrate):
     monkeypatch.setenv("MAILROOM_API_TOKEN", "test-token-123")
     monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'mailroom.db'}")
@@ -25,17 +24,28 @@ def client(monkeypatch, temp_base_dir, tmp_path):
     monkeypatch.delenv("MAILROOM_AUDIT_MIGRATE", raising=False)
     monkeypatch.setattr(db, "_schema_checked_url", None)
     assert db.ensure_schema()
-    # M11 readers: the unified row exists only after the explicit migration.
-    import asyncio
+    if migrate:
+        # M11 readers: the unified row exists only after the explicit migration.
+        from storage import audit_migrate
 
-    from storage import audit_migrate
-
-    asyncio.run(audit_migrate.migrate_audit_log())
+        asyncio.run(audit_migrate.migrate_audit_log())
     if "api.main" in sys.modules:
         importlib.reload(sys.modules["api.main"])
     from api.main import app
 
-    with TestClient(app) as c:
+    return TestClient(app)
+
+
+@pytest.fixture
+def client(monkeypatch, temp_base_dir, tmp_path):
+    with _client(monkeypatch, tmp_path, migrate=True) as c:
+        yield c
+
+
+@pytest.fixture
+def unmigrated_client(monkeypatch, temp_base_dir, tmp_path):
+    """The default state of an existing deployment: per-event rows only, no migration."""
+    with _client(monkeypatch, tmp_path, migrate=False) as c:
         yield c
 
 
@@ -69,9 +79,14 @@ def test_audit_doc_contract(client):
     r = client.get("/audit/d-1", headers=AUTH)
     assert r.status_code == 200, r.text
     body = r.json()
-    assert set(body) == {"doc_id", "chain_length", "chain_valid", "entries", "legacy", "pending", "warehouse"}
-    assert body["doc_id"] == "d-1" and body["chain_length"] == 3 and body["chain_valid"] is True
-    entries = body["entries"]
+    assert set(body) == {"doc_id", "chain_length", "chain_valid", "entries", "unified", "pending", "warehouse"}
+    # The existing keys keep their original meaning: the per-event chain (none written for d-1).
+    assert body["doc_id"] == "d-1" and body["chain_length"] == 0 and body["chain_valid"] is True
+    assert body["entries"] == []
+    unified = body["unified"]
+    assert set(unified) == {"migrated", "chain_length", "chain_valid", "entries"}
+    assert unified["migrated"] is True and unified["chain_length"] == 3 and unified["chain_valid"] is True
+    entries = unified["entries"]
     assert [e["kind"] for e in entries] == ["row", "attempt", "attempt", "addendum", "attempt", "addendum"]
     assert all("parent_id" in e for e in entries)
     row_id = entries[0]["entry_id"]
@@ -80,15 +95,15 @@ def test_audit_doc_contract(client):
     assert entries[3]["parent_id"] == row_id and entries[3]["addendum_kind"] == "review_decision"
     assert entries[4]["parent_id"] == entries[3]["addendum_id"]
     assert entries[5]["addendum_kind"] == "rescore"
-    assert set(body["legacy"]) == {"chain_length", "chain_valid", "entries"}
     assert body["pending"] is None and body["warehouse"] is None
     # The /v1 alias serves the same view.
-    assert client.get("/v1/audit/d-1", headers=AUTH).json()["entries"] == entries
+    assert client.get("/v1/audit/d-1", headers=AUTH).json()["unified"]["entries"] == entries
 
 
 def test_audit_doc_unknown_and_tampered(client):
     body = client.get("/audit/nope", headers=AUTH).json()
     assert (body["chain_length"], body["chain_valid"], body["entries"]) == (0, True, [])
+    assert (body["unified"]["chain_length"], body["unified"]["chain_valid"], body["unified"]["entries"]) == (0, True, [])
 
     _write("d-2")
     import sqlite3
@@ -96,7 +111,7 @@ def test_audit_doc_unknown_and_tampered(client):
     path = db._resolve_url().split("///", 1)[1]
     with sqlite3.connect(path) as conn:
         conn.execute("UPDATE audit_log SET actor = 'mallory' WHERE doc_id = 'd-2'")
-    assert client.get("/audit/d-2", headers=AUTH).json()["chain_valid"] is False
+    assert client.get("/audit/d-2", headers=AUTH).json()["unified"]["chain_valid"] is False
 
 
 def test_audit_doc_shows_pending(client):
@@ -119,6 +134,9 @@ def test_audit_summary_rates(client):
     _write("c", event="failed")
     _write("e", addenda=[("review_decision", []), ("review_decision", [])])
     r = client.get("/audit", headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert "unified" not in r.json()  # opt-in: the default call costs what it did before the unified row
+    r = client.get("/audit?unified=true", headers=AUTH)
     assert r.status_code == 200, r.text
     body = r.json()
     assert "total_entries" in body and "by_event" in body  # the legacy summary keeps its keys
@@ -198,7 +216,7 @@ def test_audit_doc_with_malformed_parent_detail_is_invalid_not_a_500(client, sto
         conn.execute("UPDATE audit_log SET detail = ? WHERE doc_id = 'd-m'", (stored,))
     resp = client.get("/audit/d-m", headers=AUTH)
     assert resp.status_code == 200
-    assert resp.json()["chain_valid"] is False
+    assert resp.json()["unified"]["chain_valid"] is False
     assert asyncio.run(_doc_valid("d-m")) is False
 
 
@@ -218,7 +236,7 @@ def test_document_chain_detects_deleted_attempt(client, on_addendum):
     att = _att("d-missing", "extraction", 1)
     _write("d-missing", attempts=[] if on_addendum else [att],
            addenda=[("resumed", [att])] if on_addendum else [])
-    assert client.get("/audit/d-missing", headers=AUTH).json()["chain_valid"] is True
+    assert client.get("/audit/d-missing", headers=AUTH).json()["unified"]["chain_valid"] is True
 
     async def remove():
         async with async_session() as session:
@@ -227,4 +245,236 @@ def test_document_chain_detects_deleted_attempt(client, on_addendum):
 
     asyncio.run(remove())
     assert asyncio.run(verify_audit_db()).ok is False
-    assert client.get("/audit/d-missing", headers=AUTH).json()["chain_valid"] is False
+    assert client.get("/audit/d-missing", headers=AUTH).json()["unified"]["chain_valid"] is False
+
+
+def _legacy_entry(doc, event="archived"):
+    """A per-event audit entry as the previous release wrote it (written before any migration)."""
+    from schemas.audit import build_audit_entry
+    from storage.audit_log import get_latest_audit_hash, write_audit_entry
+
+    async def go():
+        prev = await get_latest_audit_hash(doc)
+        entry = build_audit_entry(doc, "M", event, "archivist", {"note": event}, prev_hash=prev)
+        await write_audit_entry(entry)
+
+    asyncio.run(go())
+
+
+def test_audit_doc_keeps_per_event_keys_on_an_unmigrated_database(unmigrated_client):
+    """Regression (PR #239 review): ``entries`` / ``chain_length`` / ``chain_valid`` stay the per-event
+    chain on the default, unmigrated database; the unified view is only under the new ``unified`` key."""
+    _legacy_entry("d-old")
+    body = unmigrated_client.get("/audit/d-old", headers=AUTH).json()
+    assert body["chain_length"] == 1 and body["chain_valid"] is True
+    assert [e["event"] for e in body["entries"]] == ["archived"]
+    assert body["entries"][0]["detail"] == {"note": "archived"}
+    assert body["unified"] == {"migrated": False, "chain_length": 0, "chain_valid": True, "entries": []}
+
+
+def test_audit_doc_per_event_history_survives_the_migration(unmigrated_client):
+    from storage import audit_migrate
+
+    _legacy_entry("d-old")
+    _legacy_entry("d-old", event="review_completed")
+    asyncio.run(audit_migrate.migrate_audit_log())
+    _write("d-old")
+    body = unmigrated_client.get("/audit/d-old", headers=AUTH).json()
+    assert body["chain_length"] == 2 and body["chain_valid"] is True
+    assert [e["event"] for e in body["entries"]] == ["archived", "review_completed"]
+    assert body["unified"]["migrated"] is True and body["unified"]["chain_length"] == 1
+    assert body["unified"]["entries"][0]["kind"] == "row"
+
+
+def test_audit_summary_unified_is_opt_in(client):
+    _write("a")
+    default = client.get("/audit", headers=AUTH).json()
+    assert "unified" not in default and "total_entries" in default
+    assert client.get("/audit?unified=true&verify=false", headers=AUTH).json()["unified"]["checks"] is None
+
+
+def _count_statements(fn):
+    """Run ``fn`` and return how many SQL statements it issued."""
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    seen: list[str] = []
+
+    def record(conn, cursor, statement, *args):
+        seen.append(statement)
+
+    # Class-level: the engine is rebuilt for every ``asyncio.run`` loop, so none can be listened to by instance.
+    event.listen(Engine, "before_cursor_execute", record)
+    try:
+        fn()
+    finally:
+        event.remove(Engine, "before_cursor_execute", record)
+    return len(seen)
+
+
+def test_unified_summary_queries_do_not_grow_with_the_number_of_documents(client):
+    """Regression (PR #239 review): no per-document ``get_row`` loop behind ``GET /audit?unified=true``."""
+    from audit.readers import unified_summary
+
+    def run():
+        return asyncio.run(unified_summary(verify=False))
+
+    for i in range(2):
+        _write(f"few-{i}", attempts=[_att(f"few-{i}", "classification", 1)])
+    few = _count_statements(run)
+    for i in range(12):
+        _write(f"many-{i}", attempts=[_att(f"many-{i}", "classification", 1)], addenda=[("rescore", [])])
+    many = _count_statements(run)
+    assert run()["rows"] == 14
+    assert few > 0 and many == few, (few, many)
+
+
+def test_all_rows_match_get_row_and_page(client):
+    from audit.readers import all_rows
+    from audit.writer import get_row
+
+    for i in range(3):
+        _write(f"p-{i}", attempts=[_att(f"p-{i}", "extraction", 1)], addenda=[("rescore", [_att(f"p-{i}", "extraction", 2)])])
+    rows = asyncio.run(all_rows())
+    assert [r["doc_id"] for r in rows] == ["p-0", "p-1", "p-2"]
+    for row in rows:
+        assert row == asyncio.run(get_row(row["doc_id"]))
+    assert [r["doc_id"] for r in asyncio.run(all_rows(limit=1, offset=1))] == ["p-1"]
+    assert asyncio.run(all_rows(limit=1, offset=1))[0] == asyncio.run(get_row("p-1"))
+
+
+def _rewrite(doc_id, mutate):
+    """Edit a document's stored rows, then re-hash them so only a rule other than the hash can object."""
+    from sqlalchemy import select
+
+    from audit import verify
+    from storage.audit_log import AuditAddendumRecord, AuditAttemptRecord, AuditLogRecord
+    from storage.db import async_session
+
+    async def go():
+        async with async_session() as session:
+            row = (await session.execute(select(AuditLogRecord).where(AuditLogRecord.doc_id == doc_id))).scalar_one()
+            adds = (await session.execute(
+                select(AuditAddendumRecord).where(AuditAddendumRecord.doc_id == doc_id)
+                .order_by(AuditAddendumRecord.seq))).scalars().all()
+            subs = (await session.execute(
+                select(AuditAttemptRecord).where(AuditAttemptRecord.doc_id == doc_id))).scalars().all()
+            mutate(row, adds, subs)
+            from audit.writer import attempt_hash
+
+            for sub in subs:
+                sub.entry_hash = attempt_hash(verify._attempt_sub(sub), matter_id=row.matter_id, actor=row.actor)
+            row.entry_hash = verify._row_hash(row)
+            prev = row.entry_hash
+            for add in adds:
+                add.prev_hash = prev if add.prev_hash == "RELINK" else add.prev_hash
+                add.entry_hash = verify._addendum_hash(add, matter_id=row.matter_id)
+                prev = add.entry_hash
+            await session.commit()
+
+    asyncio.run(go())
+
+
+def _set_event(row, adds, subs):
+    row.event = "bogus"
+
+
+def _break_row_link(row, adds, subs):
+    row.prev_hash = "f" * 64
+
+
+def _unknown_stage(row, adds, subs):
+    subs[0].stage = "not-a-stage"
+
+
+def _unknown_trigger(row, adds, subs):
+    subs[0].trigger = "not-a-trigger"
+
+
+def _addendum_seq_gap(row, adds, subs):
+    adds[0].seq = 3
+
+
+def _unknown_addendum_kind(row, adds, subs):
+    adds[0].kind = "not-a-kind"
+
+
+def _unbound_recovered_detail(row, adds, subs):
+    adds[0].kind = "recovered_detail"
+    adds[0].detail = {"recovered_from": {"detail_sha256": "0" * 64}, "detail": {"x": 1}}
+
+
+@pytest.mark.parametrize("mutate", [_set_event, _break_row_link, _unknown_stage, _unknown_trigger,
+                                    _addendum_seq_gap, _unknown_addendum_kind, _unbound_recovered_detail])
+def test_doc_validity_matches_the_full_verifier(client, mutate):
+    """Regression (PR #239 review): every rule the full verifier applies to a document, ``chain_valid``
+    applies too. Each edit is re-hashed, so only the verifier's non-hash rules can reject it."""
+    from audit.verify import verify_audit_db
+
+    _write("first", attempts=[_att("first", "extraction", 1)])
+    _write("d-v", attempts=[_att("d-v", "extraction", 1)], addenda=[("rescore", [])])
+    assert client.get("/audit/d-v", headers=AUTH).json()["unified"]["chain_valid"] is True
+    _rewrite("d-v", mutate)
+    assert asyncio.run(verify_audit_db()).ok is False
+    assert client.get("/audit/d-v", headers=AUTH).json()["unified"]["chain_valid"] is False
+    assert client.get("/audit/first", headers=AUTH).json()["unified"]["chain_valid"] is True
+
+
+def test_doc_validity_is_scoped_to_the_document(client):
+    """A broken later document does not fail the healthy ones before it; re-hashing a row breaks the next row's link."""
+    _write("a")
+    _write("b")
+    _write("c")
+    _rewrite("b", _set_event)
+    assert client.get("/audit/a", headers=AUTH).json()["unified"]["chain_valid"] is True
+    assert client.get("/audit/b", headers=AUTH).json()["unified"]["chain_valid"] is False
+    # b's stored hash changed, so c no longer links to it: the document-scoped check sees that too.
+    assert client.get("/audit/c", headers=AUTH).json()["unified"]["chain_valid"] is False
+
+
+def _verify_cli(monkeypatch, capsys, *argv):
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "verify_audit_chains.py"
+    spec = importlib.util.spec_from_file_location("verify_audit_chains_cli_t", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    monkeypatch.setattr(sys, "argv", ["verify_audit_chains.py", *argv])
+    capsys.readouterr()
+    code = mod.main()
+    return code, capsys.readouterr().out
+
+
+def test_verify_cli_doc_checks_the_unified_row_too(client, monkeypatch, capsys):
+    """Regression (PR #239 review): ``--doc`` read only the per-event chain, so a document with a (broken or
+    healthy) unified row and no per-event entries printed "no audit entries" and exited 0."""
+    _write("d-cli", attempts=[_att("d-cli", "extraction", 1)], addenda=[("rescore", [])])
+    code, out = _verify_cli(monkeypatch, capsys, "--doc", "d-cli")
+    assert code == 0 and "no audit entries" not in out and "unified main chain: checked=1" in out
+    _rewrite("d-cli", _set_event)  # re-hashed: only the verifier's event rule rejects it
+    code, out = _verify_cli(monkeypatch, capsys, "--doc", "d-cli")
+    assert code == 1 and "BROKEN" in out and "unknown_event" in out
+    code, out = _verify_cli(monkeypatch, capsys, "--doc", "never-seen")
+    assert code == 0 and "no audit entries for never-seen" in out
+
+
+def test_verify_cli_warns_on_pending_and_can_fail_on_it(client, monkeypatch, capsys):
+    from pipeline.bins import save_manifest
+    from schemas.manifest import DocumentManifest
+
+    _write("d-ok")
+    m = DocumentManifest(doc_id="d-park", matter_id="M", original_filename="p.pdf")
+    m.audit_written = "pending_partial"
+    save_manifest(m)
+
+    code, out = _verify_cli(monkeypatch, capsys)
+    assert code == 0 and "WARNING: 1 manifest(s) are parked" in out  # the documented exit status is unchanged
+    code, out = _verify_cli(monkeypatch, capsys, "--fail-on-pending")
+    assert code == 1 and "WARNING" in out
+    code, out = _verify_cli(monkeypatch, capsys, "--json")
+    assert code == 0 and '"pending_manifests": 1' in out
+    code, out = _verify_cli(monkeypatch, capsys, "--doc", "d-park")  # a parked doc has no stored row to find
+    assert code == 0 and "d-park is parked as pending_partial" in out
+    code, _ = _verify_cli(monkeypatch, capsys, "--doc", "d-park", "--fail-on-pending")
+    assert code == 1
