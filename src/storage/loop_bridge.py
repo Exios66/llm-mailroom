@@ -20,7 +20,13 @@ a helper thread when the caller's thread already runs a loop.
 
 Calls made from the shared loop's own thread (a coroutine that calls sync
 code that calls ``run_sync``) cannot block on that loop without deadlocking
-it, so they fall back to a fresh loop in a helper thread, as before.
+it, so they fall back to a fresh loop in a helper thread, as before. That
+protects one level of nesting only: code on that helper loop must not call
+``run_sync`` again (none does today).
+
+Coroutines passed to ``run_sync`` share one loop thread, so they must not
+block it (no synchronous file locks, heavy CPU or blocking I/O between
+awaits); such work stays on a private loop (see ``storage.warehouse``).
 """
 
 from __future__ import annotations
@@ -131,6 +137,14 @@ def _run_legacy(coro: Awaitable[T], timeout: float | None) -> T:
         return pool.submit(asyncio.run, coro).result(timeout=timeout)  # type: ignore[arg-type]
 
 
+class _Escaped(Exception):
+    """Carries a KeyboardInterrupt/SystemExit from the loop thread to the caller."""
+
+    def __init__(self, exc: BaseException) -> None:
+        super().__init__(type(exc).__name__)
+        self.exc = exc
+
+
 def run_sync(work: Awaitable[T] | Callable[[], Awaitable[T]], *, timeout: float | None = None) -> T:
     """Run ``work`` to completion from sync code and return its result.
 
@@ -157,9 +171,18 @@ def run_sync(work: Awaitable[T] | Callable[[], Awaitable[T]], *, timeout: float 
         done: concurrent.futures.Future = concurrent.futures.Future()
         task_box: list[asyncio.Task] = []
 
+        async def _guarded(inner=coro):
+            # SystemExit/KeyboardInterrupt raised inside a task would escape
+            # run_forever and kill the loop thread before the done-callback
+            # runs, leaving the caller blocked forever. Hand them back instead.
+            try:
+                return await inner
+            except (KeyboardInterrupt, SystemExit) as exc:
+                raise _Escaped(exc) from None
+
         def _start() -> None:
             try:
-                task = shared.loop.create_task(coro, context=ctx)  # type: ignore[arg-type]
+                task = shared.loop.create_task(_guarded(), context=ctx)  # type: ignore[arg-type]
             except BaseException as exc:  # noqa: BLE001 - hand any failure back to the caller
                 done.set_exception(exc)
                 return
@@ -191,6 +214,8 @@ def run_sync(work: Awaitable[T] | Callable[[], Awaitable[T]], *, timeout: float 
             continue
         try:
             return done.result(timeout=timeout)
+        except _Escaped as escaped:
+            raise escaped.exc from None
         except concurrent.futures.TimeoutError:
             if done.done():
                 raise  # the coroutine itself raised TimeoutError; pass it through
@@ -213,8 +238,10 @@ async def _dispose_engines() -> None:
 def shutdown(timeout: float = _EXIT_TIMEOUT_SECONDS) -> None:
     """Best effort: dispose the shared loop's engine and stop the loop.
 
-    Safe to call repeatedly and when no loop was ever started. Never raises
-    and never blocks longer than ``timeout`` seconds.
+    Safe to call repeatedly and when no loop was ever started. Never raises.
+    Blocks at most about ``2 * timeout`` seconds (engine dispose, then thread
+    join). Callers still waiting on the loop when it stops are not woken: only
+    call this at process exit or when no other thread uses the bridge.
     """
     global _state
     with _state_lock:
