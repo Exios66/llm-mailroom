@@ -151,7 +151,7 @@ class TestOutcome:
 
     def test_normalize_accepts_outcome_and_mapping(self):
         outcome = ok(label="x")
-        assert dp.normalize_outcome(outcome) is outcome
+        assert dp.normalize_outcome(outcome) == outcome  # rebuilt, equal
         got = dp.normalize_outcome({**PARK, "extra": "dropped"})
         assert got.status == "ok" and got.route_hint == "human_review" and got.causes == ("fee_mismatch",)
         assert dp.normalize_outcome({}).status == "ok"
@@ -178,6 +178,16 @@ class TestOutcome:
         assert own.evidence["detail"].startswith("confidence must be")
         with pytest.raises(ValueError):  # still a ValueError for existing callers
             dp.DecisionOutcome(confidence=7)
+
+    def test_an_outcome_mutated_after_construction_is_revalidated(self):
+        outcome = ok(label="x", evidence={"k": 1})
+        outcome.evidence["k"] = object()  # the dict stays mutable after validation
+        got = dp.normalize_outcome(outcome)
+        assert got.status == "invalid" and got.evidence["reason"] == "malformed_answer"
+        json.dumps(got.to_dict())
+        clean = ok(label="x", evidence={"k": 1})
+        again = dp.normalize_outcome(clean)
+        assert again == clean and again is not clean and again.evidence is not clean.evidence
 
     def test_a_backend_raising_our_validation_error_is_still_recorded_by_class_only(self):
         class Lazy(dict):

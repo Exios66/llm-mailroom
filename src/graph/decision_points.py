@@ -417,14 +417,15 @@ def normalize_outcome(raw: Any) -> DecisionOutcome:
     """A backend's return value as a plain :class:`DecisionOutcome`; anything malformed is ``invalid``.
 
     Accepts an outcome or a mapping with any of the outcome's keys (unknown keys are
-    dropped). A :class:`DecisionOutcome` subclass is rebuilt field by field, so it is
-    validated like any other answer. Never raises. It reads the backend's object (a lazy
+    dropped). Every :class:`DecisionOutcome`, a subclass or a plain one whose ``evidence``
+    the backend mutated after construction, is rebuilt field by field and so validated like
+    any other answer. Never raises. It reads the backend's object (a lazy
     mapping, an iterator), so :func:`consult` runs it inside the bounded call.
     """
     try:
-        if type(raw) is DecisionOutcome:
-            return raw
         if isinstance(raw, DecisionOutcome):
+            # Always rebuilt, even an exact DecisionOutcome: its ``evidence`` dict stays
+            # mutable after validation, and the backend still holds it.
             return DecisionOutcome(**{k: getattr(raw, k) for k in _OUTCOME_KEYS})
         if not isinstance(raw, Mapping):
             return _failure("invalid", "malformed_answer", answer_type=type(raw).__name__)
