@@ -206,3 +206,25 @@ async def _doc_valid(doc_id):
     from audit.readers import doc_valid
 
     return await doc_valid(doc_id)
+
+
+@pytest.mark.parametrize("on_addendum", [False, True])
+def test_document_chain_detects_deleted_attempt(client, on_addendum):
+    from sqlalchemy import delete
+    from storage.audit_log import AuditAttemptRecord
+    from storage.db import async_session
+    from audit.verify import verify_audit_db
+
+    att = _att("d-missing", "extraction", 1)
+    _write("d-missing", attempts=[] if on_addendum else [att],
+           addenda=[("resumed", [att])] if on_addendum else [])
+    assert client.get("/audit/d-missing", headers=AUTH).json()["chain_valid"] is True
+
+    async def remove():
+        async with async_session() as session:
+            await session.execute(delete(AuditAttemptRecord).where(AuditAttemptRecord.doc_id == "d-missing"))
+            await session.commit()
+
+    asyncio.run(remove())
+    assert asyncio.run(verify_audit_db()).ok is False
+    assert client.get("/audit/d-missing", headers=AUTH).json()["chain_valid"] is False

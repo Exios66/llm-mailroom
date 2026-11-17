@@ -165,12 +165,17 @@ async def doc_valid(doc_id: str) -> bool:
         parents[add.addendum_id] = (matter_id, add.actor, add.detail)
 
     sub_report.checked = len(subs)
-    # Each parent's listing is read once, and only for parents that have sub-rows.
+    # Check every parent's listing, including a parent whose last sub-row
+    # was deleted. Inspecting only existing sub-rows cannot detect that gap.
     listed_by_parent = {
-        parent_id: _listed_attempts(parents[parent_id][2], sub_report, parent_id)
-        for parent_id in dict.fromkeys(sub.parent_id for sub in subs)
-        if parent_id in parents
+        parent_id: _listed_attempts(detail, sub_report, parent_id)
+        for parent_id, (_, _, detail) in parents.items()
     }
+    present = {(sub.parent_id, sub.attempt_id) for sub in subs}
+    for parent_id, listed in listed_by_parent.items():
+        for attempt_id in listed:
+            if (parent_id, attempt_id) not in present:
+                sub_report.fail(kind="missing_subrow", parent_id=parent_id, attempt_id=attempt_id)
     for sub in subs:
         parent = parents.get(sub.parent_id)
         if parent is None:

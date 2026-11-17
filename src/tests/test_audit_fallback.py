@@ -1190,3 +1190,32 @@ async def test_later_complete_write_is_recovered_while_original_gap_stays_open(
     assert [a["kind"] for a in (await get_row("d-1"))["addenda"]] == ["resumed", "recovered_detail"]
     assert all(not sink.fetch_pending() for sink in sinks)
     assert (await verify_audit_db()).ok
+
+
+async def test_later_live_write_preserves_the_original_partial_gap(sinks, db_down, monkeypatch):
+    import audit.row as row_mod
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park, get_row
+
+    small, late = FakeSink("small", max_payload_bytes=8_000), FakeSink("late")
+    sinks[:] = [small, late]
+    _save_manifest()
+    out = await commit_or_park(_row(big=True))
+    row_mod.mark_manifest("d-1", out.status, out.refs)
+    held = dict(late.pending)
+    late.pending.clear()
+    db_down[0] = None
+    assert (await reconcile()).partial == 1
+    before_refs = _manifest().audit_pending_refs
+    later_row = _second_run_big()
+    monkeypatch.setattr(row_mod, "build_row", lambda *args, **kwargs: later_row)
+
+    assert row_mod.write_row({"doc_id": "d-1"}, event="archived", actor="archivist") is not None
+    assert len((await get_row("d-1"))["addenda"]) == 1
+    assert _manifest().audit_written == "pending_partial"
+    assert _manifest().audit_pending_refs == before_refs
+    assert small.fetch_pending()
+
+    late.pending.update(held)
+    assert (await reconcile()).gap_closed == 1
+    assert _manifest().audit_written is True and _manifest().audit_pending_refs == []

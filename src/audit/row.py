@@ -407,14 +407,14 @@ def write_row(
     except Exception:
         logger.exception("audit_row_write_failed", doc_id=doc_id, event_name=event)
         return None
-    mark_manifest(str(doc_id), outcome.status, outcome.refs)
+    mark_manifest(str(doc_id), outcome.status, outcome.refs, preserve_partial=True)
     return outcome.result
 
 
 _AUDIT_WRITTEN = {"written": True, "pending": "pending", "pending_partial": "pending_partial", "gap": False}
 
 
-def mark_manifest(doc_id: str, status: str, refs=()) -> None:
+def mark_manifest(doc_id: str, status: str, refs=(), *, preserve_partial: bool = False) -> None:
     """Record the row's write status and sink refs on an existing manifest.
 
     Missing manifests and load or save errors are ignored after logging the
@@ -425,6 +425,10 @@ def mark_manifest(doc_id: str, status: str, refs=()) -> None:
 
         manifest = load_manifest(doc_id)
         if manifest is None:
+            return
+        # A later successful live write does not close a prior partial gap.
+        # Reconciliation clears it explicitly after recovering the full copy.
+        if preserve_partial and status == "written" and manifest.audit_written == "pending_partial":
             return
         manifest.audit_written = _AUDIT_WRITTEN[status]
         manifest.audit_pending_refs = [dict(r) for r in refs]
