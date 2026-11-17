@@ -2,20 +2,19 @@
 
 ## What is Mailroom?
 
-Mailroom is a multi-agent pipeline that ingests legal documents, classifies them, routes them to specialist agents for structured extraction, compiles the results into a matter record, and archives everything with a full, tamper-evident audit trail. One **LangGraph state machine run per document** (13 nodes), with retries, second-opinion review lanes, judge/arbiter quality gates, and human review routing. Auxiliary flows — the Gmail triage lane (single-document email uploads via the free triage team) and the relations clerk (post-archive association scanning) — run outside the main 13-node graph.
+Mailroom is a multi-agent pipeline that ingests legal documents, classifies them, routes them to specialist agents for structured extraction, compiles the results into a matter record, and archives everything with a full, tamper-evident audit trail. One **LangGraph state machine run per document** (14 nodes), with retries, second-opinion review lanes, judge/arbiter quality gates, and human review routing. Auxiliary flows — the Gmail triage lane (single-document email uploads via the free triage team) and the relations clerk (post-archive association scanning) — run outside the main 14-node graph.
 
 ## What document types does it handle?
 
-Six live taxonomy classes:
+Five live taxonomy classes (`doc_classes` in `src/config/taxonomy.yaml`):
 
 - **Contracts** (CUAD commercial agreements — 25 agreement families: MSAs, NDAs, licenses, distribution, …)
-- **Merger Agreements** (MAUD — a distinct class reusing the contracts specialist)
+- **Merger Agreements** (MAUD — a distinct class with its own `merger_agreement_specialist`)
 - **Corporate Records** (articles, bylaws, powers of attorney, rights instruments, other)
 - **Correspondence** (demand letters, legal notices, memos — corpus from the CMU Enron dataset)
-- **Compliance Filings** (SEC filings, state filings)
-- **Insurance Claims** (FNOL lines + CMS DE-SynPUF `carrier`/`inpatient`/`outpatient`/`pde` claim types; coverage determinations approved/denied/partial)
+- **Insurance Claims** (FNOL lines + CMS DE-SynPUF `carrier`/`inpatient`/`outpatient`/`pde` claim types; coverage determinations approved/denied/partial/pending)
 
-**Due diligence** and **court opinions** were retired from the live pipeline in v0.5.0 — they classify as `unknown` (human review), and there is no specialist dispatch for them. LegalBench remains the court-opinion benchmark surface.
+**Compliance filings**, **due diligence** and **court opinions** are retired classes (due diligence and court opinions since v0.5.0): they are not in the live taxonomy, they classify as `unknown` (human review), and there is no specialist dispatch for them. LegalBench remains the court-opinion benchmark surface.
 
 Adding a new class touches a known surface list (schema registry, taxonomy, specialist agent, graph dispatch, classifier vocabulary, sorter prompt) — see [the repo docs](https://github.com/Exios66/llm-mailroom/tree/main/docs).
 

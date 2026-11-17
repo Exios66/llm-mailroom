@@ -180,7 +180,7 @@ class TestLaneBRouting:
 
 
 class TestTopology:
-    def test_all_thirteen_nodes_registered(self):
+    def test_all_fourteen_nodes_registered(self):
         from graph.build_graph import build_graph
 
         g = build_graph()

@@ -519,7 +519,7 @@ document path never waits on it.
 
 ## Evaluating individual agents
 
-Live Langfuse evaluators stay **pipeline-level** (`pipeline-result` generation, two independent judges) by design. To score one agent without running the 13-node graph, use the local isolation harness:
+Live Langfuse evaluators stay **pipeline-level** (`pipeline-result` generation, two independent judges) by design. To score one agent without running the 14-node graph, use the local isolation harness:
 
 ```bash
 PYTHONPATH=src python src/scripts/run_agent_eval.py --list

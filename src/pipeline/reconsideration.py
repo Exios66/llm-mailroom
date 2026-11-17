@@ -507,6 +507,36 @@ def _state_derived_causes(
     return out
 
 
+DECISION_POINT_PREFIX = "decision_point:"
+
+
+def _decision_point_causes(data: Mapping[str, Any]) -> list[str]:
+    """``decision_point:<slot>:<cause>`` for each decision-point outcome that asked to park.
+
+    ``graph.decision_points`` stores each consultation in ``decision_outcomes[slot]`` and
+    stamps ``vetted_route`` with the route its slot's policy lets it request (the
+    stamp is needed here: this module cannot see the config). Only an outcome that
+    requested ``human_review`` contributes, with the cause tokens it carries (a backend's
+    own, or ``decision_point_unavailable`` / ``decision_point_invalid`` under
+    ``on_failure: fail_safe``). The node wrapper rewrites a slot's entry on every pass
+    and a resolved human review clears them all, so an entry is never about an earlier
+    attempt.
+    """
+    outcomes = data.get("decision_outcomes")
+    if not isinstance(outcomes, Mapping):
+        return []
+    out: list[str] = []
+    for slot, record in outcomes.items():
+        if not isinstance(slot, str) or not isinstance(record, Mapping):
+            continue
+        if record.get("vetted_route") != "human_review" or record.get("shadowed") is True:
+            continue  # did not ask to park, or an earlier slot on the node took the route
+        tokens = record.get("causes")
+        if isinstance(tokens, (list, tuple)):
+            out.extend(f"{DECISION_POINT_PREFIX}{slot}:{t}" for t in tokens if isinstance(t, str) and t)
+    return out
+
+
 def collect_review_causes(
     state: Mapping[str, Any] | None = None,
     *,
@@ -605,6 +635,8 @@ def collect_review_causes(
     if isinstance(reviewer_causes, (list, tuple)):
         causes.extend(t for t in reviewer_causes if isinstance(t, str) and t)
 
+    causes.extend(_decision_point_causes(data))
+
     seen: set[str] = set()
     ordered: list[str] = []
     for token in causes:
@@ -614,10 +646,19 @@ def collect_review_causes(
     return ordered
 
 
+def _cause_label(token: str) -> str:
+    if token in CAUSE_LABELS:
+        return CAUSE_LABELS[token]
+    if token.startswith(DECISION_POINT_PREFIX):
+        slot, _, cause = token[len(DECISION_POINT_PREFIX):].partition(":")
+        return f"decision point {slot}: {cause.replace('_', ' ')}"
+    return token.replace("_", " ")
+
+
 def format_causes(causes: Sequence[str]) -> Optional[str]:
     if not causes:
         return None
-    labels = [CAUSE_LABELS.get(c, c.replace("_", " ")) for c in causes]
+    labels = [_cause_label(c) for c in causes]
     return "reconsider: " + "; ".join(labels)
 
 

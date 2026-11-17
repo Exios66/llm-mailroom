@@ -93,7 +93,7 @@ def test_posthoc_gt_fills_hub_examples_for_every_hf_class():
         "insurance_claim",
     }
     cms, cms_meta = by_class["insurance_claim"]
-    assert cms["claim_type"] in {"carrier", "inpatient", "outpatient", "pde"}
+    assert cms["claim_type"] == "health"  # a CMS table row's product line (#174 §2)
     assert cms.get("insurer")
     assert cms.get("claim_number")
     assert cms.get("coverage_determination") == "approved"

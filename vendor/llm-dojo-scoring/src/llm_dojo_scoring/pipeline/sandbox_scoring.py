@@ -215,8 +215,15 @@ FIELD_CATEGORY = {
     "governing_law": "Governing Law",
     "term_length": "Expiration Date",
     "renewal_terms": "Renewal Term",
+    "agreement_date": "Agreement Date",
+    "expiration_date": "Expiration Date",
 }
 VALUE_FIELDS = ("document_name", "parties", "governing_law")
+#: Fields that evidence a CUAD category for recall only (#167). CUAD often leaves the
+#: Agreement or Expiration Date unannotated on a contract that prints one, so a filled date
+#: field credits the category when CUAD labels it, and is never a false positive when CUAD
+#: does not. A ``cuad_clauses`` line or another field naming the category still counts as usual.
+RECALL_ONLY_FIELDS = ("agreement_date", "expiration_date")
 
 
 def _norm(text: Any) -> str:
@@ -332,6 +339,8 @@ def field_value_ok(field: str, value: Any, cuad_clause_labels: Any) -> bool | No
     if cat is None or cat not in gt:
         return None
     spans = gt[cat]
+    if field in RECALL_ONLY_FIELDS and not spans:
+        return None  # CUAD left the date unlabelled: no truth either way (#167)
     if field == "effective_date" and effective_from_agreement(value, gt):
         return True
     if not spans:
@@ -347,6 +356,9 @@ def score_cuad(pred: Mapping[str, Any], cuad_clause_labels: Any) -> dict[str, An
     universe = list(gt)
     present = {c for c, spans in gt.items() if spans}
     found, outside = predicted_categories(pred or {}, universe)
+    # A recall-only field credits its category only where CUAD labels it (#167).
+    strict, _ = predicted_categories({**(pred or {}), **dict.fromkeys(RECALL_ONLY_FIELDS)}, universe)
+    found = strict | (found & present)
     # An effective date read off the Agreement Date is not a false positive.
     from_agreement = "Effective Date" in found and effective_from_agreement((pred or {}).get("effective_date"), gt)
     if from_agreement:
@@ -376,7 +388,7 @@ __all__ = [
     "score_maud", "score_cuad", "parse_maud_answers", "gt_labels",
     "same_answer", "is_non_answer", "norm", "CLEAN_QUESTIONS",
     "MULTI_CLASS_QUESTIONS", "TYPE_OF_CONSIDERATION", "CONFLICT",
-    "gt_categories", "predicted_categories", "FIELD_CATEGORY", "VALUE_FIELDS",
+    "gt_categories", "predicted_categories", "FIELD_CATEGORY", "VALUE_FIELDS", "RECALL_ONLY_FIELDS",
     "party_core", "effective_from_agreement", "field_value_ok",
     "SANDBOX_MAUD_METRIC_ID", "SANDBOX_MAUD_CLEAN_METRIC_ID",
     "SANDBOX_CUAD_METRIC_ID",
