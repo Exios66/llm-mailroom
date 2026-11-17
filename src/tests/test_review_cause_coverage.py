@@ -500,8 +500,10 @@ def _decision_point_sweep(n: int = 3000, seed: int = 20260202):
 
 
 def test_sweep_decision_point_parks_have_a_cause():
+    # Twice the default sample: verification-gate proposals are never redirected, so fewer
+    # samples redirect into a park and the default draw leaves too few to cover.
     parks = redirected = 0
-    for spec, state, base, final in _decision_point_sweep():
+    for spec, state, base, final in _decision_point_sweep(n=6000):
         if final != "human_review":
             continue
         parks += 1
@@ -513,10 +515,12 @@ def test_sweep_decision_point_parks_have_a_cause():
     assert parks > 300 and redirected > 50, (parks, redirected)
 
 
-def test_sweep_decision_point_never_overrides_a_park_a_self_loop_or_an_extraction_retry():
+def test_sweep_decision_point_never_overrides_a_park_a_self_loop_or_a_verification_gate():
+    import graph.decision_points as dpm
+
     seen = 0
     for spec, state, base, final in _decision_point_sweep():
-        if base in ("human_review", spec.node, "retry_extract"):
+        if base in ("human_review", spec.node) or base in dpm.GATE_PROPOSALS:
             seen += 1
             assert final == base, (spec.node, base, final)
     assert seen > 300

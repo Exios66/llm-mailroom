@@ -606,8 +606,10 @@ class TestRule:
         p = policy(allow=("compile_report",))
         assert dp.rule_for(p).decide(self.state(route_hint="compile_report"), "compile_report") is None
 
-    @pytest.mark.parametrize("proposed", ["human_review", "extract", "retry_extract"])
-    def test_never_overrides_a_park_a_self_loop_or_an_extraction_retry(self, proposed):
+    @pytest.mark.parametrize(
+        "proposed", ["human_review", "extract", "retry_extract", "judge_verify", "arbiter", "boss_escalation"]
+    )
+    def test_never_overrides_a_park_a_self_loop_or_a_verification_gate(self, proposed):
         p = policy(allow=("human_review", "compile_report"))
         assert dp.rule_for(p).decide(self.state(route_hint="compile_report"), proposed) is None
 
@@ -646,6 +648,23 @@ class TestRule:
         assert spec.router(dict(state)) == "retry_extract"
         assert decide_route(spec, state) == "retry_extract"
         assert not dp._rule_answers("extract", "retry_extract", "compile_report")
+
+    @pytest.mark.parametrize(
+        "extra, gate",
+        [({"extraction_confidence": 0.2, "extraction_attempts": 9}, "judge_verify"),
+         ({"conflict_detected": True}, "boss_escalation")],
+    )
+    def test_a_hint_cannot_skip_the_judge_or_the_conflict_ruling(self, extra, gate):
+        spec = next(s for s in ROUTE_SPECS if s.node == "extract")
+        dp.install_rules([policy(allow=("compile_report",))])
+        state = {
+            "doc_type": "contract", "doc_text": "x", "extracted_data": {"parties": ["A"]},
+            "extraction_confidence": 0.95, "extraction_attempts": 1,
+            "decision_outcomes": {"extract.post": record(route_hint="compile_report", causes=())},
+            **extra,
+        }
+        assert spec.router(dict(state)) == gate
+        assert decide_route(spec, state) == gate
 
 
 class TestRuleInstallation:
