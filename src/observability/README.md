@@ -16,6 +16,7 @@ This repo keeps only a backward-compatibility shim.
 | `field_scoring.py` | **deprecated shim** over `llm_dojo_scoring.field_scoring` |
 | `specialist_suites.py` | local — one dedicated scoring suite per live extract class |
 | `extraction_gt.py` / `posthoc_gt.py` | local — Hub catalog labels + post-hoc schema GT |
+| `interim_gt.py` | local — opt-in staged GT overlay (pinned, status-tagged, Hub-superseded) |
 
 ## `field_scoring.py` shim
 
@@ -84,6 +85,36 @@ document text (`observability.posthoc_gt`) so every included document has
 scorable expected_fields. Provenance (`n_hub` / `n_posthoc`) is recorded; a
 post-hoc fill is never billed as an official Hub annotation. Retired classes
 stay out of Hub `--real` entirely.
+
+## Staged interim ground truth (opt-in)
+
+`observability.interim_gt` loads an **interim overlay**: labels the published Hub merge does not
+carry yet. They are gate-accepted gap fills, labels derived from the row, and documented
+corrections. The local-mailroom-sandbox builds the overlay (`scripts/interim_labels.py build`,
+schema `mailroom-interim-labels/v1`: per-class JSONL plus `MANIFEST.json`). This repo does not
+vendor the labels. A run points at the builder's directory and pins the sha256 of its manifest:
+
+```bash
+export MAILROOM_INTERIM_GT_DIR=/path/to/local-mailroom-sandbox/data/labels/interim
+export MAILROOM_INTERIM_GT_SHA256=<sha256 of that MANIFEST.json>
+```
+
+- **Opt-in.** The overlay is off when neither variable is set. Setting only one raises.
+- **Pinned.** A wrong pin, an edited class file or an unlisted file raises
+  `InterimOverlayError`. There is no silent Hub-only fallback.
+- **Merge order.** `build_expected_fields` applies the overlay after the Hub catalog and before
+  the post-hoc fill.
+  - A label the Hub publishes supersedes the overlay.
+  - A `correction` applies only while the Hub value still equals the `hub_value` it corrected.
+  - `disputed` labels are never applied.
+  - Labels bind to the document text (`doc_sha256`).
+  - A closed inventory field must hold a vocabulary value.
+  - A CMS row's `claim_type` stays `health` (#280). An overlay label that says otherwise is
+    rejected.
+- **Recorded.** Applied fields carry source `interim:<status>` and score as gold. GT meta and
+  each HF pilot row carry `interim_gt`: the overlay sha256 plus what was applied, superseded,
+  rejected, disputed or absent. The HF pilot report header carries the overlay's identity, or
+  `null` for Hub-only gold. Never compare an overlay score with a Hub-GT score.
 
 ## Honesty gaps (current Dojo registry)
 

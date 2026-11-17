@@ -50,6 +50,10 @@ def _set_test_env():
         os.environ.pop(k, None)
     for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"):
         os.environ.pop(k, None)
+    # The staged interim GT overlay (observability.interim_gt) is opt-in; a .env
+    # that opts in must not turn Hub-only gold into overlay gold under the suite.
+    for k in ("MAILROOM_INTERIM_GT_DIR", "MAILROOM_INTERIM_GT_SHA256"):
+        os.environ.pop(k, None)
     os.environ.pop("MAILROOM_VISION_ENABLED", None)
     os.environ.pop("DEFAULT_PROVIDER", None)
     # HUB-039 free-only guardrail is opt-in via .env; tests must stay hermetic
