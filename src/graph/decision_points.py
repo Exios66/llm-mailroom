@@ -26,9 +26,10 @@ How the pieces fit (``build_graph()`` calls :func:`prepare_slots`, :func:`wrap_n
 * **Policy** (:func:`vet_outcome`) decides whether a hint may be followed: the outcome is
   ``ok``, the hint is in the slot's ``allow`` (per class: ``by_class``), its confidence
   meets ``min_confidence`` when set, and a hint to ``human_review`` carries causes. The
-  rule additionally never overrides the router's own ``human_review`` park or a
-  self-loop of the node: those carry the pipeline's safety budgets (see
-  ``route_spec``'s rule semantics).
+  rule additionally never overrides the router's own ``human_review`` park, a
+  self-loop of the node, or a proposed ``retry_extract`` (the extraction integrity gate:
+  lost windows, an invalid schema, a hollow extraction): those carry the pipeline's
+  safety budgets and guarantees (see ``route_spec``'s rule semantics).
 * **Staleness.** The wrapper rewrites the slot's entry on every pass of its node, and
   drops it when the node asked for a transient retry (nothing is consulted: the node's
   result is not usable and will be redone, and the router will retry or park it). A person
@@ -133,6 +134,10 @@ __all__ = [
 ]
 
 PARK = "human_review"
+#: Router proposals a hint never overrides besides a park and a self-loop: an extraction
+#: retry is an integrity gate (lost windows, an invalid schema or a hollow extraction), so
+#: a hint must not let a partial extraction proceed. A hint *to* a retry is still allowed.
+GATE_PROPOSALS = frozenset({"retry_extract"})
 RULE_PREFIX = "decision_point:"
 OUTCOMES_KEY = "decision_outcomes"
 OVERRIDES_KEY = "decision_override_counts"
@@ -300,6 +305,14 @@ class DecisionInput:
         object.__setattr__(self, "state", MappingProxyType(_isolated(self.state)))
 
 
+class OutcomeValidationError(ValueError):
+    """Raised only by :class:`DecisionOutcome` validation, so its message is ours.
+
+    :func:`_safe_detail` records the text of this error only; any other exception, even a
+    ``ValueError`` raised by a backend-controlled object, is recorded by its class name.
+    """
+
+
 @dataclass(frozen=True)
 class DecisionOutcome:
     """A decision backend's answer, validated at construction.
@@ -328,11 +341,11 @@ class DecisionOutcome:
         # is stored and compared later (a ``str`` subclass could answer "equal" to anything).
         hint = _exact_str(self.route_hint)
         if hint is not None and (not isinstance(hint, str) or not hint or len(hint) > 64):
-            raise ValueError("route_hint must be a destination name or None")
+            raise OutcomeValidationError("route_hint must be a destination name or None")
         object.__setattr__(self, "route_hint", hint)
         label = _exact_str(self.label)
         if label is not None and (not isinstance(label, str) or len(label) > _MAX_TEXT):
-            raise ValueError("label must be a string of at most 200 characters or None")
+            raise OutcomeValidationError("label must be a string of at most 200 characters or None")
         object.__setattr__(self, "label", label)
         conf = self.confidence
         if conf is not None:
@@ -341,35 +354,35 @@ class DecisionOutcome:
             elif isinstance(conf, int) and not isinstance(conf, bool):
                 conf = int.__int__(conf)
             if not _unit_float(conf):
-                raise ValueError("confidence must be a finite number from 0 to 1 or None")
+                raise OutcomeValidationError("confidence must be a finite number from 0 to 1 or None")
             object.__setattr__(self, "confidence", float(conf))
         causes = self.causes
         if isinstance(causes, (str, bytes)) or not isinstance(causes, Iterable):
-            raise ValueError("causes must be a sequence of tokens")
+            raise OutcomeValidationError("causes must be a sequence of tokens")
         # Read at most one more than the cap, so an endless iterator cannot hang us.
         items = list(itertools.islice(causes, _MAX_CAUSES + 1))
         if len(items) > _MAX_CAUSES or not all(isinstance(t, str) for t in items):
-            raise ValueError("causes must be at most 8 tokens of [A-Za-z0-9_.:-], 1 to 64 characters")
+            raise OutcomeValidationError("causes must be at most 8 tokens of [A-Za-z0-9_.:-], 1 to 64 characters")
         tokens = tuple(dict.fromkeys(_exact_str(t) for t in items))
         if not all(_TOKEN.fullmatch(t) for t in tokens):
-            raise ValueError("causes must be at most 8 tokens of [A-Za-z0-9_.:-], 1 to 64 characters")
+            raise OutcomeValidationError("causes must be at most 8 tokens of [A-Za-z0-9_.:-], 1 to 64 characters")
         object.__setattr__(self, "causes", tokens)
         model = _exact_str(self.model)
         if not isinstance(model, str) or len(model) > _MAX_TEXT:
-            raise ValueError("model must be a string of at most 200 characters")
+            raise OutcomeValidationError("model must be a string of at most 200 characters")
         object.__setattr__(self, "model", model)
         if not isinstance(self.evidence, Mapping) or not all(isinstance(k, str) for k in self.evidence):
-            raise ValueError("evidence must be a mapping with string keys")
+            raise OutcomeValidationError("evidence must be a mapping with string keys")
         try:
             encoded = json.dumps(dict(self.evidence), allow_nan=False)
         except (TypeError, ValueError, OverflowError, RecursionError):
-            raise ValueError("evidence must be JSON-serialisable") from None
+            raise OutcomeValidationError("evidence must be JSON-serialisable") from None
         if len(encoded) > _MAX_EVIDENCE_BYTES:
-            raise ValueError("evidence is larger than 8 KB")
+            raise OutcomeValidationError("evidence is larger than 8 KB")
         object.__setattr__(self, "evidence", json.loads(encoded))
         status = _exact_str(self.status)
         if not isinstance(status, str) or status not in _STATUSES:
-            raise ValueError("status must be ok, unavailable or invalid")
+            raise OutcomeValidationError("status must be ok, unavailable or invalid")
         object.__setattr__(self, "status", status)
 
     def to_dict(self) -> dict[str, Any]:
@@ -414,7 +427,7 @@ def normalize_outcome(raw: Any) -> DecisionOutcome:
 
 def _safe_detail(exc: BaseException) -> str:
     """Our own validation message, or the exception class: never a backend-supplied value."""
-    return str(exc)[:120] if isinstance(exc, ValueError) else type(exc).__name__
+    return str(exc)[:120] if type(exc) is OutcomeValidationError else type(exc).__name__
 
 
 # ---------------------------------------------------------------------------
@@ -752,12 +765,13 @@ def rule_for(policy: SlotPolicy) -> RouteRule:
 
     Pure and synchronous: it reads ``state["decision_outcomes"][slot]`` (written by the
     node wrapper) and the policy, nothing else. It keeps the router's proposal when that
-    is a park (``human_review``) or a self-loop of the node.
+    is a park (``human_review``), a self-loop of the node or an extraction retry
+    (:data:`GATE_PROPOSALS`).
     """
 
     def decide(state: Mapping[str, Any], proposed: str) -> "str | None":
-        if proposed == PARK or proposed == policy.node:
-            return None  # parks and the transient-retry loop keep their safety budgets
+        if proposed == PARK or proposed == policy.node or proposed in GATE_PROPOSALS:
+            return None  # parks, transient retries and extraction gates keep their budgets
         outcomes = state.get(OUTCOMES_KEY)
         record = outcomes.get(policy.slot) if isinstance(outcomes, Mapping) else None
         if not isinstance(record, Mapping):
@@ -1003,11 +1017,13 @@ def _proposal(node: str, state: Mapping[str, Any]) -> "str | None":
 def _rule_answers(node: str, proposed: "str | None", hint: str) -> bool:
     """Whether the slot's rule would return ``hint`` against the router's ``proposed``.
 
-    Mirrors :func:`rule_for`: nothing for a proposed park or self-loop, nothing when the
-    hint equals the proposal. An unknown proposal counts as an answer (the budget errs on
+    Mirrors :func:`rule_for`: nothing for a proposed park, self-loop or extraction retry,
+    nothing when the hint equals the proposal. An unknown proposal counts as an answer (the budget errs on
     the side of spending).
     """
-    return proposed is None or (proposed != PARK and proposed != node and proposed != hint)
+    return proposed is None or (
+        proposed != PARK and proposed != node and proposed not in GATE_PROPOSALS and proposed != hint
+    )
 
 
 def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy]) -> Callable[[Any], Any]:

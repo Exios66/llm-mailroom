@@ -166,6 +166,19 @@ class TestOutcome:
         assert got.status == "invalid" and got.route_hint is None
         assert got.evidence["reason"] == "malformed_answer"
 
+    def test_a_value_error_from_a_backend_object_is_recorded_by_class_only(self):
+        class Lazy(dict):
+            def __getitem__(self, key):
+                raise ValueError("Acme owes Beta 1,000,000")
+
+        got = dp.normalize_outcome(Lazy(label="x"))
+        assert got.status == "invalid" and got.evidence["detail"] == "ValueError"
+        assert "Acme" not in json.dumps(got.to_dict())
+        own = dp.normalize_outcome({"confidence": 7})
+        assert own.evidence["detail"].startswith("confidence must be")
+        with pytest.raises(ValueError):  # still a ValueError for existing callers
+            dp.DecisionOutcome(confidence=7)
+
     def test_invalid_detail_never_echoes_backend_values(self):
         got = dp.normalize_outcome({"label": "SECRET-" + "x" * 300})
         assert "SECRET" not in json.dumps(got.to_dict())
@@ -593,8 +606,8 @@ class TestRule:
         p = policy(allow=("compile_report",))
         assert dp.rule_for(p).decide(self.state(route_hint="compile_report"), "compile_report") is None
 
-    @pytest.mark.parametrize("proposed", ["human_review", "extract"])
-    def test_never_overrides_a_park_or_a_self_loop(self, proposed):
+    @pytest.mark.parametrize("proposed", ["human_review", "extract", "retry_extract"])
+    def test_never_overrides_a_park_a_self_loop_or_an_extraction_retry(self, proposed):
         p = policy(allow=("human_review", "compile_report"))
         assert dp.rule_for(p).decide(self.state(route_hint="compile_report"), proposed) is None
 
@@ -618,6 +631,21 @@ class TestRule:
         assert decide_route(spec, state) == "human_review"
         state["decision_outcomes"] = {}
         assert decide_route(spec, state) == base
+
+    def test_a_hint_cannot_skip_the_lost_window_retry(self):
+        """A lost window forces a re-extraction; a ``compile_report`` hint must not skip it."""
+        spec = next(s for s in ROUTE_SPECS if s.node == "extract")
+        p = policy(allow=("compile_report",))
+        dp.install_rules([p])
+        state = {
+            "doc_type": "contract", "doc_text": "x",
+            "extracted_data": {"parties": ["A"], "_failed_chunks": 1},
+            "extraction_confidence": 0.99, "extraction_attempts": 1,
+            "decision_outcomes": {"extract.post": record(route_hint="compile_report", causes=())},
+        }
+        assert spec.router(dict(state)) == "retry_extract"
+        assert decide_route(spec, state) == "retry_extract"
+        assert not dp._rule_answers("extract", "retry_extract", "compile_report")
 
 
 class TestRuleInstallation:
@@ -1849,3 +1877,46 @@ class TestResolveExit:
         # Config strips whitespace, so this guards the resolver itself.
         with pytest.raises(DecisionPointConfigError, match="not a registered name or an import spec"):
             dp._resolve_backend(policy(backend="dp_backend_mod:decide\n"))
+
+
+class TestDuplicateKeys:
+    """The taxonomy loader refuses duplicated keys instead of keeping the last one."""
+
+    SLOT = "  extract.post:\n    node: extract\n    backend: fake\n    on_failure: {mode}\n"
+
+    def _load(self, tmp_path, monkeypatch, text):
+        import pipeline.config as config
+
+        path = tmp_path / "taxonomy.yaml"
+        path.write_text(text)
+        monkeypatch.setattr(config, "CONFIG_PATH", path)
+        config.load_config.cache_clear()
+        try:
+            return config.load_config()
+        finally:
+            config.load_config.cache_clear()
+
+    def test_a_slot_declared_twice_is_rejected(self, tmp_path, monkeypatch):
+        import yaml
+
+        text = "decision_points:\n" + self.SLOT.format(mode="fail_safe") + self.SLOT.format(mode="fail_open")
+        with pytest.raises(yaml.YAMLError, match="duplicate key 'extract.post'"):
+            self._load(tmp_path, monkeypatch, text)
+
+    def test_a_setting_written_twice_in_one_slot_is_rejected(self, tmp_path, monkeypatch):
+        import yaml
+
+        text = "decision_points:\n" + self.SLOT.format(mode="fail_safe") + "    on_failure: fail_open\n"
+        with pytest.raises(yaml.YAMLError, match="duplicate key 'on_failure'"):
+            self._load(tmp_path, monkeypatch, text)
+
+    def test_merge_keys_still_load(self, tmp_path, monkeypatch):
+        got = self._load(tmp_path, monkeypatch, "base: &b {k: 1, j: 2}\nderived:\n  <<: *b\n  k: 3\n")
+        assert got["derived"] == {"k": 3, "j": 2}
+
+    def test_the_shipped_taxonomy_has_no_duplicate_keys(self):
+        import yaml
+        import pipeline.config as config
+
+        with open(config.CONFIG_PATH) as f:
+            assert "decision_points" in yaml.load(f, Loader=config._UniqueKeyLoader)

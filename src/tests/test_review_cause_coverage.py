@@ -492,11 +492,8 @@ def _decision_point_sweep(n: int = 3000, seed: int = 20260202):
                 outcome = dpm.DecisionOutcome(label="fine")
             state = dict(state)
             state["decision_outcomes"] = {policy.slot: dpm._stored(outcome, policy, state.get("doc_type"))}
-            try:
-                base = spec.router(dict(state))
-                final = decide_route(spec, state)
-            except Exception:
-                continue
+            base = spec.router(dict(state))
+            final = decide_route(spec, state)
             yield spec, state, base, final
     finally:
         clear_route_rules()
@@ -516,10 +513,10 @@ def test_sweep_decision_point_parks_have_a_cause():
     assert parks > 300 and redirected > 50, (parks, redirected)
 
 
-def test_sweep_decision_point_never_overrides_a_park_or_a_self_loop():
+def test_sweep_decision_point_never_overrides_a_park_a_self_loop_or_an_extraction_retry():
     seen = 0
     for spec, state, base, final in _decision_point_sweep():
-        if base == "human_review" or base == spec.node:
+        if base in ("human_review", spec.node, "retry_extract"):
             seen += 1
             assert final == base, (spec.node, base, final)
     assert seen > 300

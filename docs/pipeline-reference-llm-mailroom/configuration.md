@@ -20,7 +20,11 @@ vision:                        # additive page-image ingestion
 doc_classes:                   # document type definitions
 file_extensions:               # accepted file types
 agents:                        # per-agent model/provider configs
+reviewer:                      # classification reviewer mode per class
+decision_points:               # pluggable decision-model slots (empty by default)
 ```
+
+Duplicate keys are an error: the loader refuses a mapping that names the same key twice anywhere in the file, instead of silently keeping the last value. YAML merge keys (`<<:`) still work.
 
 ### `pipeline.bins`
 
@@ -245,6 +249,24 @@ agents:
 
   # ... (one entry per agent; includes pdf_transcriber, image_extractor and judge)
 ```
+
+### `decision_points`
+
+Pluggable decision points (`graph/decision_points.py`). Empty by default (`decision_points: {}`): no node is wrapped and routing is unchanged. A slot lets a decision model, registered with `register_decision_point_backend(name, fn)` or named by an import spec, look at a node's result right after the node returns and hint where the document goes next. The base router still decides first; the hint only refines its proposal, and it never overrides a park (`human_review`), a self-loop of the node, or a proposed `retry_extract` (the extraction integrity gate for lost windows, an invalid schema or a hollow extraction).
+
+| Key | Default | Meaning |
+|:---|:---|:---|
+| `node` | required | A conditional-route node from `graph/route_spec.py`. Not `human_review`, `intake`, `catalog_write` or `archive`. |
+| `backend` | required | A registered name, or an import spec `module.path:callable` imported at startup. Async callables are refused. |
+| `enabled` | `true` | `false` keeps the slot declared but off. |
+| `timeout_seconds` | `run_limits.llm_call_timeout_seconds` | Above 0 and at most 3600, always capped by the time left on the run deadline. |
+| `on_failure` | `fail_open` | `fail_open`: a timeout, error or malformed answer gives no hint. `fail_safe`: it parks the document with the review cause `decision_point:<slot>:decision_point_unavailable` or `…_invalid`. |
+| `allow` | `[]` | Destinations the model may choose: a subset of the node's destinations, never the node itself. Empty means record the outcome and never route on it. |
+| `min_confidence` | none | A hint below it, or with no confidence, is ignored. |
+| `max_overrides` | `1` | Redirects to a non-park destination per document for this slot. Parks are exempt. The active slots that can redirect may total at most 8. |
+| `by_class` | `{}` | Per-class overrides of `enabled`, `allow` and `min_confidence`. |
+
+A hint to `human_review` is followed only when the outcome names at least one cause, and those causes reach the reviewer as `decision_point:<slot>:<cause>`. A malformed section, or an import spec that does not import, stops the watcher and the API at startup (`DecisionPointConfigError`). Edits need a watcher or API restart, because the configuration is cached. See the commented example in `taxonomy.yaml`.
 
 ### `chunking.merge`
 

@@ -11,10 +11,40 @@ from typing import Iterator, Literal
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "taxonomy.yaml"
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """``yaml.SafeLoader`` that refuses a mapping with the same key twice.
+
+    Plain YAML loaders keep the last occurrence silently, so a duplicated taxonomy key
+    (for example a decision-point slot declared twice, or ``on_failure:`` written twice in
+    one slot) would drop a setting without any error. Merge keys (``<<:``) still work:
+    the mapping is flattened before the check, and a key that an explicit entry overrides
+    from a merged mapping is not a duplicate.
+    """
+
+    def construct_mapping(self, node, deep=False):
+        if isinstance(node, yaml.MappingNode):
+            seen: set = set()
+            for key_node, _ in node.value:
+                if key_node.tag == "tag:yaml.org,2002:merge":
+                    continue
+                key = self.construct_object(key_node, deep=True)
+                try:
+                    duplicate = key in seen
+                except TypeError:  # unhashable key: let SafeLoader report it
+                    continue
+                if duplicate:
+                    raise yaml.constructor.ConstructorError(
+                        "while constructing a mapping", node.start_mark,
+                        f"found duplicate key {key!r}", key_node.start_mark,
+                    )
+                seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 @lru_cache(maxsize=1)
 def load_config() -> dict:
     with open(CONFIG_PATH) as f:
-        return yaml.safe_load(f)
+        return yaml.load(f, Loader=_UniqueKeyLoader)  # a SafeLoader subclass
 
 
 def clear_config_cache() -> None:
