@@ -309,9 +309,9 @@ flowchart TD
 
     CLASSIFY -- "confidence >= high (0.97), not decision_only" --> EXTRACT
     CLASSIFY -- "confidence < high, attempts <= retry_max (medium or low)" --> RETRY_CLASS
-    CLASSIFY -- "decision_only class, or ground-truth class miss" --> REVIEW_CLASS
+    CLASSIFY -- "decision_only class at high confidence or past the retry budget, or ground-truth class miss" --> REVIEW_CLASS
     CLASSIFY -- "unknown type / retries spent below high" --> REVIEW
-    RETRY_CLASS -- "confidence >= high" --> EXTRACT
+    RETRY_CLASS -- "confidence >= high, not decision_only" --> EXTRACT
     RETRY_CLASS -- "low <= confidence < high (0.88–0.97, Lane A)" --> REVIEW_CLASS
     RETRY_CLASS -- "decision_only class at any confidence" --> REVIEW_CLASS
     RETRY_CLASS -- "unknown type / still below low" --> REVIEW
