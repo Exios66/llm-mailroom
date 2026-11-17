@@ -290,6 +290,37 @@ def test_permanent_backend_error_is_recorded_not_a_silent_no_answer(
     assert REVIEWER_UNAVAILABLE in collect_review_causes({**st, **updates})
 
 
+def test_backend_exception_text_never_reaches_the_sender(
+    decision_config, no_llm_reviewer
+):
+    """The backend exception text is audit-only: it rides behind ``[cause: ...]`` in the
+    escalation reason so the Gmail echo cuts it, while the manifest keeps it."""
+    from pipeline.gmail_intake import _sender_reason, build_echo_body
+
+    secret = "provider 403 for key sk-abc123 at /srv/private/doc.pdf"
+    register_decision_backend(Spy(exc=RuntimeError(secret)))
+    st = state()
+    updates = review_classify_node(st)
+
+    reason = updates["escalation_reason"]
+    assert secret in reason  # the audit text keeps the cause
+    assert f"[cause: decision reviewer error: RuntimeError: {secret}]" in reason
+    seen = _sender_reason({"escalation_reason": reason})
+    assert "sk-abc123" not in seen and "/srv/private" not in seen and "[cause:" not in seen
+    assert "RuntimeError" not in seen and "decision reviewer error" not in seen
+    assert "routing to human review" in seen
+
+    manifest = {
+        "doc_id": "d-1", "matter_id": "M", "original_filename": "c.txt", "stage": "review",
+        "escalation_reason": reason, "error_message": updates["error_message"],
+        "intake": {"source": "gmail", "message_id": "m", "sender": "a@example.com"},
+    }
+    body = build_echo_body(manifest, [], True)
+    assert "sk-abc123" not in body and "/srv/private" not in body
+    # the manifest keeps the full text for the audit trail
+    assert secret in manifest["escalation_reason"] and secret in manifest["error_message"]
+
+
 def test_permanent_backend_error_ends_in_human_review_when_arbiter_fails(
     decision_config, no_llm_reviewer, monkeypatch
 ):
