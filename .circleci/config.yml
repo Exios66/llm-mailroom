@@ -38,12 +38,12 @@ jobs:
       size:
         type: enum
         enum: [small, medium, large]
-        default: large
+        default: medium
       workers:
         # pytest-xdist workers; match the executor's vCPUs (small 1, medium 2,
         # large 4). `-n auto` would read the host's CPU count, not the container's.
         type: integer
-        default: 4
+        default: 2
     executor:
       name: py
       size: << parameters.size >>
