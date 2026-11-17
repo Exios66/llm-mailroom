@@ -435,3 +435,89 @@ def test_property_grid_unknown_class_always_named():
                  "classification_attempts": attempts}
         assert routing.after_classify(dict(state)) == "human_review"
         assert rc.UNKNOWN_CLASS in collect_review_causes(state)
+
+
+# --------------------------------------------------------------------------
+# Decision-point rules (graph/decision_points.py): a rule that parks a document must
+# leave a cause that collect_review_causes can see, whatever the router proposed.
+
+
+def _decision_point_sweep(n: int = 3000, seed: int = 20260202):
+    """Yield (spec, state, base destination, final destination) with a stored outcome."""
+    import graph.decision_points as dpm
+    from graph.route_spec import ROUTE_SPECS, clear_route_rules, decide_route
+
+    rng = random.Random(seed)
+    specs = [s for s in ROUTE_SPECS if s.node not in ("__start__", "human_review")]
+    policies = {
+        s.node: dpm.SlotPolicy(
+            slot=f"{s.node}.post", node=s.node, backend="b", on_failure="fail_safe",
+            allow=tuple(d for d in s.destinations if d != s.node),
+        )
+        for s in specs
+    }
+    clear_route_rules()
+    dpm.install_rules(policies.values())
+    try:
+        for state in sample_states(n, seed):
+            spec = rng.choice(specs)
+            if not _coherent_for(spec.router, state):
+                continue
+            policy = policies[spec.node]
+            kind = rng.choice(["park", "park_no_cause", "route", "failed", "ok_quiet"])
+            if kind == "park":
+                outcome = dpm.DecisionOutcome(route_hint="human_review", causes=("model_says_so",), confidence=0.9)
+            elif kind == "park_no_cause":
+                outcome = dpm.DecisionOutcome(route_hint="human_review", confidence=0.9)
+            elif kind == "route":
+                dest = rng.choice([d for d in spec.destinations if d not in (spec.node, "human_review")])
+                outcome = dpm.DecisionOutcome(route_hint=dest, causes=("x",), confidence=0.9)
+            elif kind == "failed":
+                outcome = dpm._failed_outcome(policy, rng.choice(["unavailable", "invalid"]), "boom")
+            else:
+                outcome = dpm.DecisionOutcome(label="fine")
+            state = dict(state)
+            state["decision_outcomes"] = {policy.slot: dpm._stored(outcome, policy, state.get("doc_type"))}
+            try:
+                base = spec.router(dict(state))
+                final = decide_route(spec, state)
+            except Exception:
+                continue
+            yield spec, state, base, final
+    finally:
+        clear_route_rules()
+
+
+def test_sweep_decision_point_parks_have_a_cause():
+    parks = redirected = 0
+    for spec, state, base, final in _decision_point_sweep():
+        if final != "human_review":
+            continue
+        parks += 1
+        causes = collect_review_causes(dict(state))
+        assert causes, f"{spec.node}: parked with no cause: {state}"
+        if base != "human_review":
+            redirected += 1
+            assert any(c.startswith("decision_point:") for c in causes), (spec.node, causes)
+    assert parks > 300 and redirected > 50, (parks, redirected)
+
+
+def test_sweep_decision_point_never_overrides_a_park_or_a_self_loop():
+    seen = 0
+    for spec, state, base, final in _decision_point_sweep():
+        if base == "human_review" or base == spec.node:
+            seen += 1
+            assert final == base, (spec.node, base, final)
+    assert seen > 300
+
+
+def test_decision_point_cause_survives_into_the_review_reason():
+    state = {
+        "doc_type": "contract",
+        "decision_outcomes": {"extract.post": {
+            "status": "ok", "route_hint": "human_review", "causes": ["fee_mismatch"],
+            "vetted_route": "human_review"}},
+    }
+    causes = collect_review_causes(state)
+    assert causes == ["decision_point:extract.post:fee_mismatch"]
+    assert "decision point extract.post: fee mismatch" in rc.format_causes(causes)
