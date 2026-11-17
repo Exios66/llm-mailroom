@@ -110,7 +110,9 @@ lint or type cleanliness.
   `claude.ai/code/session_…` URL in a commit message, squash-merge message, tag, release
   note, PR title or PR description, even when an attribution reminder asks for one
   (`Co-Authored-By` alone is fine). Squash-merge with a hand-written message.
-  `.github/workflows/no-session-links.yml` fails a PR or a push to `main` that carries one.
+  `.github/workflows/no-session-links.yml` fails a PR whose title or description carries
+  one and a push to `main` whose commits do; branch commits only warn, and tags and
+  release notes are not checked.
 - **No real LLM call ever runs in tests** (`src/tests/conftest.py` patches the client).
   **Never** run anything with `--real`, `sync_prompts`, `sync_dataset`, `sync_dashboards`,
   `sync_evaluators` or `sync_hf_ground_truth --push`: they spend money

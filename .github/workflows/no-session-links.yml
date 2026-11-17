@@ -1,7 +1,8 @@
 # Blocks private claude.ai session links from reaching the repository.
-# A session link (https://claude.ai/code/session_...) opens a private agent
-# session; it must never appear in a PR title, a PR description (which becomes
-# the squash-merge message) or a commit on main.
+# A session link opens a private agent session; it must never appear in a PR
+# title, a PR description (which becomes the squash-merge message) or a commit
+# on main. Commits on a PR branch only raise a warning: squash-merge with a
+# hand-written message so they never reach main.
 name: No session links
 
 on:
@@ -13,27 +14,44 @@ on:
 permissions:
   contents: read
 
+env:
+  PATTERN: 'claude\.(ai|com)/code/session|^[[:space:]]*Claude-Session:'
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: PR title and description
         if: github.event_name == 'pull_request'
         env:
           TITLE: ${{ github.event.pull_request.title }}
           BODY: ${{ github.event.pull_request.body }}
         run: |
-          if printf '%s\n%s\n' "$TITLE" "$BODY" | grep -Eiq 'claude\.ai/code/session'; then
+          if printf '%s\n%s\n' "$TITLE" "$BODY" | grep -Eiq "$PATTERN"; then
             echo "::error::Remove the claude.ai session link from the PR title or description."
             exit 1
           fi
           echo "No session links in the PR title or description."
+      - name: Commits on the PR branch (warning only)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if git log --format=%B "$BASE..$HEAD" | grep -Eiq "$PATTERN"; then
+            echo "::warning::Branch commits carry a claude.ai session link. Squash-merge with a hand-written message that leaves it out."
+          fi
       - name: Commits pushed to main
         if: github.event_name == 'push'
         env:
-          MESSAGES: ${{ toJSON(github.event.commits.*.message) }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
         run: |
-          if printf '%s\n' "$MESSAGES" | grep -Eiq 'claude\.ai/code/session'; then
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then range="$AFTER -1"; else range="$BEFORE..$AFTER"; fi
+          if git log --format=%B $range | grep -Eiq "$PATTERN"; then
             echo "::error::A commit pushed to main carries a claude.ai session link."
             exit 1
           fi
