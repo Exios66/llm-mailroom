@@ -57,7 +57,8 @@ it is safe under concurrency) and counts around unmodified pipeline functions.
   "client construction s" are **sums over all worker threads**, so they can exceed the wall time.
 - Latency is per document from claim to returned state; it excludes time queued behind the
   pool. "Doc overhead" is end-to-end latency minus the injected LLM sleep (it includes retry
-  sleeps when 429s are injected).
+  sleeps when 429s are injected). The per-node "overhead" is likewise wall time minus LLM time
+  only, so it **includes** the heartbeat time that is reported next to it.
 
 **Machine**: Linux 6.18 x86_64 cloud VM, 4 vCPU, 15.7 GB RAM, Python 3.13.18, SQLite via
 aiosqlite, load average 1.81 (1-minute) sampled **after** the main run finished (0.56 to 1.71, also
@@ -68,7 +69,8 @@ left as recorded and the label is wrong for these three files. The script now ca
 the first level and flags `provenance_changed` if HEAD or the tree moved during the run.
 
 **Commands** (from the repository root; each was run as shown, with `PYTHONPATH=src` and the
-repository's `.venv/bin/python`, which the JSON `command` field records as `python`; `.evidence/` is
+repository's `.venv/bin/python` (the JSON `command` field records it as such; the first revision of these files
+said `python`); `.evidence/` is
 git-ignored scratch space and its markdown tables are not committed):
 
 ```bash

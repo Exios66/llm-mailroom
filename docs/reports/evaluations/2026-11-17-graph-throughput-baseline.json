@@ -3,7 +3,7 @@
   "kind": "graph-throughput-benchmark",
   "mock_llm": true,
   "generated_at_utc": "2026-11-17T07:00:08Z",
-  "command": "PYTHONPATH=src python src/scripts/bench_throughput.py --json-out docs/reports/evaluations/2026-11-17-graph-throughput-baseline.json --md-out .evidence/baseline.md",
+  "command": "PYTHONPATH=src .venv/bin/python src/scripts/bench_throughput.py --json-out docs/reports/evaluations/2026-11-17-graph-throughput-baseline.json --md-out .evidence/baseline.md",
   "commit": "df127446e0449a134e1de8c5cd9fdce18504ad7e",
   "tree_clean": true,
   "machine": {
