@@ -210,6 +210,18 @@ async def _check_llm_provider() -> dict:
         # Gateway runs report the tier too (e.g. litellm:mailroom-fast[fast]).
         detail = f"{provider.name}:{model}" + (f"[{resolved.tier}]" if resolved.tier else "")
         try:
+            from llm.client import check_spend_guardrail
+
+            check_spend_guardrail("sorter", resolved)
+        except Exception as exc:
+            # Same check the upload provider gate runs: a model the free-only
+            # guardrail blocks resolves fine but cannot run. Type name only.
+            return {
+                "status": "degraded",
+                "detail": f"{provider.name}:{model} — blocked by spend guardrail: {type(exc).__name__}",
+                "provider": provider.name,
+            }
+        try:
             from openai import OpenAI
 
             kwargs = {

@@ -104,7 +104,7 @@ The uploaded file is written to the inbox and a small `<file>.meta` sidecar pers
 }
 ```
 
-`503` while ingestion is paused, or, with `MAILROOM_UPLOAD_REQUIRE_PROVIDER` on (the Compose producer's default), while no LLM provider resolves; see `GET /health` for which check is failing.
+`503` while ingestion is paused, or, with `MAILROOM_UPLOAD_REQUIRE_PROVIDER` on (the Compose producer's default), while no LLM provider resolves or the free-only spend guardrail blocks the sorter model; the `llm` check of `GET /health` names which one.
 
 `upload_id` is the tracking id for this upload — it appears in the `GET /queue` listing until the file is claimed. The pipeline's `doc_id` (for `GET /status/{doc_id}`) is minted when the watcher starts processing, so poll `GET /queue` or watch the watcher logs for it.
 

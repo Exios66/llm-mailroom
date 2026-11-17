@@ -95,3 +95,30 @@ def test_guard_on_refuses_a_model_the_free_only_guardrail_blocks(client, monkeyp
     monkeypatch.setattr("llm.client.check_spend_guardrail", blocked)
     r = _upload(client)
     assert r.status_code == 503 and "RuntimeError" in r.json()["detail"]
+
+
+async def test_health_names_a_guardrail_block_without_probing(monkeypatch, mocker):
+    """The 503 points operators at /health, so /health must show guardrail refusals too."""
+    from types import SimpleNamespace
+
+    from api.main import _check_llm_provider
+
+    resolved = SimpleNamespace(
+        provider=SimpleNamespace(name="openrouter", base_url="https://example.invalid", api_key_env=None),
+        model="vendor/paid-model",
+        tier=None,
+    )
+    monkeypatch.setattr("llm.client.resolve_agent_model", lambda agent_name: resolved)
+
+    def blocked(agent_name, resolved):
+        raise RuntimeError("paid model blocked: secret detail")
+
+    monkeypatch.setattr("llm.client.check_spend_guardrail", blocked)
+    sdk = mocker.patch("openai.OpenAI")
+    result = await _check_llm_provider()
+    assert result == {
+        "status": "degraded",
+        "detail": "openrouter:vendor/paid-model — blocked by spend guardrail: RuntimeError",
+        "provider": "openrouter",
+    }
+    sdk.assert_not_called()
