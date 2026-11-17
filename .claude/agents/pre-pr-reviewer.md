@@ -78,3 +78,4 @@ caught before. Check each one. The orchestrator adds a line when a new one gets 
 - A new environment variable read in `src/` but missing from `.env.example`.
 - A changed docstring or comment that no longer describes the code.
 - A diff that corrects a fact (a node count, an agent list) in one doc: grep the whole tree (README, `docs/`, `.cursor/skills/`, `AGENTS.md`, test docstrings, generated assets and their generators) for the old value and fix every page that repeats it, or the bot flags the contradiction.
+- A plug-in hook (route rule, decision point) that can override a router: check every hard gate the router enforces (lost windows, judge, arbiter, conflict ruling), not just parks and self-loops; and check that a YAML config section cannot silently drop a duplicated key.
