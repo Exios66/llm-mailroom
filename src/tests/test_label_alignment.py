@@ -145,3 +145,11 @@ def test_trace_metadata_records_the_alignment_arm(monkeypatch, tmp_path, temp_ba
     with contextlib.suppress(RuntimeError):
         bg.run_pipeline(doc, "M-1", run_id="r-align")
     assert captured["prompt_alignment"] == expected
+
+
+def test_unknown_env_value_warns(monkeypatch):
+    calls = []
+    monkeypatch.setattr(LA.logger, "warning", lambda event, **kw: calls.append((event, kw)))
+    monkeypatch.setenv(LA.ALIGNMENT_ENV, "rule")
+    assert LA.alignment_mode() == "off"
+    assert calls and calls[0][0] == "prompt_alignment_env_ignored"

@@ -9,20 +9,28 @@ against the interim and near_gold labels:
   from the gold-label guide, which the near_gold catalog follows:
   [LABELING_GUIDE.md](https://github.com/Exios66/local-mailroom-sandbox/blob/main/docs/gold-labels/LABELING_GUIDE.md).
 * ``rules_few_shot``: the rules plus short worked examples. The examples are
-  synthetic texts that reproduce cases settled by reviewed (near_gold) labels;
-  no corpus document is quoted, so no eval document leaks into the prompt.
+  synthetic texts (invented names, groups and dates) that illustrate the guide's
+  rules; none is a corpus document or a corpus label value, so no eval answer
+  leaks into the prompt. The rules' own examples are generic for the same reason.
 
 Resolution, first match wins: ``MAILROOM_PROMPT_ALIGNMENT`` (``off``, ``rules``
 or ``rules_few_shot``; an empty or unknown value is ignored), taxonomy
 ``prompt_alignment.mode``, ``off``. Off is the default, so production prompts are
-unchanged unless a run opts in. Each addendum is Langfuse-managed like any other
+unchanged unless a run opts in. The addenda apply to whatever base prompt the
+agent serves, including an eval pin such as ``contracts_specialist_v33``. Each addendum is Langfuse-managed like any other
 prompt (``mailroom-<template key>``, registered in ``prompt_templates()``) with
-this module's text as the local fallback.
+this module's text as the local fallback. The contract role list is read from
+the pinned Dojo when the fallback is built; a synced Langfuse copy keeps the
+list it was synced with, so re-sync it after a Dojo bump that changes the roles.
 """
 
 from __future__ import annotations
 
 import os
+
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 ALIGNMENT_ENV = "MAILROOM_PROMPT_ALIGNMENT"
 MODES: tuple[str, ...] = ("off", "rules", "rules_few_shot")
@@ -45,7 +53,7 @@ Which message the fields describe. The document's own header is often stripped, 
 - A calendar entry's sender is its chairperson or organiser; its "Date:" is the event date, not a send date.
 
 Field definitions:
-- recipient: the first To: entry as printed (a person, a distribution list or a group such as "All Enron Houston"), else a salutation that names a person or a defined group ("Dear GISB Members", "Houston Attendees:"). A generic salutation ("Dear Friends", "Gentlemen", "All", "To Our Readers") is not a named addressee: null. When several people are in To:, the first is recipient and the rest go in additional_recipients.
+- recipient: the first To: entry as printed (a person, a distribution list or a group such as "All Staff Chicago"), else a salutation that names a person or a defined group ("Dear Pricing Committee Members", "Denver Attendees:"). A generic salutation ("Dear Friends", "Gentlemen", "All", "To Our Readers") is not a named addressee: null. When several people are in To:, the first is recipient and the rest go in additional_recipients.
 - additional_recipients: further To: entries plus cc'd or copied parties, as written.
 - communication_date: YYYY-MM-DD. Never a deadline, meeting date or invoice date.
 - demand_amount: only money the sender demands that the RECIPIENT pay. An amount that is only reported (an invoice total in an internal follow-up, money owed by someone else, an amount the sender will sue a third party for) is null.
@@ -54,7 +62,7 @@ Field definitions:
 
 Promotional or bulk mail (newsletters, fare alerts, store offers, event ticket announcements): action_items is [] and urgency is routine. Offer deadlines, countdowns and a shouted "URGENT" in a mass mailing are sales pressure, not pressure on the reader."""
 
-CORRESPONDENCE_EXAMPLES = """Worked examples (synthetic texts; each reproduces a case settled by reviewed labels):
+CORRESPONDENCE_EXAMPLES = """Worked examples (synthetic texts with invented names; each illustrates one rule above):
 
 Example 1 — reply typed above quoted mail.
 Text:
@@ -82,8 +90,8 @@ Fields: action_items []; urgency "routine".
 
 Example 4 — defined-group salutation.
 Text:
-  Dear ICAP Working Group Members: The next session moves to Room 4B ...
-Fields: recipient "ICAP Working Group Members". (A generic "Dear Friends" would be null.)"""
+  Dear Rate Design Task Force Members: The next session moves to Room 4B ...
+Fields: recipient "Rate Design Task Force Members". (A generic "Dear Friends" would be null.)"""
 
 CORPORATE_RULES = """Label-aligned rules (these match how the ground-truth labels are written; where they are more specific than the rules above, follow these):
 - entity_name: the corporation or entity the record is about, full legal name as written.
@@ -129,6 +137,8 @@ def alignment_mode() -> str:
     raw = os.environ.get(ALIGNMENT_ENV, "").strip().lower()
     if raw in MODES:
         return raw
+    if raw:
+        logger.warning("prompt_alignment_env_ignored", value=raw, allowed=list(MODES))
     from pipeline.config import load_config
 
     block = load_config().get("prompt_alignment")
