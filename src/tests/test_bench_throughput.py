@@ -59,6 +59,11 @@ def test_node_report_splits_llm_heartbeat_and_overhead():
     assert rep["mean_llm_s"] == pytest.approx(0.20)
     assert rep["mean_heartbeat_s"] == pytest.approx(0.02)
     assert rep["mean_overhead_s"] == pytest.approx(0.20)  # (0.10 + 0.30) / 2
+    # Overhead is wall minus LLM time only: it still contains the heartbeat time that is also
+    # reported on its own, so a larger heartbeat alone never changes the overhead.
+    bigger_heartbeat = [{**x, "heartbeat_s": x["heartbeat_s"] * 5} for x in samples]
+    assert bench.node_report(bigger_heartbeat)["mean_overhead_s"] == pytest.approx(0.20)
+    assert rep["mean_overhead_s"] >= rep["mean_heartbeat_s"]
 
 
 # -- aggregation --------------------------------------------------------------
@@ -216,6 +221,75 @@ def test_provenance_changed_compares_commit_cleanliness_and_fingerprint():
 def test_provenance_changed_flags_a_dirty_tree_that_changes_but_stays_dirty():
     before = {"commit": "abc", "tree_clean": False, "tree_fingerprint": "f1"}
     assert bench.provenance_changed(before, {**before, "tree_fingerprint": "f2"}) is True
+
+
+def test_git_state_ignores_inherited_repo_location_variables(tmp_path, monkeypatch):
+    """GIT_DIR / GIT_WORK_TREE inherited from a hook or wrapper must not redirect git to another repo."""
+    clean_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    expected = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=str(bench.REPO_ROOT), env=clean_env,
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+    other = tmp_path / "other"
+    other.mkdir()
+    for args in (
+        ["init", "-q"],
+        ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false",
+         "commit", "-q", "--allow-empty", "-m", "other repo"],
+    ):
+        subprocess.run(["git", *args], cwd=str(other), env=clean_env, check=True, capture_output=True)
+    other_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=str(other), env=clean_env,
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert other_head != expected
+
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    monkeypatch.setenv("GIT_WORK_TREE", str(other))
+    assert bench.git_state()["commit"] == expected
+
+
+def _clean_git_env():
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
+def _run_git(cwd, *args):
+    return subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", *args],
+        cwd=str(cwd), env=_clean_git_env(), check=True, capture_output=True,
+    )
+
+
+def test_git_state_fingerprint_sees_binary_tracked_changes(tmp_path, monkeypatch):
+    """Two different same-size edits to a tracked binary file must not fingerprint alike."""
+    _run_git(tmp_path, "init", "-q")
+    blob = tmp_path / "data.bin"
+    blob.write_bytes(b"\x00\x01\x02\x03")
+    _run_git(tmp_path, "add", "data.bin")
+    _run_git(tmp_path, "commit", "-q", "-m", "binary")
+    monkeypatch.setattr(bench, "REPO_ROOT", tmp_path)
+    for var in list(os.environ):
+        if var.startswith("GIT_"):
+            monkeypatch.delenv(var)
+
+    blob.write_bytes(b"\x00\x01\x02\x04")
+    first = bench.git_state()
+    blob.write_bytes(b"\x00\x01\x02\x05")
+    second = bench.git_state()
+    assert first["tree_clean"] is False and second["tree_clean"] is False
+    assert first["tree_fingerprint"] != second["tree_fingerprint"]
+    assert bench.provenance_changed(first, second) is True
+
+
+def test_recorded_command_names_the_interpreter_that_ran(tmp_path, monkeypatch):
+    monkeypatch.setattr(bench, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / ".venv" / "bin" / "python"))
+    assert bench.recorded_command(["--docs", "4"]) == (
+        "PYTHONPATH=src .venv/bin/python src/scripts/bench_throughput.py --docs 4"
+    )
+    monkeypatch.setattr(sys, "executable", "/usr/bin/python3")  # outside the repo: no local path recorded
+    assert bench.recorded_command([]).startswith("PYTHONPATH=src python src/scripts/bench_throughput.py")
 
 
 def test_provenance_changed_treats_unverifiable_commit_as_changed():

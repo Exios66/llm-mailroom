@@ -18,7 +18,7 @@ Terms that appear across the constellation's code, docs and commit messages.
 
 **First pass (STP).** A document that archived in one hop with no retry, reviewer, arbiter, boss, human review or guardrail. Reported as the `success_rate` score. Straight-through processing.
 
-**Gmail triage lane.** An auxiliary flow outside the 14-node graph. Single-attachment emails go through a free OpenRouter model for classification and key-field extraction; multi-attachment or oversized documents go to the full pipeline.
+**Gmail triage lane.** An auxiliary flow outside the 14-node graph. Single-attachment emails go through a free OpenRouter model for classification and schema-driven key-entity extraction (clamped to the class's extraction schema); multi-attachment or oversized documents go to the full pipeline.
 
 **Guardrails.** Deterministic checks (`pipeline/guards.py`) after every LLM call. A violation lowers confidence below the routing threshold so bad output retries or goes to review.
 

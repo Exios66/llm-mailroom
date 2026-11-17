@@ -20,8 +20,8 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
 | `intake` | Reads the file, deterministic `normalize-intake`, gated LLM triage/clean/prepare, creates the manifest, moves file to `processing/` |
 | `classify` | Sorter LLM decides `doc_type` + confidence |
 | `retry_classify` | Re-classify with a "re-evaluate" prompt when confidence was low |
-| `review_classify` | Lane A: an independent reviewer agent classifies a medium-band document without seeing the sorter's answer; agreement or a high-confidence override can proceed, anything else keeps the sorter label for human review |
-| `classification_arbiter` | Arbitrates a parked or failed decision review before a person sees it: picks the sorter's class, the reviewer's class or human review, and continues only above the calibrated arbiter cutoff |
+| `review_classify` | Lane A: an independent reviewer agent classifies a medium-band document without seeing the sorter's answer; agreement or a high-confidence override can proceed; a decision-model result that is not `extract` (or a failed review) goes to `classification_arbiter`, and anything else keeps the sorter label for human review |
+| `classification_arbiter` | Arbitrates a parked or failed decision review before a person sees it: picks the sorter's class, the reviewer's class or human review, and continues only above the calibrated arbiter cutoff; a document with no readable text skips the arbiter and goes straight to `human_review` |
 | `extract` | Routes to the right specialist LLM, stores `extracted_data` |
 | `retry_extract` | Re-extract with the previous attempt included as context |
 | `judge_verify` | Lane B: gated completeness judge on the specialist's extraction (`complete` proceeds; `partial` / `incomplete` go to `arbiter`) |

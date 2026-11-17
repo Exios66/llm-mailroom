@@ -11,7 +11,7 @@
 
 ## What it does
 
-llm-mailroom runs one LangGraph state machine per document across 14 nodes: intake, classify, retry classify, review classify, classification arbiter, extract, retry extract, judge, arbiter, human review, boss escalation, compile report, write catalog, archive. On the happy path a document costs two LLM calls (classify and extract). Everything else is a safety net that only fires when confidence is low or results conflict.
+llm-mailroom runs one LangGraph state machine per document across 14 nodes: intake, classify, retry classify, review classify, classification arbiter, extract, retry extract, judge, arbiter, human review, boss escalation, compile report, write catalog, archive. On the happy path a document costs two LLM calls (classify and extract). Intake, report compilation, catalog write and archive always run; every other step is a safety net that only fires when confidence is low or results conflict.
 
 It exposes a FastAPI service (port 8000) that embeds the inbox watcher, accepts uploads, reports status and serves the audit trail. The same API is the "producer" The-Mailroom calls for its Inbox and REVIEW desk.
 

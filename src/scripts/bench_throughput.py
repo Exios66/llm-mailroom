@@ -21,8 +21,9 @@ What it makes visible (counted around unmodified pipeline code, nothing is chang
   boundary, ``asyncio_run_calls`` counts the event loops created, ``db_engines_created``
   the SQLAlchemy engines, ``db_connections_opened`` the raw SQLite connections
   (``NullPool`` opens one per statement batch).
-* per-node wall time (p50/p95), split into the injected LLM latency, the heartbeat and
-  the remaining overhead; end-to-end per-document latency (p50/p95); docs/min.
+* per-node wall time (p50/p95), the injected LLM latency, the heartbeat time and the
+  overhead (wall minus LLM time, so it still includes the heartbeat, which is also
+  reported on its own); end-to-end per-document latency (p50/p95); docs/min.
 * ``cpu``: process CPU seconds during the level and the average cores kept busy
   (``cores_busy`` near 1.0 with idle LLM waits means the process is CPU-bound).
 
@@ -163,7 +164,11 @@ class Recorder:
 
 
 def node_report(samples: list[dict]) -> dict:
-    """Per-node statistics (seconds) from invocation samples (see ``Recorder.node``)."""
+    """Per-node statistics (seconds) from invocation samples (see ``Recorder.node``).
+
+    ``mean_overhead_s`` is wall time minus injected LLM time only. It therefore includes
+    the heartbeat time, which ``mean_heartbeat_s`` reports separately as a part of it.
+    """
     wall = [s["wall_s"] for s in samples]
     n = len(samples)
     llm = [s["llm_s"] for s in samples]
@@ -286,7 +291,7 @@ def render_markdown(report: dict) -> str:
             lines.append(f"| {name} | " + " | ".join(cells) + " |")
         lines += [
             "",
-            "| node | " + " | ".join(f"c={lv['concurrency']} mean LLM / overhead / heartbeat ms" for lv in levels) + " |",
+            "| node | " + " | ".join(f"c={lv['concurrency']} mean LLM / overhead (incl. heartbeat) / heartbeat ms" for lv in levels) + " |",
             "|---|" + "---:|" * len(levels),
         ]
         for name in node_names:
@@ -610,11 +615,27 @@ def worker_main(cfg: dict, out: Path) -> int:
 # ---------------------------------------------------------------------------
 
 
+# Variables that tell git which repository to read; inherited from a hook or wrapper they
+# would make the provenance describe some other repo than ``REPO_ROOT``.
+_GIT_REPO_ENV = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_PREFIX",
+    "GIT_CEILING_DIRECTORIES",
+)
+
+
 def _git(*args: str) -> str | None:
     """Run git in the repo; ``None`` when the command fails (unverifiable, not empty)."""
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_REPO_ENV}
     try:
         out = subprocess.run(
-            ["git", *args], cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=30
+            ["git", *args], cwd=str(REPO_ROOT), env=env, capture_output=True, text=True, timeout=30
         )
     except Exception:  # noqa: BLE001
         return None
@@ -790,6 +811,19 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def recorded_command(argv: list[str]) -> str:
+    """The command line that reproduces this run, naming the interpreter that ran it.
+
+    An interpreter inside the repository (a ``.venv``) is recorded relative to the repo root;
+    any other interpreter is recorded as plain ``python`` so no local path leaks into reports.
+    """
+    try:
+        interpreter = Path(sys.executable).relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        interpreter = "python"
+    return f"PYTHONPATH=src {interpreter} src/scripts/bench_throughput.py " + " ".join(argv)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.worker:
@@ -825,7 +859,7 @@ def main(argv: list[str] | None = None) -> int:
         "kind": "graph-throughput-benchmark",
         "mock_llm": True,
         "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
-        "command": "PYTHONPATH=src python src/scripts/bench_throughput.py " + " ".join(argv if argv is not None else sys.argv[1:]),
+        "command": recorded_command(argv if argv is not None else sys.argv[1:]),
         **git_before,
         "provenance_changed": changed,
         **({"provenance_after": git_after} if changed else {}),
