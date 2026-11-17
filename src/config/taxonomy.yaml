@@ -741,6 +741,8 @@ agents:
 
   # KANBAN-063 (Lane B): judgment arbitration on failed judge verdicts.
   # Sees the specialist extraction + judge findings; bounded decisions only.
+  # max_input_chars is the window size: a longer document is read in overlapping windows
+  # (#277), human_review from any window wins, and the read stops at the first one.
   arbiter:
     provider: openrouter
     model: qwen/qwen3.7-flash
@@ -838,7 +840,9 @@ agents:
     max_input_chars: 20000
     reasoning_effort: none
 
-  # Offline LLM-as-a-judge used by scripts/run_quality_judges.py.
+  # LLM-as-a-judge: in-pipeline (judge_verify) and offline (scripts/run_quality_judges.py).
+  # max_input_chars is the window size: the judge reads a longer document in overlapping
+  # windows (overlap: chunking.overlap_chars), one call per window, never an excerpt (#277).
   judge:
     provider: openrouter
     model: qwen/qwen3.7-flash

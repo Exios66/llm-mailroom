@@ -132,6 +132,23 @@ def record_usage(
     )
 
 
+def usage_mark() -> int:
+    """Position in the current run's usage log; pair with :func:`usage_since`."""
+    return len(_run_usage.get())
+
+
+def usage_since(mark: int, agent: str | None = None) -> dict:
+    """Calls and tokens recorded since ``usage_mark`` (one agent's, or all when ``agent`` is None).
+
+    Lets a multi-call step (the judge's windows) report what it alone cost without
+    resetting the run-wide accumulator the token budget reads.
+    """
+    items = [i for i in _run_usage.get()[mark:] if agent is None or i.get("agent") == agent]
+    prompt = sum(i["prompt_tokens"] for i in items)
+    completion = sum(i["completion_tokens"] for i in items)
+    return {"calls": len(items), "prompt_tokens": prompt, "completion_tokens": completion}
+
+
 def usage_summary() -> dict:
     """Aggregate the current run's recorded usage.
 

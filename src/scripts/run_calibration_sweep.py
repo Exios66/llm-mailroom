@@ -114,7 +114,8 @@ KNOWN_GAPS = [
     "gate forced open; the live graph judges whichever attempt the router stopped on",
     "extraction handoff context carries the classification confidence of the candidate's source "
     "stage; candidates sharing a class are collapsed onto the first source",
-    "reviewer and judge truncate long inputs exactly as live (see diagnostics.downstream_truncation)",
+    "the reviewer truncates long inputs exactly as live and the judge reads every window of them "
+    "(see diagnostics.downstream_truncation)",
     "arbiter nodes (classification_arbiter, Lane B arbiter) are never run: routes that need an arbiter "
     "ruling stay unobserved even when full_information is true",
     "candidates that share a class are extracted once, on the first source; when their subclass differs "
@@ -718,11 +719,14 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
             diag["node_errors"].append(f"intake: {state['error_message']}")
 
         reviewer_cfg_chars = int(get_agent_config("sorter_reviewer").get("max_input_chars", 25000))
-        from agents.judge import JUDGE_SOURCE_CHARS
+        from agents.source_windows import windows_for_budget
 
+        judge_cfg_chars = int(get_agent_config("judge").get("max_input_chars", 25000))
         diag["downstream_truncation"] = {
             "reviewer": len(text) > reviewer_cfg_chars, "reviewer_max_input_chars": reviewer_cfg_chars,
-            "judge": len(text) > JUDGE_SOURCE_CHARS, "judge_source_chars": JUDGE_SOURCE_CHARS,
+            # The judge reads every window (#277), so it never truncates; this is how many it takes.
+            "judge": False, "judge_max_input_chars": judge_cfg_chars,
+            "judge_windows": len(windows_for_budget(text, judge_cfg_chars)),
         }
 
         if not bg._has_readable_text(state):

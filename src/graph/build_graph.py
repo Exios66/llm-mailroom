@@ -1516,6 +1516,9 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
         "classification_arbiter_decision": decision if accepted else "human_review",
         "classification_arbiter_confidence": confidence,
         "classification_arbiter_reasoning": reasoning,
+        "classification_arbiter_coverage": (
+            result.get("coverage") if isinstance(result.get("coverage"), dict) else None
+        ),
         "transient_error": False,
     }
     logger.info(
@@ -2252,6 +2255,32 @@ def _clean_fields_for_judge(extracted: dict | None) -> dict:
     }
 
 
+def _judge_failed_windows(verdict: Mapping[str, Any] | None) -> list[int]:
+    """1-based windows of one judge pass whose output did not parse (``[]`` when none or no pass)."""
+    coverage = (verdict or {}).get("coverage") or {}
+    return [int(i) for i in coverage.get("failed_windows") or []]
+
+
+def _judge_coverage(result: Mapping[str, Any], accuracy: Mapping[str, Any] | None) -> dict[str, Any]:
+    """What the judge read on this document: windows total and checked, calls and tokens.
+
+    ``windows_checked`` is the fewest windows any pass that ran checked, so a document counts
+    as covered only when every pass read every window. A judge that reports no coverage
+    (an older or substitute judge) is recorded as having checked nothing.
+    """
+    passes = [p.get("coverage") for p in (result, accuracy) if p is not None]
+    passes = [c for c in passes if isinstance(c, Mapping)]
+    if not passes or len(passes) < (2 if accuracy is not None else 1):
+        return {"windows_total": 0, "windows_checked": 0, "calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+    return {
+        "windows_total": max(int(c.get("windows_total") or 0) for c in passes),
+        "windows_checked": min(int(c.get("windows_checked") or 0) for c in passes),
+        "calls": sum(int(c.get("calls") or 0) for c in passes),
+        "prompt_tokens": sum(int(c.get("prompt_tokens") or 0) for c in passes),
+        "completion_tokens": sum(int(c.get("completion_tokens") or 0) for c in passes),
+    }
+
+
 def judge_verify_node(state: DocumentState) -> dict[str, Any]:
     """KANBAN-063 (Lane B): in-pipeline completeness judge.
 
@@ -2260,7 +2289,7 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
     `partial`/`incomplete` go to the arbiter, hard failure escalates
     fail-safe). Gated by `_judge_gate` — most documents never see this call.
     """
-    from agents.judge import JUDGE_SOURCE_CHARS, CompletenessJudge
+    from agents.judge import CompletenessJudge
     from llm.retry import is_transient_error
 
     if not judge_should_run(state):
@@ -2280,9 +2309,10 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
             doc_type=doc_type, extracted=extracted, doc_text=doc_text
         )
         # Completeness says nothing about accuracy: a complete verdict must also
-        # hold up against the source before it counts.
+        # hold up against the source before it counts. A window whose verdict did not
+        # parse is not a verdict (below), so it skips this pass too.
         accuracy = None
-        if result.get("completeness_label") == "complete":
+        if result.get("completeness_label") == "complete" and not _judge_failed_windows(result):
             accuracy = judge.judge_extraction_correctness(
                 doc_type=doc_type, extracted=extracted, doc_text=doc_text
             )
@@ -2310,6 +2340,26 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
             "transient_error": False,
         }
 
+    coverage = _judge_coverage(result, accuracy)
+    failed = _judge_failed_windows(result) + _judge_failed_windows(accuracy)
+    if failed:
+        # A window whose verdict did not parse was never judged. Its placeholder
+        # "incomplete" is not evidence about the extraction, and a retry would not
+        # change it, so the document is not archivable: fail closed to a person (#277).
+        logger.error(
+            "judge_window_unchecked",
+            doc_id=state.get("doc_id"),
+            failed_windows=failed,
+            windows_total=coverage["windows_total"],
+        )
+        return {
+            "judge_verdict": "judge_error",
+            "judge_coverage": coverage,
+            "escalation_reason": "judge could not check every part of the document "
+            f"(window {', '.join(str(i) for i in failed)} of {coverage['windows_total']} "
+            "returned no usable verdict) — routing to human review",
+            "transient_error": False,
+        }
     label = result.get("completeness_label", "incomplete")
     score = float(result.get("completeness", 0.0))
     findings = [str(result.get("reasoning", ""))] if result.get("reasoning") else []
@@ -2321,13 +2371,22 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
             findings.append(str(accuracy["reasoning"]))
         if accuracy_label != "accurate":
             label = "partial" if accuracy_label == "partial" else "incomplete"
-        # A judge that saw only part of the document cannot vouch for all of it.
-        source_verified = label == "complete" and len(doc_text) <= JUDGE_SOURCE_CHARS
+        # The judge vouches for the document only when every window of it was checked,
+        # in both passes, and came back clean. Coverage a judge did not report is none.
+        source_verified = (
+            label == "complete"
+            and coverage["windows_total"] > 0
+            and coverage["windows_checked"] == coverage["windows_total"]
+        )
     logger.info(
         "judge_verified",
         doc_id=state.get("doc_id"),
         label=label,
         score=score,
+        windows_checked=coverage["windows_checked"],
+        windows_total=coverage["windows_total"],
+        prompt_tokens=coverage["prompt_tokens"],
+        completion_tokens=coverage["completion_tokens"],
     )
     try:
         from observability.scores import emit_in_pipeline_judge_scores
@@ -2347,6 +2406,7 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         "judge_score": score,
         "judge_findings": findings,
         "judge_source_verified": source_verified,
+        "judge_coverage": coverage,
         "judge_pass_count": int(state.get("judge_pass_count") or 0) + 1,
         "transient_error": False,
     }
@@ -2412,6 +2472,7 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
         "arbiter_decision": decision,
         "arbiter_reasoning": reasoning,
         "arbiter_handoff": handoff_summary,
+        "arbiter_coverage": result.get("coverage") if isinstance(result.get("coverage"), dict) else None,
         "transient_error": False,
     }
     if decision == "retry_extraction":
@@ -3293,6 +3354,9 @@ def _lane_b_manifest_fields(state: Mapping[str, Any] | dict) -> dict[str, Any]:
         "judge_verdict": state.get("judge_verdict"),
         "judge_score": state.get("judge_score"),
         "judge_findings": list(findings) if findings else None,
+        "judge_coverage": state.get("judge_coverage") or None,
+        "arbiter_coverage": state.get("arbiter_coverage") or None,
+        "classification_arbiter_coverage": state.get("classification_arbiter_coverage") or None,
     }
 
 
