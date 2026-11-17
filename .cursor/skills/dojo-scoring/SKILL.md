@@ -42,8 +42,8 @@ v0.12.2 is additive on prior formulas. Serving comparison lives in
 `prompt_templates()` stay in this repo; `llm_dojo_scoring.prompts` is the
 scored snapshot (anti-priming).
 
-Bump the pin with `src/scripts/bump_dojo_scoring.py` (or wait for
-`.github/workflows/bump-dojo-scoring.yml` when dojo publishes). See
+Bump the pin with `src/scripts/bump_dojo_scoring.py` (there is no
+auto-bump workflow: CI is CircleCI only). See
 [docs/pipeline-reference-llm-mailroom/sister-repos.md](../../../docs/pipeline-reference-llm-mailroom/sister-repos.md).
 
 ## Related

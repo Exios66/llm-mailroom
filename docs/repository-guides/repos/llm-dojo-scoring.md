@@ -66,7 +66,7 @@ Command-line tool: `dojo-version` (release awareness). The workbook, report and 
 
 ## How it is consumed
 
-llm-mailroom pins it as a git dependency. When dojo publishes a release, a workflow in llm-mailroom (`bump-dojo-scoring.yml`) opens a pull request that bumps the pin. Inside the monorepo, every package resolves it to the workspace copy instead.
+llm-mailroom pins it as a git dependency. When dojo publishes a release, the pin is bumped by hand with `src/scripts/bump_dojo_scoring.py`. Inside the monorepo, every package resolves it to the workspace copy instead.
 
 ## Its documentation
 

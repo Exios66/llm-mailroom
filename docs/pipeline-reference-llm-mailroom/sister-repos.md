@@ -39,7 +39,7 @@ HF datasets:    Lucius-Morningstar/* (published eval/corpus surfaces)
 | Repository                                                                              | Role                                                                                                                                                                                                | Relationship to mailroom                                                                                                                                                                 |
 | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom) | **Integration monorepo / hub** — imports committed core source into one uv workspace; hub task board `governance/TASKS.md`; sync driver `scripts/sync_packages.py` | **Hub-owned wiring and governance** — this repo is imported into `packages/llm-mailroom` after its own `main` merge; sync via subtree `pull` |
-| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring)                         | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk, prompt catalog, `local_vs_api` serving comparison) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@025400f3d703531c5e1a76093e4b803ccc6fb576`); auto-bump via `.github/workflows/bump-dojo-scoring.yml`                                                       |
+| [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring)                         | Deterministic, field-type-aware scoring engine (metric registry, dedicated specialist suites, sorter subclass catalogs, computable intake clerk, prompt catalog, `local_vs_api` serving comparison) | **Upstream governed dependency**, pinned in `pyproject.toml` (`@025400f3d703531c5e1a76093e4b803ccc6fb576`); bumped by hand with `src/scripts/bump_dojo_scoring.py`                                                       |
 | [Enron-Evaluation-Environment](https://github.com/Exios66/Enron-Evaluation-Environment) | EDA + pipeline-ready correspondence dataset from the CMU Enron corpus | **External corpus feed in the DMR-093 target** for `correspondence`; publishes HF datasets consumed by eval loops; [preserved feature branch](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/tree/feature/enron-evaluation-environment/packages/Enron-Evaluation-Environment) |
 | [claims-data-eda](https://github.com/Exios66/claims-data-eda) | Insurance-claims candidate-corpus EDA (CMS DE-SynPUF direction) | **External corpus feed (candidate) in the DMR-093 target** for `insurance_claim`; its honest-gap benchmark source remains available; [preserved feature branch](https://github.com/LLM-Mailroom-Services/Digital-Mailroom/tree/feature/claims-data-eda/packages/claims-data-eda) |
 | [atticus-investigation](https://github.com/Exios66/atticus-investigation)               | LegalBench classification prompt-engineering pipeline                                                                                                                                               | **Eval sibling**: same prompt-version × model methodology, LegalBench focus                                                                                                              |
@@ -80,21 +80,7 @@ The scoring layer the pipeline and the other core packages consume:
 
 ### Auto-bump when dojo publishes
 
-Mailroom keeps the dojo pin current via `.github/workflows/bump-dojo-scoring.yml` and `src/scripts/bump_dojo_scoring.py`:
-
-1.  **Preferred:** from `llm-dojo-scoring`'s release workflow, fire a `repository_dispatch` at this repo:
-
-    ```yaml
-    - name: Notify llm-mailroom to bump pin
-      uses: peter-evans/repository-dispatch@v3
-      with:
-        token: ${{ secrets.MAILROOM_DISPATCH_TOKEN }}  # PAT with repo scope on llm-mailroom
-        repository: Exios66/llm-mailroom
-        event-type: dojo-scoring-released
-        client-payload: '{"tag": "v0.12.2"}'  # use github.event.release.tag_name
-    ```
-2. **Backstop:** the workflow also runs on a daily cron and via `workflow_dispatch` (optional tag / dry-run inputs), polling `Exios66/llm-dojo-scoring` releases/latest.
-3. When the pin is behind, the workflow opens (or updates) a PR on `cursor/bump-dojo-scoring-<tag>` that rewrites `pyproject.toml` plus the documented pin references. When the pin is already the release's commit but the release rows are stale (`--check` prints `release_metadata_stale=true`), the same PR only rewrites those docs and keeps the SHA pin. Merge after CI is green.
+Mailroom keeps the dojo pin current with `src/scripts/bump_dojo_scoring.py`, run by hand when dojo publishes a release (GitHub Actions is off; CI is CircleCI only). When the pin is behind, `--apply` rewrites `pyproject.toml` plus the documented pin references; when the pin is already the release's commit but the release rows are stale (`--check` prints `release_metadata_stale=true`), it only rewrites those docs and keeps the SHA pin. Open a PR with the result and merge after CI is green.
 
 > The hub reads only its root `.github/workflows/`; nested package workflows do not run there. Author a release-time dojo pin update in this standalone source using `src/scripts/bump_dojo_scoring.py --check/--apply`, test and merge it to this repo's `main`, then import the committed change with `sync_packages.py pull`.
 

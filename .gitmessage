@@ -1,0 +1,16 @@
+
+# <type>(<scope>): <imperative summary, at most 72 characters>
+#   type: feat | fix | docs | test | refactor | perf | build | ci | chore
+#
+# Why: the problem or motivation, in one or two sentences.
+#
+# What changed:
+# - the main changes, one per line
+#
+# Testing: the commands you ran and their result, or "not run: <reason>".
+#
+# Refs: #issue or PR numbers.
+#
+# Co-Authored-By trailers are fine. Never add a Claude-Session line, any
+# claude.ai link, or a "Generated with Claude Code" footer: CI rejects them.
+# Enable once per clone:  git config commit.template .gitmessage

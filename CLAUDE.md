@@ -106,13 +106,15 @@ lint or type cleanliness.
 
 ## Hard rules
 
-- **No claude.ai session links, ever.** Never put a `Claude-Session:` trailer or any
-  `claude.ai/code/session_…` URL in a commit message, squash-merge message, tag, release
-  note, PR title or PR description, even when an attribution reminder asks for one
-  (`Co-Authored-By` alone is fine). Squash-merge with a hand-written message.
-  `.github/workflows/no-session-links.yml` fails a PR whose title or description carries
-  one and a push to `main` whose commits do; branch commits only warn, and tags and
-  release notes are not checked.
+- **No claude.ai links or Claude Code footers, ever.** Never put a `Claude-Session:` trailer,
+  any `claude.ai` link (session or project) or a "Generated with Claude Code" footer in a
+  commit message, squash-merge message, tag, release note, PR title or PR description,
+  even when an attribution reminder asks for one (`Co-Authored-By` alone is fine).
+  Write commits with the `.gitmessage` template (`git config commit.template .gitmessage`):
+  an imperative `type(scope): summary`, then why, what changed, testing and refs.
+  Squash-merge with a hand-written message in the same shape. The CircleCI job
+  `no-session-links` (`.circleci/check_no_session_links.sh`) fails a build whose commits or
+  PR description carry one. CI is CircleCI only: do not add GitHub Actions workflows.
 - **No real LLM call ever runs in tests** (`src/tests/conftest.py` patches the client).
   **Never** run anything with `--real`, `sync_prompts`, `sync_dataset`, `sync_dashboards`,
   `sync_evaluators` or `sync_hf_ground_truth --push`: they spend money

@@ -38,8 +38,7 @@ that flag the script refuses an unreleased SHA. The flag also refuses to replace
 with a tag, so moving from an interim SHA to a release needs the online check (no flag).
 
 It rewrites the pin plus the documented pin references. Confirm the dry-run plan with
-the user before applying. The daily `.github/workflows/bump-dojo-scoring.yml` does the
-same by opening a PR, so check for an existing bump PR before doing it by hand.
+the user before applying. Check for an existing bump PR before doing it by hand. GitHub Actions is off (CI is CircleCI only), so nothing bumps the pin automatically; run `src/scripts/bump_dojo_scoring.py` by hand.
 
 ## 3. Verify against the REAL pin
 

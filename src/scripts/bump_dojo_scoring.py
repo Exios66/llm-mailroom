@@ -3,8 +3,7 @@
 
 Resolves the latest published GitHub Release on Exios66/llm-dojo-scoring
 (or an explicit ``--tag``) and rewrites the pin in ``pyproject.toml`` plus
-the documented pin references. Used by humans and by
-``.github/workflows/bump-dojo-scoring.yml``.
+the documented pin references. Run by hand (GitHub Actions is off; CI is CircleCI only).
 
 RELEASE-TIME ONLY: in the mailroom-hub monorepo, development resolves
 ``llm-dojo-scoring`` from the workspace (``[tool.uv.sources]`` redirect) —
