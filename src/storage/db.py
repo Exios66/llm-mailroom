@@ -102,7 +102,10 @@ def _get_engine_state():
 
                 event.listen(engine.sync_engine, "connect", _apply_sqlite_pragmas)
             factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+            previous = state
             state = (url, engine, factory)
+            if previous is not None and loop is not None:
+                _dispose_replaced_engine(loop, previous[1])
             if loop is None:
                 # Preserve synchronous engine inspection without sharing its
                 # engine with any later running event loop.
@@ -110,6 +113,35 @@ def _get_engine_state():
             else:
                 _loop_states[loop] = state
         return state
+
+
+_pending_disposals: set = set()
+
+
+def _dispose_replaced_engine(loop, engine) -> None:
+    """Dispose an engine this loop just replaced (the resolved URL changed).
+
+    Per-call loops die with their engine, but the shared storage loop
+    (``storage.loop_bridge``) lives for the whole process, so an engine it
+    abandons must be released explicitly or a pooled one would keep its
+    connections. With ``NullPool`` there is nothing pooled, so this is cheap
+    hygiene; it never raises and the task is awaited by the loop it belongs to.
+    """
+    try:
+        task = loop.create_task(engine.dispose())
+    except Exception:  # noqa: BLE001 - loop closing: nothing to release
+        return
+    _pending_disposals.add(task)
+    task.add_done_callback(_pending_disposals.discard)
+
+
+async def dispose_current_loop_engine() -> None:
+    """Dispose and forget the engine owned by the running loop (process exit)."""
+    loop = asyncio.get_running_loop()
+    with _engine_lock:
+        state = _loop_states.pop(loop, None)
+    if state is not None:
+        await state[1].dispose()
 
 
 def get_engine():
