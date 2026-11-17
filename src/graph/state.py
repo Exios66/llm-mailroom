@@ -154,6 +154,12 @@ class DocumentState(TypedDict, total=False):
     ground_truth: dict[str, Any]
     report_error: bool
     review_causes: list[str]
+    # Pluggable decision points (graph/decision_points.py): slot name -> the
+    # decision backend's outcome (status, route_hint, label, confidence, causes, ...)
+    # for that slot's node. Absent unless taxonomy ``decision_points:`` configures a
+    # slot; the node wrapper rewrites a slot's entry on every pass of its node and a
+    # resolved human review clears them all.
+    decision_outcomes: dict[str, dict[str, Any]]
     # Classified abort reason (llm_timeout / llm_auth / io_error / …).
     failure_class: str | None
     messages: Annotated[list, add_messages]

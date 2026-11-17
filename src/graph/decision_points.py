@@ -1,0 +1,827 @@
+"""Pluggable decision points: a decision model that refines a node's route.
+
+A *slot* (taxonomy ``decision_points:``) names a graph node and a backend. Right after
+the node returns, the slot's backend is consulted with the node's result and answers with
+a :class:`DecisionOutcome`: a label, a confidence, review causes and an optional
+``route_hint``. The outcome is written to ``state["decision_outcomes"][slot]``; a
+:class:`~graph.route_spec.RouteRule` named ``decision_point:<slot>`` then reads it when the
+node's route is decided and may redirect the document. The router still decides first.
+
+Default: ``decision_points: {}``. With no slot configured nothing here is installed: no
+node is wrapped, no rule is registered, ``decision_outcomes`` never appears in state.
+
+How the pieces fit (``build_graph()`` calls :func:`prepare_slots`, :func:`wrap_node`,
+:func:`wrap_human_review` and :func:`install_rules`):
+
+* **Backends** are plain callables ``fn(DecisionInput) -> DecisionOutcome | Mapping``,
+  registered process-wide by name (:func:`register_decision_point_backend`). The graph
+  never constructs one; the host (the sandbox, an eval, a test) registers it.
+* **Consultation** (:func:`consult`) runs the backend on a daemon thread bounded by the
+  slot's wall-clock timeout and the run deadline. It never raises into the graph: a
+  timeout, a transient provider error (``llm.retry.is_transient_error``), a missing
+  backend or a refused call (too many stalled calls) is ``unavailable``; any other
+  exception or a malformed answer is ``invalid``. ``on_failure`` decides what a failure
+  means: ``fail_open`` gives no hint, ``fail_safe`` hints ``human_review`` with the cause
+  ``decision_point_unavailable`` / ``decision_point_invalid``.
+* **Policy** (:func:`vet_outcome`) decides whether a hint may be followed: the outcome is
+  ``ok``, the hint is in the slot's ``allow`` (per class: ``by_class``), its confidence
+  meets ``min_confidence`` when set, and a hint to ``human_review`` carries causes. The
+  rule additionally never overrides the router's own ``human_review`` park or a
+  self-loop of the node: those carry the pipeline's safety budgets (see
+  ``route_spec``'s rule semantics).
+* **Staleness.** The wrapper rewrites the slot's entry on every pass of its node, and
+  drops it when the node asked for a transient retry (nothing is consulted: the node's
+  result is not usable and will be redone, and the router will retry or park it). A person
+  resolving a park clears every outcome (:func:`wrap_human_review`), so an answer about an
+  earlier attempt can never route a later one.
+* **Review causes.** An outcome whose vetted route is a park shows up in
+  ``pipeline.reconsideration.collect_review_causes`` as
+  ``decision_point:<slot>:<cause>``.
+
+The older one-slot registries (``agents.decision_backend`` for the classification
+reviewer, ``agents.extraction_gate`` for the extraction gate) are unchanged and do not use
+slots yet; they will be moved onto slots later.
+
+Never logged: document text, evidence, backend error messages. Spans and logs carry the
+slot, backend, node, status, route hint, label, confidence, cause tokens and the
+exception class name.
+"""
+from __future__ import annotations
+
+import contextvars
+import functools
+import json
+import math
+import re
+import threading
+import time
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Any, Callable, Iterable, Literal, Mapping, Sequence
+
+import structlog
+from langgraph.graph import START
+
+from graph.route_spec import (
+    ROUTE_SPECS,
+    RouteRule,
+    RouteSpec,
+    add_route_rule,
+    remove_route_rule,
+    route_rules,
+)
+from observability.tracing import observation
+from pipeline.config import (
+    DecisionPointConfigError,
+    get_decision_points_config,
+)
+
+logger = structlog.get_logger(__name__)
+
+__all__ = [
+    "DecisionBackendTimeout",
+    "DecisionInput",
+    "DecisionOutcome",
+    "DecisionPointConfigError",
+    "RULE_PREFIX",
+    "SlotPolicy",
+    "build_handoff",
+    "clear_decision_point_backends",
+    "clear_rules",
+    "consult",
+    "get_decision_point_backend",
+    "install_rules",
+    "load_slot_policies",
+    "normalize_outcome",
+    "prepare_slots",
+    "register_decision_point_backend",
+    "rule_for",
+    "run_bounded",
+    "unregister_decision_point_backend",
+    "validate_slot_policies",
+    "vet_outcome",
+    "wrap_human_review",
+    "wrap_node",
+]
+
+PARK = "human_review"
+RULE_PREFIX = "decision_point:"
+OUTCOMES_KEY = "decision_outcomes"
+
+Status = Literal["ok", "unavailable", "invalid"]
+_STATUSES = ("ok", "unavailable", "invalid")
+
+
+# ---------------------------------------------------------------------------
+# Bounded calls (shared with graph.build_graph._run_bounded)
+# ---------------------------------------------------------------------------
+
+
+class DecisionBackendTimeout(Exception):
+    """A decision backend did not answer within the call/run deadline."""
+
+
+def run_bounded(
+    call: Callable[[], Any],
+    *,
+    name: str,
+    abandoned: list[threading.Thread],
+    max_abandoned: int,
+    lock: threading.Lock,
+    timeout: "float | None" = None,
+) -> Any:
+    """Run ``call()`` with a wall-clock bound and return its value.
+
+    The timeout is ``timeout`` (default ``llm_call_timeout_seconds``), shortened to the
+    time left on the run deadline. The call runs on a daemon thread so a stalled backend
+    can neither block the worker nor keep the process alive; on expiry
+    :class:`DecisionBackendTimeout` is raised and the stray thread is tracked in
+    ``abandoned``. At ``max_abandoned`` live abandoned threads, new calls are refused with
+    :class:`DecisionBackendTimeout` instead of starting another. Exceptions raised by
+    ``call`` propagate unchanged. The caller's contextvars (run deadline, token
+    accounting, tracing) are visible to ``call``.
+    """
+    from pipeline import limits
+
+    if timeout is None:
+        timeout = float(limits.get_call_timeout_seconds())
+    deadline = limits.get_run_deadline()
+    if deadline is not None:
+        timeout = min(timeout, deadline - time.time())
+    if timeout <= 0:
+        raise DecisionBackendTimeout("no time left on the run deadline")
+    with lock:
+        abandoned[:] = [t for t in abandoned if t.is_alive()]
+        if len(abandoned) >= max_abandoned:
+            raise DecisionBackendTimeout(f"{len(abandoned)} stalled {name} calls still running")
+
+    box: dict[str, Any] = {}
+    ctx = contextvars.copy_context()
+
+    def _target() -> None:
+        """Run the call on this thread and hand its result or error back."""
+        try:
+            box["value"] = ctx.run(call)
+        except BaseException as exc:  # re-raised on the caller's thread
+            box["error"] = exc
+
+    thread = threading.Thread(target=_target, name=name, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        with lock:
+            abandoned.append(thread)
+        raise DecisionBackendTimeout(f"{name} exceeded {timeout:.0f}s")
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
+# Timed-out decision-point calls leave a daemon thread behind. Past this many live
+# abandoned threads, new calls are refused (the slot's on_failure applies). Own list and
+# cap: stalled slots can never make the classification reviewer or the extraction gate
+# refuse calls, and the reverse.
+_MAX_ABANDONED_DECISION_POINT_THREADS = 4
+_abandoned_threads: list[threading.Thread] = []
+_abandoned_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# Contract: input and outcome
+# ---------------------------------------------------------------------------
+
+_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+_MAX_CAUSES = 8
+_MAX_TEXT = 200
+_MAX_EVIDENCE_BYTES = 8192
+
+
+def _unit_float(value: Any) -> bool:
+    """Finite number in [0, 1], booleans excluded. Never raises."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return 0.0 <= value <= 1.0 and math.isfinite(value)  # bounds first: isfinite raises on huge ints
+
+
+@dataclass(frozen=True)
+class DecisionInput:
+    """What a backend sees for one consultation (read-only).
+
+    ``doc_text`` is the document's full text, never truncated: a backend that has a
+    context limit windows it itself. ``handoff`` is a small dict of the node's key
+    outputs; ``state`` is a read-only view of the state after the node ran (top-level
+    keys cannot be changed; treat nested values as read-only too). ``repr`` shows no
+    document content.
+    """
+
+    slot: str
+    node: str
+    doc_id: "str | None"
+    doc_type: "str | None"
+    doc_subclass: "str | None"
+    doc_text: str = field(repr=False)
+    handoff: Mapping[str, Any] = field(repr=False, default_factory=dict)
+    state: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "handoff", MappingProxyType(dict(self.handoff)))
+        object.__setattr__(self, "state", MappingProxyType(dict(self.state)))
+
+
+@dataclass(frozen=True)
+class DecisionOutcome:
+    """A decision backend's answer, validated at construction.
+
+    ``route_hint`` is a destination the backend would like the document to take (the
+    slot's policy decides whether it may); ``label`` a short verdict; ``confidence``
+    finite in [0, 1] or ``None``; ``causes`` machine tokens (``[A-Za-z0-9_.:-]``, at most
+    64 characters, at most 8) that become review causes when the hint parks the
+    document; ``model`` the pinned model version; ``evidence`` JSON-serialisable detail
+    (at most 8 KB serialised), kept on state and never logged. ``status`` is ``ok`` for
+    an answer; ``unavailable`` and ``invalid`` are what :func:`consult` records when
+    there is none. Violations raise ``ValueError`` here; :func:`normalize_outcome`
+    turns them into an ``invalid`` outcome instead.
+    """
+
+    route_hint: "str | None" = None
+    label: "str | None" = None
+    confidence: "float | None" = None
+    causes: tuple[str, ...] = ()
+    model: str = ""
+    evidence: Mapping[str, Any] = field(default_factory=dict)
+    status: Status = "ok"
+
+    def __post_init__(self) -> None:
+        hint = self.route_hint
+        if hint is not None and (not isinstance(hint, str) or not hint or len(hint) > 64):
+            raise ValueError("route_hint must be a destination name or None")
+        label = self.label
+        if label is not None and (not isinstance(label, str) or len(label) > _MAX_TEXT):
+            raise ValueError("label must be a string of at most 200 characters or None")
+        conf = self.confidence
+        if conf is not None:
+            if not _unit_float(conf):
+                raise ValueError("confidence must be a finite number from 0 to 1 or None")
+            object.__setattr__(self, "confidence", float(conf))
+        causes = self.causes
+        if isinstance(causes, (str, bytes)) or not isinstance(causes, Iterable):
+            raise ValueError("causes must be a sequence of tokens")
+        tokens = tuple(dict.fromkeys(causes))
+        if len(tokens) > _MAX_CAUSES or not all(isinstance(t, str) and _TOKEN.match(t) for t in tokens):
+            raise ValueError("causes must be at most 8 tokens of [A-Za-z0-9_.:-], 1 to 64 characters")
+        object.__setattr__(self, "causes", tokens)
+        if not isinstance(self.model, str) or len(self.model) > _MAX_TEXT:
+            raise ValueError("model must be a string of at most 200 characters")
+        if not isinstance(self.evidence, Mapping) or not all(isinstance(k, str) for k in self.evidence):
+            raise ValueError("evidence must be a mapping with string keys")
+        try:
+            encoded = json.dumps(dict(self.evidence), allow_nan=False)
+        except (TypeError, ValueError, OverflowError, RecursionError):
+            raise ValueError("evidence must be JSON-serialisable") from None
+        if len(encoded) > _MAX_EVIDENCE_BYTES:
+            raise ValueError("evidence is larger than 8 KB")
+        object.__setattr__(self, "evidence", json.loads(encoded))
+        if self.status not in _STATUSES:
+            raise ValueError("status must be ok, unavailable or invalid")
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-serialisable form (what lands in ``decision_outcomes``)."""
+        return {
+            "route_hint": self.route_hint,
+            "label": self.label,
+            "confidence": self.confidence,
+            "causes": list(self.causes),
+            "model": self.model,
+            "evidence": json.loads(json.dumps(dict(self.evidence))),
+            "status": self.status,
+        }
+
+
+_OUTCOME_KEYS = ("route_hint", "label", "confidence", "causes", "model", "evidence", "status")
+
+
+def _failure(status: Status, reason: str, **extra: Any) -> DecisionOutcome:
+    return DecisionOutcome(status=status, evidence={"reason": reason, **extra})
+
+
+def normalize_outcome(raw: Any) -> DecisionOutcome:
+    """A backend's return value as a :class:`DecisionOutcome`; anything malformed is ``invalid``.
+
+    Accepts an outcome or a mapping with any of the outcome's keys (unknown keys are
+    dropped). Never raises.
+    """
+    if isinstance(raw, DecisionOutcome):
+        return raw
+    if not isinstance(raw, Mapping):
+        return _failure("invalid", "malformed_answer", answer_type=type(raw).__name__)
+    try:
+        return DecisionOutcome(**{k: raw[k] for k in _OUTCOME_KEYS if k in raw})
+    except Exception as exc:  # ValueError from validation; TypeError from a hostile mapping
+        return _failure("invalid", "malformed_answer", detail=_safe_detail(exc))
+
+
+def _safe_detail(exc: BaseException) -> str:
+    """Our own validation message, or the exception class: never a backend-supplied value."""
+    return str(exc)[:120] if isinstance(exc, ValueError) else type(exc).__name__
+
+
+# ---------------------------------------------------------------------------
+# Registry of backends (process-wide, copy-on-write: reads take no lock)
+# ---------------------------------------------------------------------------
+
+DecisionPointBackend = Callable[[DecisionInput], "DecisionOutcome | Mapping[str, Any]"]
+
+_BACKEND_LOCK = threading.Lock()
+_BACKENDS: Mapping[str, DecisionPointBackend] = MappingProxyType({})
+
+
+def register_decision_point_backend(name: str, backend: DecisionPointBackend) -> None:
+    """Install ``backend`` under ``name`` process-wide; a second registration replaces it."""
+    global _BACKENDS
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("a decision point backend needs a non-empty name")
+    if not callable(backend):
+        raise TypeError(f"decision point backend {name!r} must be callable")
+    with _BACKEND_LOCK:
+        _BACKENDS = MappingProxyType({**_BACKENDS, name: backend})
+
+
+def get_decision_point_backend(name: str) -> "DecisionPointBackend | None":
+    """The backend registered as ``name``, or ``None``."""
+    return _BACKENDS.get(name)
+
+
+def unregister_decision_point_backend(name: str) -> bool:
+    """Remove ``name``. Returns whether one was removed."""
+    global _BACKENDS
+    with _BACKEND_LOCK:
+        if name not in _BACKENDS:
+            return False
+        _BACKENDS = MappingProxyType({k: v for k, v in _BACKENDS.items() if k != name})
+        return True
+
+
+def clear_decision_point_backends() -> None:
+    """Remove every backend (tests)."""
+    global _BACKENDS
+    with _BACKEND_LOCK:
+        _BACKENDS = MappingProxyType({})
+
+
+# ---------------------------------------------------------------------------
+# Slot policy (config -> frozen objects)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _ClassOverride:
+    enabled: "bool | None" = None
+    allow: "tuple[str, ...] | None" = None
+    min_confidence: "float | None" = None
+
+
+@dataclass(frozen=True)
+class _Effective:
+    enabled: bool
+    allow: frozenset
+    min_confidence: "float | None"
+
+
+@dataclass(frozen=True)
+class SlotPolicy:
+    """One configured slot (see ``taxonomy.yaml`` ``decision_points:``)."""
+
+    slot: str
+    node: str
+    backend: str
+    enabled: bool = True
+    timeout_seconds: "float | None" = None
+    on_failure: Literal["fail_open", "fail_safe"] = "fail_open"
+    allow: tuple[str, ...] = ()
+    min_confidence: "float | None" = None
+    by_class: Mapping[str, _ClassOverride] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "by_class", MappingProxyType(dict(self.by_class)))
+
+    def resolve(self, doc_type: Any) -> _Effective:
+        """enabled / allow / min_confidence for a document class (``by_class`` wins)."""
+        override = self.by_class.get(doc_type) if isinstance(doc_type, str) else None
+        if override is None:
+            return _Effective(self.enabled, frozenset(self.allow), self.min_confidence)
+        return _Effective(
+            self.enabled if override.enabled is None else override.enabled,
+            frozenset(self.allow if override.allow is None else override.allow),
+            self.min_confidence if override.min_confidence is None else override.min_confidence,
+        )
+
+    @property
+    def active(self) -> bool:
+        """On for some class: the slot itself, or a ``by_class`` entry that enables it."""
+        return self.enabled or any(o.enabled for o in self.by_class.values())
+
+
+def load_slot_policies(config: "Mapping[str, Mapping[str, Any]] | None" = None) -> tuple[SlotPolicy, ...]:
+    """The configured slots, in file order. ``config`` is a normalised
+    :func:`pipeline.config.get_decision_points_config` result (default: the taxonomy)."""
+    cfg = get_decision_points_config() if config is None else config
+    policies = []
+    for slot, entry in cfg.items():
+        policies.append(
+            SlotPolicy(
+                slot=slot,
+                node=entry["node"],
+                backend=entry["backend"],
+                enabled=entry["enabled"],
+                timeout_seconds=entry["timeout_seconds"],
+                on_failure=entry["on_failure"],
+                allow=tuple(entry["allow"]),
+                min_confidence=entry["min_confidence"],
+                by_class={
+                    cls: _ClassOverride(
+                        enabled=o.get("enabled"),
+                        allow=tuple(o["allow"]) if "allow" in o else None,
+                        min_confidence=o.get("min_confidence"),
+                    )
+                    for cls, o in entry["by_class"].items()
+                },
+            )
+        )
+    return tuple(policies)
+
+
+def validate_slot_policies(
+    policies: Iterable[SlotPolicy], specs: Iterable[RouteSpec] = ROUTE_SPECS
+) -> None:
+    """Raise :class:`DecisionPointConfigError` listing every way a slot disagrees with the graph.
+
+    A slot's node must have a conditional route (``intake``, ``catalog_write`` and
+    ``archive`` have none) and must not be ``human_review`` (a person's decision is not
+    refined by a model) or ``START``. Every ``allow`` entry (slot and per class) must be
+    a destination of that node's route, and never the node itself (a self-loop is the
+    transient-retry budget). ``fail_safe`` needs ``human_review`` among the destinations.
+    """
+    by_node = {spec.node: spec for spec in specs}
+    eligible = sorted(n for n in by_node if n not in (START, PARK))
+    problems: list[str] = []
+    for policy in policies:
+        where = f"decision_points.{policy.slot}"
+        spec = by_node.get(policy.node)
+        if policy.node in (START, PARK):
+            why = "a person's decision is final" if policy.node == PARK else "it is not a node"
+            problems.append(f"{where}: node {policy.node!r} cannot carry a decision point ({why})")
+            continue
+        if spec is None:
+            problems.append(
+                f"{where}: node {policy.node!r} has no conditional route to refine; choose one of {eligible}"
+            )
+            continue
+        allowed = sorted(spec.destinations)
+        lists = [("allow", policy.allow)] + [
+            (f"by_class.{cls}.allow", o.allow) for cls, o in policy.by_class.items() if o.allow is not None
+        ]
+        for label, dests in lists:
+            for dest in dests:
+                if dest == policy.node:
+                    problems.append(
+                        f"{where}: {label} lists {dest!r}, the node itself; a self-loop is the "
+                        f"transient-retry budget and a hint may not choose it"
+                    )
+                elif dest not in spec.destinations:
+                    problems.append(
+                        f"{where}: {label} lists {dest!r}, which is not a destination of {policy.node!r}; "
+                        f"choose from {allowed}"
+                    )
+        if policy.on_failure == "fail_safe" and PARK not in spec.destinations:
+            problems.append(f"{where}: on_failure fail_safe needs {PARK!r} among {policy.node!r}'s destinations")
+    if problems:
+        raise DecisionPointConfigError("invalid decision_points config:\n  - " + "\n  - ".join(problems))
+
+
+def prepare_slots(specs: Iterable[RouteSpec] = ROUTE_SPECS) -> tuple[SlotPolicy, ...]:
+    """Load, validate and return the slots that are on for some class (``()`` by default).
+
+    Raises :class:`DecisionPointConfigError`; ``build_graph()`` calls this first so a bad
+    section stops the process at startup, not on the first document.
+    """
+    policies = load_slot_policies()
+    validate_slot_policies(policies, specs)
+    return tuple(p for p in policies if p.active)
+
+
+# ---------------------------------------------------------------------------
+# Policy: may this outcome's hint be followed?
+# ---------------------------------------------------------------------------
+
+_FAILURE_CAUSE = {"unavailable": "decision_point_unavailable", "invalid": "decision_point_invalid"}
+
+
+def vet_outcome(policy: SlotPolicy, record: Mapping[str, Any], doc_type: Any = None) -> "str | None":
+    """The route ``record`` (a stored outcome dict) may request under ``policy``, else ``None``.
+
+    ``ok``: the hint must be in ``allow`` (for ``doc_type``), meet ``min_confidence`` when
+    set (a missing confidence fails it), and, for ``human_review``, carry causes. A failed
+    consultation (``unavailable`` / ``invalid``) requests ``human_review`` only under
+    ``on_failure: fail_safe``, with the causes :func:`consult` recorded; ``allow`` does not
+    gate that. Pure; tolerates a malformed record (returns ``None``).
+    """
+    try:
+        effective = policy.resolve(doc_type)
+        if not effective.enabled:
+            return None
+        hint = record.get("route_hint")
+        status = record.get("status")
+        causes = record.get("causes")
+        has_causes = isinstance(causes, (list, tuple)) and any(isinstance(c, str) and c for c in causes)
+        if not isinstance(hint, str):
+            return None
+        if status == "ok":
+            if hint not in effective.allow:
+                return None
+            if effective.min_confidence is not None:
+                confidence = record.get("confidence")
+                if not _unit_float(confidence) or confidence < effective.min_confidence:
+                    return None
+            if hint == PARK and not has_causes:
+                return None
+            return hint
+        if status in _FAILURE_CAUSE and policy.on_failure == "fail_safe":
+            return PARK if hint == PARK and has_causes else None
+        return None
+    except Exception:  # a hostile record must never break routing
+        return None
+
+
+def rule_for(policy: SlotPolicy) -> RouteRule:
+    """The :class:`RouteRule` that applies ``policy``'s stored outcome to its node's route.
+
+    Pure and synchronous: it reads ``state["decision_outcomes"][slot]`` (written by the
+    node wrapper) and the policy, nothing else. It keeps the router's proposal when that
+    is a park (``human_review``) or a self-loop of the node.
+    """
+
+    def decide(state: Mapping[str, Any], proposed: str) -> "str | None":
+        if proposed == PARK or proposed == policy.node:
+            return None  # parks and the transient-retry loop keep their safety budgets
+        outcomes = state.get(OUTCOMES_KEY)
+        record = outcomes.get(policy.slot) if isinstance(outcomes, Mapping) else None
+        if not isinstance(record, Mapping):
+            return None
+        hint = vet_outcome(policy, record, state.get("doc_type"))
+        return None if hint is None or hint == proposed else hint
+
+    return RouteRule(name=f"{RULE_PREFIX}{policy.slot}", decide=decide)
+
+
+def clear_rules() -> None:
+    """Remove every ``decision_point:*`` rule from every node (idempotent)."""
+    for spec in ROUTE_SPECS:
+        for rule in route_rules(spec.node):
+            if rule.name.startswith(RULE_PREFIX):
+                remove_route_rule(spec.node, rule.name)
+
+
+def install_rules(policies: Iterable[SlotPolicy]) -> None:
+    """Make the registered ``decision_point:*`` rules exactly those of ``policies``.
+
+    Idempotent: stale rules (an earlier build, another config) are removed first. Rules
+    are process-wide, like every route rule, so the latest ``build_graph()`` wins; one
+    process runs one configuration.
+    """
+    clear_rules()
+    for policy in policies:
+        add_route_rule(policy.node, rule_for(policy))
+
+
+# ---------------------------------------------------------------------------
+# Consultation
+# ---------------------------------------------------------------------------
+
+_HANDOFF_SCALARS = (
+    "classification_confidence", "classification_attempts", "extraction_confidence",
+    "extraction_attempts", "review_verdict", "review_route", "reviewer_doc_type",
+    "reviewer_confidence", "classification_arbiter_decision", "judge_verdict", "judge_score",
+    "arbiter_decision", "conflict_detected",
+)
+
+
+def build_handoff(state: Mapping[str, Any]) -> dict[str, Any]:
+    """The small dict of a node's key outputs a backend gets (no document text).
+
+    Scalars the nodes already write (confidences, attempts, verdicts), the guardrail
+    flags, and, when there is an extraction, the extraction-gate handoff (class, sorter
+    subclass, deep-copied public fields).
+    """
+    out: dict[str, Any] = {
+        k: state[k] for k in _HANDOFF_SCALARS
+        if isinstance(state.get(k), (str, int, float, bool))
+    }
+    guardrails = state.get("extraction_guardrail")
+    if isinstance(guardrails, (list, tuple)) and guardrails:
+        out["extraction_guardrail"] = [str(g) for g in guardrails]
+    extracted = state.get("extracted_data")
+    doc_type = state.get("doc_type")
+    if isinstance(extracted, Mapping) and extracted and isinstance(doc_type, str):
+        from agents.extraction_gate import extraction_gate_handoff
+
+        out["extraction"] = extraction_gate_handoff(doc_type, extracted, _subclass(state))
+    return out
+
+
+def _subclass(state: Mapping[str, Any]) -> "str | None":
+    return next(
+        (v.strip() for v in (state.get("doc_subclass"), state.get("contract_subtype"))
+         if isinstance(v, str) and v.strip()),
+        None,
+    )
+
+
+def _build_input(policy: SlotPolicy, state: Mapping[str, Any]) -> DecisionInput:
+    text = state.get("doc_text")
+    doc_id = state.get("doc_id")
+    doc_type = state.get("doc_type")
+    return DecisionInput(
+        slot=policy.slot,
+        node=policy.node,
+        doc_id=doc_id if isinstance(doc_id, str) else None,
+        doc_type=doc_type if isinstance(doc_type, str) else None,
+        doc_subclass=_subclass(state),
+        doc_text=text if isinstance(text, str) else "",
+        handoff=build_handoff(state),
+        state=state,
+    )
+
+
+def _failed_outcome(policy: SlotPolicy, status: Status, reason: str, **extra: Any) -> DecisionOutcome:
+    """The outcome of a consultation that gave no usable answer.
+
+    ``fail_safe`` turns it into a park hint with a cause; ``fail_open`` leaves no hint.
+    """
+    evidence = {"reason": reason, **extra}
+    if policy.on_failure == "fail_safe":
+        return DecisionOutcome(
+            route_hint=PARK, causes=(_FAILURE_CAUSE[status],), evidence=evidence, status=status
+        )
+    return DecisionOutcome(evidence=evidence, status=status)
+
+
+def consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
+    """Ask ``policy``'s backend about ``inp``. Never raises (BaseExceptions aside).
+
+    See the module docstring for the status of each failure. A usable answer is returned
+    as the backend gave it (normalised), with any hint it carried; whether the hint may
+    be followed is :func:`vet_outcome`'s call. Each consultation is its own
+    ``consult-decision-point`` observation under the node's span, with slot, backend,
+    node and status in its metadata (Langfuse tags are trace-level and immutable, so
+    per-observation facts go in metadata) and no document text.
+    """
+    started = time.monotonic()
+    with observation(
+        "consult-decision-point",
+        as_type="span",
+        input={"slot": policy.slot, "node": policy.node, "doc_id": inp.doc_id, "doc_type": inp.doc_type},
+        metadata={"slot": policy.slot, "backend": policy.backend, "node": policy.node,
+                  "on_failure": policy.on_failure},
+    ) as span:
+        outcome = _consult(policy, inp)
+        latency_ms = round((time.monotonic() - started) * 1000.0, 2)
+        log = logger.info if outcome.status == "ok" else logger.warning
+        log(
+            "decision_point_consulted",
+            slot=policy.slot, node=policy.node, backend=policy.backend, doc_id=inp.doc_id,
+            status=outcome.status, route_hint=outcome.route_hint, label=outcome.label,
+            confidence=outcome.confidence, causes=list(outcome.causes), latency_ms=latency_ms,
+            reason=outcome.evidence.get("reason") if outcome.status != "ok" else None,
+        )
+        if span is not None:
+            try:
+                span.update(
+                    output={
+                        "status": outcome.status, "route_hint": outcome.route_hint,
+                        "label": outcome.label, "confidence": outcome.confidence,
+                        "causes": list(outcome.causes), "model": outcome.model,
+                        "latency_ms": latency_ms,
+                    },
+                    metadata={"slot": policy.slot, "backend": policy.backend,
+                              "node": policy.node, "status": outcome.status},
+                )
+            except Exception:  # tracing never fails a consultation
+                logger.debug("decision_point_span_update_failed", slot=policy.slot)
+        return outcome
+
+
+def _consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
+    from llm.retry import is_transient_error
+    from pipeline.limits import RunBudgetExceeded, RunDeadlineExceeded
+
+    backend = get_decision_point_backend(policy.backend)
+    if backend is None:
+        logger.warning("decision_point_backend_missing", slot=policy.slot, backend=policy.backend)
+        return _failed_outcome(policy, "unavailable", "backend_not_registered")
+    try:
+        raw = run_bounded(
+            lambda: backend(inp),
+            name=f"decision-point-{policy.slot}",
+            abandoned=_abandoned_threads,
+            max_abandoned=_MAX_ABANDONED_DECISION_POINT_THREADS,
+            lock=_abandoned_lock,
+            timeout=policy.timeout_seconds,
+        )
+    except DecisionBackendTimeout:
+        return _failed_outcome(policy, "unavailable", "timeout")
+    except (RunDeadlineExceeded, RunBudgetExceeded) as exc:
+        # The run's own limits: the next node boundary aborts the run; this slot just has no answer.
+        return _failed_outcome(policy, "unavailable", "run_limit", error=type(exc).__name__)
+    except Exception as exc:  # noqa: BLE001 - a decision model never fails the run
+        try:
+            transient = is_transient_error(exc)
+        except Exception:
+            transient = False
+        if transient:
+            return _failed_outcome(policy, "unavailable", "transient_error", error=type(exc).__name__)
+        return _failed_outcome(policy, "invalid", "backend_error", error=type(exc).__name__)
+    outcome = normalize_outcome(raw)
+    if outcome.status != "ok":
+        # Declared by the backend itself ("unavailable") or found malformed ("invalid"):
+        # the backend's own hint is not trusted; on_failure decides.
+        return _failed_outcome(
+            policy, outcome.status, str(outcome.evidence.get("reason") or "backend_declined"),
+            **{k: v for k, v in outcome.evidence.items() if k in ("detail", "answer_type", "error")},
+        )
+    return outcome
+
+
+# ---------------------------------------------------------------------------
+# Node wrappers
+# ---------------------------------------------------------------------------
+
+
+def _stored(outcome: DecisionOutcome, policy: SlotPolicy, doc_type: Any) -> dict[str, Any]:
+    record = outcome.to_dict()
+    record["backend"] = policy.backend
+    # What the policy lets this outcome ask for. ``collect_review_causes`` reads it to tell
+    # an outcome that parked the document from one that did not (it cannot see the config).
+    record["vetted_route"] = vet_outcome(policy, record, doc_type)
+    return record
+
+
+def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy]) -> Callable[[Any], Any]:
+    """``fn`` with its slots consulted after it returns; ``fn`` itself when it has none.
+
+    The node runs unchanged. If it returns a mapping, each of ``node``'s slots that is on
+    for the document's class is consulted with the merged state (state plus the node's
+    update), in config order, and the update gains ``decision_outcomes``: the previous
+    outcomes with each of this node's slots rewritten or dropped. A node that asked for a
+    transient retry (``transient_error``) is not consulted: its result is not usable, it
+    will run again, and the router retries or parks it. The key is only written when an
+    outcome was stored or removed, so a pass that consults nothing leaves state as it was.
+    """
+    mine = tuple(p for p in policies if p.node == node)
+    if not mine:
+        return fn
+
+    @functools.wraps(fn)
+    def wrapper(state: Any) -> Any:
+        update = fn(state)
+        if not isinstance(update, Mapping):
+            return update
+        merged = {**state, **update}
+        previous = merged.get(OUTCOMES_KEY)
+        outcomes = dict(previous) if isinstance(previous, Mapping) else {}
+        changed = False
+        for policy in mine:
+            had = policy.slot in outcomes
+            outcomes.pop(policy.slot, None)
+            doc_type = merged.get("doc_type")
+            if policy.resolve(doc_type).enabled and not merged.get("transient_error"):
+                outcome = consult(policy, _build_input(policy, merged))
+                outcomes[policy.slot] = _stored(outcome, policy, doc_type)
+                changed = True
+            elif had:
+                changed = True
+        return {**update, OUTCOMES_KEY: outcomes} if changed else update
+
+    wrapper.mailroom_decision_slots = tuple(p.slot for p in mine)  # type: ignore[attr-defined]
+    return wrapper
+
+
+def wrap_human_review(fn: Callable[[Any], Any], policies: Sequence[SlotPolicy]) -> Callable[[Any], Any]:
+    """``fn`` (the ``human_review`` node) clearing every outcome once a person has decided.
+
+    A park is resolved by a person; whatever a model hinted before it concerned the earlier
+    attempt, and must not route or label the next. Without slots, ``fn`` itself.
+    """
+    if not policies:
+        return fn
+
+    @functools.wraps(fn)
+    def wrapper(state: Any) -> Any:
+        update = fn(state)
+        if not isinstance(update, Mapping) or not (
+            isinstance(state, Mapping) and state.get(OUTCOMES_KEY) or update.get(OUTCOMES_KEY)
+        ):
+            return update
+        return {**update, OUTCOMES_KEY: {}}
+
+    wrapper.mailroom_clears_decision_outcomes = True  # type: ignore[attr-defined]
+    return wrapper
