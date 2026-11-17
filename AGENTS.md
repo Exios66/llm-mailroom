@@ -145,6 +145,7 @@ PYTHONPATH=src python src/scripts/sync_langfuse_logs.py       # mirror Langfuse 
 PYTHONPATH=src python src/scripts/run_vision_sweep.py --real --max-docs 3  # vision-vs-text tradeoff sweep (text-only/vision-10/vision-all), real or --mock
 PYTHONPATH=src python src/scripts/write_pilot_report.py       # render tracked markdown+JSON pilot report (default docs/reports/pilots/pilot-vision-tradeoff.md)
 PYTHONPATH=src python src/scripts/new_report.py audits "TITLE"  # scaffold a new report under docs/reports/<kind>/ (audits|pilots|evaluations)
+PYTHONPATH=src python src/scripts/bench_throughput.py --json-out out.json --md-out out.md  # offline load benchmark (mock LLM, ~4 min): docs/min, p50/p95 per node, client/heartbeat/DB-connection counts at concurrency 1,4,16,64; `--levels`, `--docs`, `--latency-ms`, `--rate-limit-rate`
 PYTHONPATH=src python -m legalbench.cli --list-tasks      # LegalBench suite tasks (binary QA + family classification)
 PYTHONPATH=src python -m legalbench.cli --task contract_qa --n 30 --model qwen/qwen3.7-flash   # real LegalBench run (Langfuse-traced)
 PYTHONPATH=src python -m legalbench.cli --task family_classification --n 20 --mock             # deterministic mock baseline (no API key)
