@@ -428,3 +428,36 @@ def test_langfuse_sink_never_opens_an_untagged_root_trace(monkeypatch, trace_id,
     pending_ref = sink.capture_pending({"doc_id": "d-1", "event": "archived"})
     assert (io_ref is not None, pending_ref is not None) == (created, created)
     assert [e["name"] for e in client.events] == (["audit-io", "audit-pending-row"] if created else [])
+
+
+def test_pending_record_stays_on_the_box_unless_full_trace(monkeypatch, tmp_path):
+    """#239 pre-PR review: a parked record holds extracted data and the decision trace, so an
+    opt-in off-box sink receives it only when ``audit.full_trace`` allows document content out."""
+    from audit import sinks
+
+    class OffBox:
+        name = "phoenix"
+        recoverable = False
+
+        def __init__(self):
+            self.got = []
+
+        def capture_pending(self, record):
+            self.got.append(record)
+            return "ext-1"
+
+    class Local(OffBox):
+        name = "sql"
+        recoverable = True
+
+    off, local = OffBox(), Local()
+    monkeypatch.setattr(sinks, "active_sinks", lambda: [local, off])
+    record = {"doc_id": "d-1", "event": "archived", "extracted_data": {"party": "Acme"}}
+
+    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "0")
+    kept = sinks.capture_pending(record)
+    assert [k["sink"] for k in kept] == ["sql"] and off.got == [] and len(local.got) == 1
+
+    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "1")
+    kept = sinks.capture_pending(record)
+    assert [k["sink"] for k in kept] == ["sql", "phoenix"] and off.got == [record]

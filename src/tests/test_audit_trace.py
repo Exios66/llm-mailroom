@@ -359,3 +359,17 @@ def test_no_collector_outside_a_run_is_harmless(monkeypatch):
 
     with pytest.raises(RuntimeError, match="boom"):
         classify_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})
+
+
+def test_unmigrated_park_keeps_its_routed_to_review_entry(run_graph):
+    """#239 pre-PR review: ``human_review`` parks through ``interrupt()`` and never returns, so the
+    per-event ``routed_to_review`` entry must be written on the paused path too."""
+    from storage.audit_log import get_audit_chain
+
+    run_graph.sorter.return_value = {
+        "doc_type": "contract", "contract_subtype": "other", "confidence": 0.05, "reasoning": "unsure",
+    }
+    order, final = run_graph()
+    assert order[-1] == "__interrupt__" or "human_review" in order
+    events = [e["event"] for e in asyncio.run(get_audit_chain(final["doc_id"]))]
+    assert events.count("routed_to_review") == 1, events

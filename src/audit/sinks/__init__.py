@@ -170,6 +170,10 @@ def _size(record: dict[str, Any]) -> int:
 def capture_pending(record: dict[str, Any], *, partial=None) -> list[dict[str, Any]]:
     """Hand a row that could not be committed to every sink (§5.6 step 1).
 
+    Only the local ``sql`` spool receives it unless ``audit.full_trace`` is on: the
+    record holds extracted data and the decision trace, which must not leave the
+    process without that opt-in.
+
     A sink with ``max_payload_bytes`` smaller than the record gets the
     decisions-only copy that ``partial()`` builds (marked ``complete: false``).
     Skip sinks that reject either payload or raise while storing it. Return
@@ -178,11 +182,19 @@ def capture_pending(record: dict[str, Any], *, partial=None) -> list[dict[str, A
     is ``False`` for a decisions-only copy and for a write-only sink (its ``ref``
     only locates the external copy), so such a copy never makes a row ``pending``.
     """
+    from audit.trace import full_trace_enabled
+
     kept: list[dict[str, Any]] = []
     small: dict[str, Any] | None = None
     full_size = _size(record)
+    off_box_allowed = full_trace_enabled()
     for sink in active_sinks():
         name = getattr(sink, "name", "?")
+        if name != "sql" and not off_box_allowed:
+            # The pending record carries extracted data and the decision trace; only the
+            # local spool keeps it unless ``audit.full_trace`` allows document content off the box.
+            logger.debug("trace_sink_pending_skipped", sink=name, reason="full_trace_off")
+            continue
         payload = record
         limit = getattr(sink, "max_payload_bytes", None)
         if limit is not None and full_size > limit:

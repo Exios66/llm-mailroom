@@ -311,6 +311,14 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
                 event = trace.end_visit(token)
                 if unapplied_status:
                     keep_unapplied(node, state, started, calls_before, event, unapplied_status)
+                if unapplied_status == "paused" and event:
+                    # A node that parks (``human_review`` -> ``interrupt()``) never returns, so
+                    # its stage event goes to the per-event log here while the audit migration
+                    # is pending (no-op once migrated); emit_stage_event never raises.
+                    from audit.legacy_events import emit_stage_event
+
+                    emit_stage_event(dict(state), event.get("event"), actor=event.get("actor") or "pipeline",
+                                     detail=event.get("detail"))
             if not isinstance(result, dict):
                 return result, None
             if event:
