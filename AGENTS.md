@@ -22,6 +22,8 @@ This is the long-form manual for every coding agent (Claude Code, Codex, Cursor,
      the orchestrator re-verifies.
    - `.claude/rules/pr-flow.md` — local gate → self-review → fresh-context pre-PR review
      → draft PR → bot review (CodeRabbit, CodeAnt). Nothing is pushed for review unvetted.
+   - `.claude/rules/code-mode.md` — bulk work (many files, labels, traces, logs) runs as
+     one script that prints a digest, not as many tool calls.
 3. **Fill in `.github/pull_request_template.md`** for every PR: problem, change, evidence,
    what was not verified, review log, cross-repo impact.
 

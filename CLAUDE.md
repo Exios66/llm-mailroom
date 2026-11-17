@@ -17,6 +17,8 @@ tools must read them):
   adversarial review rounds; orchestrator re-verifies.
 - `evidence-contract.md` — what counts as proof before anything is called done.
 - `pr-flow.md` — local gate → fresh-context pre-PR review → draft PR → bot review.
+- `code-mode.md` — bulk work (many files, labels, traces, logs) runs as one script that
+  prints a digest, not as many tool calls.
 
 ## Constellation: who depends on what
 
