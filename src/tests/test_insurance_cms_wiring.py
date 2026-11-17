@@ -105,6 +105,9 @@ def test_hcpcs_heading_words_are_not_counted_as_codes():
     heading_only = CARRIER_NO_CODES.replace("HCPCS ----", "HCPCS CODES")
     assert _refs(heading_only) == ["provider NPI 8284740037"]
     assert _hcpcs_codes("HCPCS ----") == []
+    # CPT Category III / PLA codes end in a letter and are still codes.
+    assert _hcpcs_codes("HCPCS 0075T\nHCPCS 0001U") == ["0075T", "0001U"]
+    assert _hcpcs_codes("Services (HCPCS): 0075T, 90816") == ["0075T", "90816"]
 
 
 def test_supporting_documents_guidance_names_every_cms_reference_form():

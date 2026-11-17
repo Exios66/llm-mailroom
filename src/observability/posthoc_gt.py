@@ -524,16 +524,18 @@ def extract_insurance_fields(text: str) -> dict[str, Any]:
     return out
 
 
-_HCPCS_CODE = re.compile(r"[A-Z0-9][0-9]{4}")
+# Five characters with at least four digits: Level II ``J1234``, CPT ``90816`` and
+# CPT Category II/III or PLA ``1234F`` / ``0075T`` / ``0001U``; never a heading word.
+_HCPCS_CODE = re.compile(r"(?:[A-Z][0-9]{4}|[0-9]{5}|[0-9]{4}[A-Z])")
 
 
 def _hcpcs_codes(text: str) -> list[str]:
     """HCPCS codes a CMS notice lists: itemized ``HCPCS <code>`` lines or a ``(HCPCS):`` list.
 
     Blank code placeholders (``----``) are not codes, so a claim whose lines carry none
-    gets no ``HCPCS detail`` reference (the Hub labels it the same way). A code is one
-    letter or digit followed by four digits (``J1234``, ``90816``), so a five-letter
-    heading word such as ``HCPCS CODES`` is not counted.
+    gets no ``HCPCS detail`` reference (the Hub labels it the same way). A code is five
+    characters with at least four digits (``J1234``, ``90816``, ``0075T``), so a
+    five-letter heading word such as ``HCPCS CODES`` is not counted.
     """
     listed = re.search(r"\(HCPCS\)\s*:\s*([^\n]+)", text, re.IGNORECASE)
     if listed:
