@@ -328,6 +328,39 @@ reviewer:
   default_mode: llm
   by_class: {}
 
+# Pluggable decision points (graph/decision_points.py). Empty by default: no slot, so
+# no node is wrapped, no routing rule is registered and no `decision_outcomes` appear in
+# state; the pipeline runs exactly as before. A slot lets a decision model, registered
+# under a name with `register_decision_point_backend(name, fn)`, look at a node's result
+# and HINT where the document goes next. Each slot is consulted right after its node
+# returns (never when the node asked for a transient retry); the outcome is written to
+# state["decision_outcomes"][slot]. The base router still decides first; the hint can
+# only refine its proposal, and never overrides a park (human_review) or a self-loop.
+# Example (not enabled):
+#   decision_points:
+#     extract.post:                # slot name: <node>.post
+#       node: extract              # a conditional-route node of graph/route_spec.py
+#                                  # (not human_review: a person's decision is final)
+#       backend: my_fee_checker    # registered backend name
+#       enabled: true              # default true; false keeps the slot declared but off
+#       timeout_seconds: 30        # default run_limits.llm_call_timeout_seconds; always
+#                                  # capped by the time left on the run deadline
+#       on_failure: fail_safe      # fail_open (default): a timeout or error gives no hint
+#                                  # fail_safe: it parks the document for a person with the
+#                                  # review cause decision_point:<slot>:decision_point_unavailable
+#       allow: [human_review]      # destinations the MODEL may choose (subset of the node's
+#                                  # destinations, never the node itself). [] or omitted:
+#                                  # record the outcome, never route on it. fail_safe parks
+#                                  # whatever `allow` says.
+#       min_confidence: 0.8        # optional: a hint below it (or with no confidence) is ignored
+#       by_class:                  # optional per-class overrides of enabled / allow / min_confidence
+#         insurance_claim: {min_confidence: 0.9}
+#         correspondence: {enabled: false}
+# A hint to human_review is only followed when the outcome names at least one cause; the
+# causes reach the reviewer as `decision_point:<slot>:<cause>`. Edits need a watcher/API
+# restart (config is cached); a malformed section fails at graph build.
+decision_points: {}
+
 review_queue:
   # Order of the human review tray (pipeline/review_priority.py). Score =
   # severity * class weight * (1 + age term); the tray sorts by score, then oldest.

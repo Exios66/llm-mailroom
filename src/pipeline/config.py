@@ -1,6 +1,8 @@
 import contextlib
 import contextvars
+import math
 import os
+import re
 import yaml
 from pathlib import Path
 from functools import lru_cache
@@ -185,6 +187,141 @@ def get_review_mode(doc_type: str | None) -> Literal["llm", "decision_only"]:
     entry = cfg["by_class"].get(doc_type) if isinstance(doc_type, str) else None
     mode = entry.get("mode") if entry is not None else cfg["default_mode"]
     return "decision_only" if mode == "decision_only" else "llm"
+
+
+class DecisionPointConfigError(ValueError):
+    """taxonomy.yaml ``decision_points:`` is malformed (or disagrees with the graph)."""
+
+
+DECISION_POINT_ON_FAILURE = ("fail_open", "fail_safe")
+_DP_SLOT_NAME = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$")
+_DP_SLOT_KEYS = frozenset({
+    "node", "backend", "enabled", "timeout_seconds", "on_failure", "allow", "min_confidence", "by_class",
+})
+_DP_CLASS_KEYS = frozenset({"enabled", "allow", "min_confidence"})
+
+
+def _dp_is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _dp_unit(value: object) -> bool:
+    # Bounds first: math.isfinite raises OverflowError on an oversized int.
+    return _dp_is_number(value) and 0.0 <= value <= 1.0 and math.isfinite(value)  # type: ignore[operator]
+
+
+def _dp_allow(value: object, where: str, problems: list[str]) -> list[str] | None:
+    if not isinstance(value, (list, tuple)) or not all(isinstance(v, str) and v for v in value):
+        problems.append(f"{where}: allow must be a list of destination names")
+        return None
+    if len(set(value)) != len(value):
+        problems.append(f"{where}: allow lists a destination twice")
+    return list(dict.fromkeys(value))
+
+
+def get_decision_points_config() -> dict[str, dict]:
+    """Pluggable decision points from taxonomy.yaml ``decision_points:``, normalised.
+
+    Returns ``{slot: {node, backend, enabled, timeout_seconds, on_failure, allow,
+    min_confidence, by_class}}`` in file order. A missing, empty or ``null`` section
+    is ``{}``: no decision point, no wrapper, no rule, the pipeline runs as before.
+    Defaults: ``enabled`` true (declaring a slot turns it on), ``timeout_seconds``
+    ``None`` (``run_limits.llm_call_timeout_seconds`` at call time), ``on_failure``
+    ``fail_open``, ``allow`` empty (the outcome is recorded and never routes),
+    ``min_confidence`` ``None``, ``by_class`` ``{}`` holding only the keys a class
+    sets. Every structural problem is reported at once in one
+    :class:`DecisionPointConfigError`. Whether a slot's node and destinations exist is
+    checked against the graph by ``graph.decision_points.validate_slot_policies``.
+    The taxonomy is ``lru_cache``d: edits need a watcher/API restart.
+    """
+    block = load_config().get("decision_points")
+    if block is None:
+        return {}
+    if not isinstance(block, dict):
+        raise DecisionPointConfigError("decision_points must be a mapping of slot name to slot settings")
+    classes = get_sorter_label_set()
+    problems: list[str] = []
+    out: dict[str, dict] = {}
+    for slot, raw in block.items():
+        where = f"decision_points.{slot}"
+        if not isinstance(slot, str) or not _DP_SLOT_NAME.match(slot):
+            problems.append(f"{where}: slot names are lower-case words joined by dots, e.g. 'extract.post'")
+            continue
+        if not isinstance(raw, dict):
+            problems.append(f"{where}: must be a mapping")
+            continue
+        unknown = sorted(str(k) for k in raw if k not in _DP_SLOT_KEYS)
+        if unknown:
+            problems.append(f"{where}: unknown key(s) {unknown}; allowed: {sorted(_DP_SLOT_KEYS)}")
+        entry: dict = {
+            "node": None, "backend": None, "enabled": True, "timeout_seconds": None,
+            "on_failure": "fail_open", "allow": [], "min_confidence": None, "by_class": {},
+        }
+        for key in ("node", "backend"):
+            value = raw.get(key)
+            if not isinstance(value, str) or not value.strip():
+                problems.append(f"{where}: {key} is required (a non-empty string)")
+            else:
+                entry[key] = value.strip()
+        if "enabled" in raw:
+            if not isinstance(raw["enabled"], bool):
+                problems.append(f"{where}: enabled must be true or false")
+            else:
+                entry["enabled"] = raw["enabled"]
+        if raw.get("timeout_seconds") is not None:
+            t = raw["timeout_seconds"]
+            if not _dp_is_number(t) or not math.isfinite(t) or t <= 0:  # type: ignore[arg-type]
+                problems.append(f"{where}: timeout_seconds must be a positive number")
+            else:
+                entry["timeout_seconds"] = float(t)  # type: ignore[arg-type]
+        if "on_failure" in raw:
+            if raw["on_failure"] not in DECISION_POINT_ON_FAILURE:
+                problems.append(f"{where}: on_failure must be one of {list(DECISION_POINT_ON_FAILURE)}")
+            else:
+                entry["on_failure"] = raw["on_failure"]
+        if raw.get("allow") is not None:
+            allow = _dp_allow(raw["allow"], where, problems)
+            if allow is not None:
+                entry["allow"] = allow
+        if raw.get("min_confidence") is not None:
+            if not _dp_unit(raw["min_confidence"]):
+                problems.append(f"{where}: min_confidence must be a number from 0 to 1")
+            else:
+                entry["min_confidence"] = float(raw["min_confidence"])
+        by_class = raw.get("by_class")
+        if by_class is not None and not isinstance(by_class, dict):
+            problems.append(f"{where}: by_class must be a mapping of class to overrides")
+        for cls, override in (by_class or {}).items() if isinstance(by_class, dict) else ():
+            cwhere = f"{where}.by_class.{cls}"
+            if cls not in classes:
+                problems.append(f"{cwhere}: unknown class; known: {sorted(classes)}")
+                continue
+            if not isinstance(override, dict):
+                problems.append(f"{cwhere}: must be a mapping")
+                continue
+            unknown = sorted(str(k) for k in override if k not in _DP_CLASS_KEYS)
+            if unknown:
+                problems.append(f"{cwhere}: unknown key(s) {unknown}; allowed: {sorted(_DP_CLASS_KEYS)}")
+            item: dict = {}
+            if "enabled" in override:
+                if not isinstance(override["enabled"], bool):
+                    problems.append(f"{cwhere}: enabled must be true or false")
+                else:
+                    item["enabled"] = override["enabled"]
+            if override.get("allow") is not None:
+                allow = _dp_allow(override["allow"], cwhere, problems)
+                if allow is not None:
+                    item["allow"] = allow
+            if override.get("min_confidence") is not None:
+                if not _dp_unit(override["min_confidence"]):
+                    problems.append(f"{cwhere}: min_confidence must be a number from 0 to 1")
+                else:
+                    item["min_confidence"] = float(override["min_confidence"])
+            entry["by_class"][cls] = item
+        out[slot] = entry
+    if problems:
+        raise DecisionPointConfigError("invalid decision_points config:\n  - " + "\n  - ".join(problems))
+    return out
 
 
 def get_all_doc_types() -> list[str]:
