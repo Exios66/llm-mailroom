@@ -301,6 +301,7 @@ _INVENTORY_FIELDS = {
     "record_type",
     "communication_type",
     "claim_type",
+    "cms_source_table",
 }
 
 _CORPORATE_ALIASES = {
@@ -411,6 +412,27 @@ def normalize_claim_line(value: Any) -> str:
     return "health" if token in CMS_CLAIM_TABLES else token
 
 
+def cms_source_table_for(subtype: Any, claim_type: Any = None) -> str | None:
+    """The CMS/DE-SynPUF source table of an insurance row, derived, never asked of the model.
+
+    Dojo scores ``cms_source_table`` as its own label (llm-dojo-scoring#93), derived from
+    ``expected_subclass``. The pipeline derives it the same way from the sorter subclass.
+    Only when no subclass is known does a table token the specialist wrote on
+    ``claim_type`` (the frozen v1 prompt still asks for one) stand in, read before that
+    token is folded onto ``health``. A row whose product line is not ``health`` is not a
+    CMS row, whatever the subclass says, so it carries no table.
+    """
+    sub = normalize_claim_type(subtype) if subtype else ""
+    own = normalize_claim_type(claim_type) if claim_type else ""
+    if sub and sub != "other":
+        table = sub if sub in CMS_CLAIM_TABLES else None
+    else:
+        table = own if own in CMS_CLAIM_TABLES else None
+    if table and own and own not in CMS_CLAIM_TABLES and own != "health":
+        return None
+    return table
+
+
 RECORD_TYPE_DESCRIPTION = (
     "Canonical Hub subclass. Emit exactly one of: articles_of_incorporation, "
     "bylaws, powers_of_attorney, rights_instrument, other. "
@@ -432,6 +454,14 @@ COMMUNICATION_TYPE_DESCRIPTION = (
     "invites are meeting_request. News/press releases are press_release. "
     "Formal demand letters are demand; attorney-signed demands are "
     "attorney_demand."
+)
+
+SUPPORTING_DOCUMENTS_DESCRIPTION = (
+    "Referenced supporting documents (police report, receipts, medical records, "
+    "estimates). On a CMS/DE-SynPUF claim row, list the identifier references "
+    "instead, one item each, in these exact forms: 'facility provider <id>', "
+    "'provider NPI <10 digits>', 'HCPCS detail (<n> codes)', and for a Part D "
+    "event the drug product as 'NDC <11 digits>'."
 )
 
 CLAIM_TYPE_DESCRIPTION = (
@@ -476,7 +506,11 @@ def specialist_handoff(doc_type: str | None, subtype: str | None = None) -> str:
             + ". CMS/DE-SynPUF tables (PDE/CLM_ID/DESYNPUF headers: "
             + ", ".join(CMS_CLAIM_TABLES)
             + ") are insurance_claim claims whose claim_type is health; "
-            "the table name is never a claim_type."
+            "the table name is never a claim_type (the pipeline records it as "
+            "cms_source_table from the subclass). On those rows supporting_documents "
+            "holds the identifier references: facility provider <id>, provider NPI "
+            "<10 digits>, HCPCS detail (<n> codes), and on a Part D event the drug "
+            "product as NDC <11 digits>."
         )
     return ""
 
@@ -518,9 +552,16 @@ def enrich_extraction(
         if token and not (not own and token == "other"):
             result["communication_type"] = token
     elif kind == "insurance_claim":
-        token = normalize_claim_line(result.get("claim_type") or subtype)
+        own = result.get("claim_type")
+        token = normalize_claim_line(own or subtype)
         if token:
             result["claim_type"] = token
+        # Read the table before the fold above discards a table token on claim_type.
+        table = cms_source_table_for(subtype, own or token)
+        if table:
+            result["cms_source_table"] = table
+        else:
+            result.pop("cms_source_table", None)
     if kind in INTENT_LABELS:
         intent = normalize_intent(kind, result.get("intent"))
         if intent:
