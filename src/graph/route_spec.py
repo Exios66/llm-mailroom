@@ -11,23 +11,40 @@ through which a route can be influenced without editing a router.
 * :func:`validate_route_specs` fails fast when a destination is not a node of the
   graph, when a node has no (or two) outgoing definitions, or when a router's
   ``Literal`` return annotation disagrees with its destination map.
-* A :class:`RouteRule` is an optional, additive opinion about a route
-  (``decide(state) -> destination | None``). With no rule registered a route is
-  decided by exactly one call of the base router, as before. Rules are added and
-  removed process-wide with :func:`add_route_rule` / :func:`remove_route_rule` /
-  :func:`clear_route_rules`.
+* A :class:`RouteRule` is an optional refinement of a route
+  (``decide(state_view, proposed) -> destination | None``). The base router always
+  decides first; ``proposed`` is its answer, and a rule may keep it (return ``None``
+  or ``proposed``) or replace it with another declared destination. With no rule
+  registered a route is decided by exactly one call of the base router, as before.
+  Rules are added and removed process-wide with :func:`add_route_rule` /
+  :func:`remove_route_rule` / :func:`clear_route_rules`.
+
+Reach: rules apply only to the 12 conditional routes in :data:`ROUTE_SPECS` (START
+plus 11 nodes). ``intake``, ``catalog_write`` and ``archive`` are plain edges
+(:data:`PLAIN_EDGES`) with nothing to decide, and :func:`add_route_rule` refuses
+them.
 
 Rule semantics (the contract a decision model plugs into):
 
+* The base router is called first, exactly once, with the original state object.
+  Its answer is the ``proposed`` argument of every rule.
 * Rules run in order: the spec's own ``rules`` first, then the registered ones in
   registration order (``position=`` places a rule at the front or at an index).
-* The first rule that returns a destination wins; ``None`` means "no opinion" and
-  the next rule, and finally the base router, decides.
+* The first rule that returns a declared destination wins; ``None`` means "no
+  opinion" and the next rule decides. When no rule answers, ``proposed`` is
+  returned. A rule that returns ``proposed`` is a no-op that ends the evaluation.
+* A rule refines the router's proposal, it does not own the route. The router's
+  self-loops (transient retry of ``classify`` / ``extract`` and the like) and its
+  parks (``human_review``) carry the pipeline's safety budgets; a rule that
+  overrides one of them is responsible for not bypassing those budgets (Phase 2
+  adds per-slot policy for what a rule may override).
 * A rule never gets to break routing. An answer that is not a key of the spec's
   ``destinations`` is not followed (logged as ``route_rule_unknown_destination``),
   and a rule that raises is ignored (logged as ``route_rule_failed``); in both
-  cases evaluation falls through. The base router is never validated or wrapped:
-  its answer is returned untouched.
+  cases evaluation falls through. Validation and logging cannot raise either: an
+  answer or exception with a hostile ``__repr__`` or ``__hash__`` is logged by its
+  type name. The base router is never validated or wrapped: its answer (and its
+  exceptions) pass through untouched.
 * A rule receives a read-only view of the state (``types.MappingProxyType``), so it
   cannot reassign or delete top-level keys. Nested values are the live objects;
   a rule must treat them as read-only too.
@@ -68,14 +85,16 @@ class RouteSpecError(ValueError):
 
 @dataclass(frozen=True)
 class RouteRule:
-    """An optional opinion about one node's route.
+    """An optional refinement of one node's route.
 
-    ``decide`` returns a key of the node's ``destinations`` or ``None`` (no opinion).
-    ``name`` identifies the rule in logs and in :func:`remove_route_rule`.
+    ``decide(state_view, proposed)`` gets a read-only view of the state and the base
+    router's answer, and returns a key of the node's ``destinations`` or ``None``
+    (keep ``proposed``). ``name`` identifies the rule in logs and in
+    :func:`remove_route_rule`.
     """
 
     name: str
-    decide: Callable[[Mapping[str, Any]], "str | None"]
+    decide: Callable[[Mapping[str, Any], str], "str | None"]
 
 
 @dataclass(frozen=True)
@@ -337,33 +356,70 @@ def clear_route_rules(node: "str | None" = None) -> None:
 # ---------------------------------------------------------------------------
 
 
+_REPR_LIMIT = 200
+
+
+def _safe_repr(obj: Any) -> str:
+    """``repr(obj)`` that cannot raise and cannot flood a log line."""
+    try:
+        text = repr(obj)
+    except Exception:
+        return f"<{type(obj).__name__}: repr failed>"
+    return text if len(text) <= _REPR_LIMIT else text[:_REPR_LIMIT] + "..."
+
+
 def decide_route(spec: RouteSpec, state: Mapping[str, Any]) -> str:
-    """Decide ``spec``'s route for ``state``: rules first, then the base router."""
+    """Decide ``spec``'s route for ``state``: the base router proposes, rules refine.
+
+    The base router is called once, with the original ``state``. Without rules its
+    answer is returned. With rules, the first declared destination a rule returns
+    wins; otherwise the router's proposal stands.
+    """
+    proposed = spec.router(state)  # type: ignore[arg-type]  # one call, state untouched
     registered = _RULES.get(spec.node)
     if not spec.rules and not registered:
-        return spec.router(state)  # type: ignore[arg-type]  # the no-rules path: one call, state untouched
+        return proposed
 
     view = MappingProxyType(state)
     for rule in (*spec.rules, *(registered or ())):
         try:
-            answer = rule.decide(view)
+            answer = rule.decide(view, proposed)
         except Exception as exc:
-            logger.warning("route_rule_failed", node=spec.node, rule=rule.name, error=repr(exc))
+            logger.warning(
+                "route_rule_failed",
+                node=spec.node,
+                rule=rule.name,
+                error=_safe_repr(exc),
+                error_type=type(exc).__name__,
+            )
             continue
         if answer is None:
             continue
-        if not isinstance(answer, str) or answer not in spec.destinations:
+        try:
+            valid = isinstance(answer, str) and answer in spec.destinations
+            changed = valid and answer != proposed
+        except Exception:  # e.g. a str subclass whose __hash__ / __eq__ raises
+            valid = changed = False
+        if not valid:
             logger.warning(
                 "route_rule_unknown_destination",
                 node=spec.node,
                 rule=rule.name,
-                answer=repr(answer),
+                answer=_safe_repr(answer),
+                answer_type=type(answer).__name__,
                 allowed=sorted(spec.destinations),
             )
             continue
-        logger.info("route_rule_applied", node=spec.node, rule=rule.name, destination=answer)
+        logger.info(
+            "route_rule_applied",
+            node=spec.node,
+            rule=rule.name,
+            destination=answer,
+            proposed=_safe_repr(proposed),
+            overrode=changed,
+        )
         return answer
-    return spec.router(state)  # type: ignore[arg-type]
+    return proposed
 
 
 def edge_router(spec: RouteSpec) -> Callable[[dict], str]:

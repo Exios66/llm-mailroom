@@ -277,31 +277,78 @@ class TestRuleEvaluation:
         router, calls = _counting_router()
         seen = []
 
-        def abstain(state):
+        def abstain(state, proposed):
             seen.append("abstain")
 
-        def first(state):
+        def first(state, proposed):
             seen.append("first")
             return "review"
 
-        def second(state):
+        def second(state, proposed):
             seen.append("second")
             return "keep"
 
         spec = _spec(router, DESTS, rules=[RouteRule("abstain", abstain), RouteRule("first", first), RouteRule("second", second)])
         assert decide_route(spec, {}) == "review"
         assert seen == ["abstain", "first"]
-        assert calls == []  # the base router was never consulted
+        assert len(calls) == 1  # the base router proposed once; the winning rule overrode it
+
+    def test_rule_receives_the_routers_proposal(self):
+        router, calls = _counting_router()
+        seen = []
+
+        def spy(state, proposed):
+            seen.append(proposed)
+
+        spec = _spec(router, DESTS, rules=[RouteRule("spy", spy)])
+        assert decide_route(spec, {}) == "keep"
+        assert seen == ["keep"]
+
+    def test_every_rule_sees_the_same_proposal_even_after_an_earlier_override_is_ignored(self):
+        router, _ = _counting_router()
+        seen = []
+
+        def spy(state, proposed):
+            seen.append(proposed)
+
+        spec = _spec(router, DESTS, rules=[RouteRule("bad", lambda s, p: "elsewhere"), RouteRule("spy", spy)])
+        assert decide_route(spec, {}) == "keep"
+        assert seen == ["keep"]
+
+    def test_router_is_called_exactly_once_even_when_a_rule_overrides(self):
+        router, calls = _counting_router()
+        state = {"x": 1}
+        spec = _spec(router, DESTS, rules=[RouteRule("a", lambda s, p: None), RouteRule("b", lambda s, p: "review")])
+        add_route_rule("classify", RouteRule("c", lambda s, p: "keep"))
+        assert decide_route(spec, state) == "review"
+        assert len(calls) == 1 and calls[0] is state
+
+    def test_rule_returning_the_proposal_is_a_no_op_override(self):
+        router, calls = _counting_router()
+        spec = _spec(router, DESTS, rules=[RouteRule("echo", lambda s, p: p), RouteRule("later", lambda s, p: "review")])
+        with structlog.testing.capture_logs() as logs:
+            assert decide_route(spec, {}) == "keep"  # same as the proposal, and it ends the evaluation
+        assert len(calls) == 1
+        applied = [l for l in logs if l["event"] == "route_rule_applied"]
+        assert len(applied) == 1 and applied[0]["rule"] == "echo" and applied[0]["overrode"] is False
+
+    def test_router_exception_is_not_swallowed(self):
+        def broken(state):
+            raise RuntimeError("router bug")
+
+        spec = _spec(broken, DESTS, rules=[RouteRule("r", lambda s, p: "review")])
+        with pytest.raises(RuntimeError, match="router bug"):
+            decide_route(spec, {})
 
     def test_all_none_falls_through_to_the_base_router(self):
         router, calls = _counting_router()
-        spec = _spec(router, DESTS, rules=[RouteRule("n", lambda s: None)])
+        spec = _spec(router, DESTS, rules=[RouteRule("n", lambda s, p: None)])
         assert decide_route(spec, {}) == "keep"
         assert len(calls) == 1
 
     def test_unknown_destination_is_ignored_and_logged(self):
         router, _ = _counting_router()
-        spec = _spec(router, DESTS, rules=[RouteRule("bad", lambda s: "elsewhere"), RouteRule("good", lambda s: "review")])
+        spec = _spec(router, DESTS, rules=[RouteRule("bad", lambda s, p: "elsewhere"), RouteRule("good", lambda s, p: "review")])
         with structlog.testing.capture_logs() as logs:
             assert decide_route(spec, {}) == "review"
         warned = [l for l in logs if l["event"] == "route_rule_unknown_destination"]
@@ -310,14 +357,14 @@ class TestRuleEvaluation:
 
     def test_unknown_destination_alone_falls_back_to_base(self):
         router, calls = _counting_router()
-        spec = _spec(router, DESTS, rules=[RouteRule("bad", lambda s: "elsewhere")])
+        spec = _spec(router, DESTS, rules=[RouteRule("bad", lambda s, p: "elsewhere")])
         assert decide_route(spec, {}) == "keep"
         assert len(calls) == 1
 
     @pytest.mark.parametrize("answer", [3, ["review"], {"review": 1}, b"review", ""])
     def test_non_string_or_unhashable_answers_are_ignored(self, answer):
         router, _ = _counting_router()
-        spec = _spec(router, DESTS, rules=[RouteRule("odd", lambda s, a=answer: a)])
+        spec = _spec(router, DESTS, rules=[RouteRule("odd", lambda s, p, a=answer: a)])
         with structlog.testing.capture_logs() as logs:
             assert decide_route(spec, {}) == "keep"
         assert [l["event"] for l in logs] == ["route_rule_unknown_destination"]
@@ -325,25 +372,72 @@ class TestRuleEvaluation:
     def test_raising_rule_is_ignored_and_logged(self):
         router, _ = _counting_router()
 
-        def boom(state):
+        def boom(state, proposed):
             raise RuntimeError("model unavailable")
 
-        spec = _spec(router, DESTS, rules=[RouteRule("boom", boom), RouteRule("good", lambda s: "review")])
+        spec = _spec(router, DESTS, rules=[RouteRule("boom", boom), RouteRule("good", lambda s, p: "review")])
         with structlog.testing.capture_logs() as logs:
             assert decide_route(spec, {}) == "review"
         failed = [l for l in logs if l["event"] == "route_rule_failed"]
         assert len(failed) == 1 and failed[0]["rule"] == "boom" and "model unavailable" in failed[0]["error"]
 
+    def test_answer_whose_repr_raises_cannot_crash_routing(self):
+        router, calls = _counting_router()
+
+        class Hostile:
+            def __repr__(self):
+                raise RuntimeError("repr exploded")
+
+        spec = _spec(router, DESTS, rules=[RouteRule("hostile", lambda s, p: Hostile())])
+        with structlog.testing.capture_logs() as logs:
+            assert decide_route(spec, {}) == "keep"
+        warned = [l for l in logs if l["event"] == "route_rule_unknown_destination"]
+        assert len(warned) == 1 and warned[0]["rule"] == "hostile"
+        assert "Hostile" in warned[0]["answer_type"]
+        assert len(calls) == 1
+
+    def test_exception_whose_repr_raises_cannot_crash_routing(self):
+        router, _ = _counting_router()
+
+        class HostileError(Exception):
+            def __repr__(self):
+                raise RuntimeError("repr exploded")
+
+            __str__ = __repr__
+
+        def boom(state, proposed):
+            raise HostileError()
+
+        spec = _spec(router, DESTS, rules=[RouteRule("boom", boom), RouteRule("good", lambda s, p: "review")])
+        with structlog.testing.capture_logs() as logs:
+            assert decide_route(spec, {}) == "review"
+        failed = [l for l in logs if l["event"] == "route_rule_failed"]
+        assert len(failed) == 1 and failed[0]["rule"] == "boom"
+        assert failed[0]["error_type"] == "HostileError"
+
+    def test_str_subclass_whose_hash_raises_cannot_crash_routing(self):
+        router, calls = _counting_router()
+
+        class UnhashableStr(str):
+            def __hash__(self):
+                raise RuntimeError("hash exploded")
+
+        spec = _spec(router, DESTS, rules=[RouteRule("unhashable", lambda s, p: UnhashableStr("review"))])
+        with structlog.testing.capture_logs() as logs:
+            assert decide_route(spec, {}) == "keep"
+        assert [l["event"] for l in logs] == ["route_rule_unknown_destination"]
+        assert len(calls) == 1
+
     def test_rules_see_a_read_only_view_and_the_state_is_not_mutated(self):
         router, calls = _counting_router()
         attempts = []
 
-        def meddle(state):
+        def meddle(state, proposed):
             attempts.append(type(state).__name__)
             assert state["doc_id"] == "d1"
             state["doc_type"] = "hacked"  # must raise TypeError
 
-        def meddle_delete(state):
+        def meddle_delete(state, proposed):
             del state["doc_id"]
 
         spec = _spec(router, DESTS, rules=[RouteRule("meddle", meddle), RouteRule("del", meddle_delete)])
@@ -357,8 +451,8 @@ class TestRuleEvaluation:
 
     def test_spec_rules_run_before_registered_rules(self):
         router, _ = _counting_router()
-        spec = _spec(router, DESTS, node="classify", rules=[RouteRule("static", lambda s: "keep")])
-        add_route_rule("classify", RouteRule("dynamic", lambda s: "review"))
+        spec = _spec(router, DESTS, node="classify", rules=[RouteRule("static", lambda s, p: "keep")])
+        add_route_rule("classify", RouteRule("dynamic", lambda s, p: "review"))
         assert decide_route(spec, {}) == "keep"
 
     def test_spec_is_immutable(self):
@@ -376,36 +470,43 @@ class TestRuleEvaluation:
 class TestRegistry:
     def test_add_orders_and_positions(self):
         for name in ("a", "b"):
-            add_route_rule("extract", RouteRule(name, lambda s: None))
-        add_route_rule("extract", RouteRule("first", lambda s: None), position="first")
-        add_route_rule("extract", RouteRule("mid", lambda s: None), position=1)
+            add_route_rule("extract", RouteRule(name, lambda s, p: None))
+        add_route_rule("extract", RouteRule("first", lambda s, p: None), position="first")
+        add_route_rule("extract", RouteRule("mid", lambda s, p: None), position=1)
         assert [r.name for r in route_rules("extract")] == ["first", "mid", "a", "b"]
 
     def test_remove_and_clear(self):
-        add_route_rule("extract", RouteRule("a", lambda s: None))
-        add_route_rule("classify", RouteRule("b", lambda s: None))
+        add_route_rule("extract", RouteRule("a", lambda s, p: None))
+        add_route_rule("classify", RouteRule("b", lambda s, p: None))
         assert remove_route_rule("extract", "a") is True
         assert remove_route_rule("extract", "a") is False
         assert route_rules("extract") == ()
         clear_route_rules("classify")
         assert route_rules("classify") == ()
-        add_route_rule("classify", RouteRule("b", lambda s: None))
-        add_route_rule("extract", RouteRule("a", lambda s: None))
+        add_route_rule("classify", RouteRule("b", lambda s, p: None))
+        add_route_rule("extract", RouteRule("a", lambda s, p: None))
         clear_route_rules()
         assert route_rules("classify") == route_rules("extract") == ()
 
     def test_unknown_node_duplicate_name_and_bad_position_are_rejected(self):
         with pytest.raises(ValueError, match="no route is declared"):
-            add_route_rule("ghost", RouteRule("a", lambda s: None))
-        add_route_rule("extract", RouteRule("a", lambda s: None))
+            add_route_rule("ghost", RouteRule("a", lambda s, p: None))
+        add_route_rule("extract", RouteRule("a", lambda s, p: None))
         with pytest.raises(ValueError, match="already registered"):
-            add_route_rule("extract", RouteRule("a", lambda s: None))
+            add_route_rule("extract", RouteRule("a", lambda s, p: None))
         with pytest.raises(ValueError, match="position"):
-            add_route_rule("extract", RouteRule("b", lambda s: None), position="middle")
+            add_route_rule("extract", RouteRule("b", lambda s, p: None), position="middle")
         assert [r.name for r in route_rules("extract")] == ["a"]
 
+    @pytest.mark.parametrize("node", ["intake", "catalog_write", "archive"])
+    def test_plain_edge_nodes_take_no_rules(self, node):
+        assert node in {src for src, _ in PLAIN_EDGES}
+        with pytest.raises(ValueError, match="no route is declared"):
+            add_route_rule(node, RouteRule("a", lambda s, p: None))
+        assert route_rules(node) == ()
+
     def test_start_can_take_rules(self):
-        add_route_rule(START, RouteRule("a", lambda s: None))
+        add_route_rule(START, RouteRule("a", lambda s, p: None))
         assert [r.name for r in route_rules(START)] == ["a"]
 
     def test_concurrent_adds_lose_nothing(self):
@@ -415,7 +516,7 @@ class TestRegistry:
         def work(t):
             barrier.wait()
             for i in range(per_thread):
-                add_route_rule("extract", RouteRule(f"t{t}-{i}", lambda s: None))
+                add_route_rule("extract", RouteRule(f"t{t}-{i}", lambda s, p: None))
 
         pool = [threading.Thread(target=work, args=(t,)) for t in range(threads)]
         for th in pool:
@@ -431,7 +532,7 @@ class TestRegistry:
         def churn(t):
             try:
                 for i in range(50):
-                    rule = RouteRule(f"c{t}-{i}", lambda s: None)
+                    rule = RouteRule(f"c{t}-{i}", lambda s, p: None)
                     add_route_rule("classify", rule)
                     assert remove_route_rule("classify", rule.name) is True
             except Exception as exc:  # pragma: no cover - failure path
@@ -446,7 +547,7 @@ class TestRegistry:
         assert route_rules("classify") == ()
 
     def test_fixture_isolates_tests_part_1(self):
-        add_route_rule("arbiter", RouteRule("leak-check", lambda s: None))
+        add_route_rule("arbiter", RouteRule("leak-check", lambda s, p: None))
         assert route_rules("arbiter")
 
     def test_fixture_isolates_tests_part_2(self):
@@ -488,21 +589,21 @@ class TestRulesChangeCompiledRoutes:
 
     def test_registered_rule_redirects_a_compiled_run_and_removal_restores_it(self):
         graph = _stub_graph(lambda s: "extract")
-        add_route_rule("classify", RouteRule("to-review", lambda s: "human_review"))
+        add_route_rule("classify", RouteRule("to-review", lambda s, p: "human_review"))
         assert graph.invoke({"path": []})["path"] == ["classify", "human_review"]
         assert remove_route_rule("classify", "to-review")
         assert graph.invoke({"path": []})["path"] == ["classify", "extract"]
 
     def test_rule_reads_state_and_abstains_otherwise(self):
         graph = _stub_graph(lambda s: "extract")
-        add_route_rule("classify", RouteRule("only-flagged", lambda s: "human_review" if "flag" in s["path"] else None))
+        add_route_rule("classify", RouteRule("only-flagged", lambda s, p: "human_review" if "flag" in s["path"] else None))
         assert graph.invoke({"path": []})["path"] == ["classify", "extract"]
         assert graph.invoke({"path": ["flag"]})["path"] == ["flag", "classify", "human_review"]
 
     def test_rule_with_an_answer_outside_the_destinations_cannot_derail_a_run(self):
         graph = _stub_graph(lambda s: "extract")
-        add_route_rule("classify", RouteRule("rogue", lambda s: "archive"))
-        add_route_rule("classify", RouteRule("crash", lambda s: 1 / 0), position="first")
+        add_route_rule("classify", RouteRule("rogue", lambda s, p: "archive"))
+        add_route_rule("classify", RouteRule("crash", lambda s, p: 1 / 0), position="first")
         assert graph.invoke({"path": []})["path"] == ["classify", "extract"]
 
     def test_real_graph_edge_router_honours_registered_rules(self, compiled):
@@ -510,7 +611,7 @@ class TestRulesChangeCompiledRoutes:
         state = {"extracted_data": {"_report": {"summary": "ok"}}}
         assert routing.after_report(state) == "catalog_write"
         assert branch.path.invoke(state) == "catalog_write"
-        add_route_rule("compile_report", RouteRule("hold", lambda s: "human_review"))
+        add_route_rule("compile_report", RouteRule("hold", lambda s, p: "human_review"))
         assert branch.path.invoke(state) == "human_review"
         assert routing.after_report(state) == "catalog_write"  # the router itself is untouched
         clear_route_rules()
@@ -519,5 +620,5 @@ class TestRulesChangeCompiledRoutes:
     def test_real_graph_start_router_honours_registered_rules(self, compiled):
         branch = compiled.builder.branches[START]["entry_route"]
         assert branch.path.invoke({}) == "intake"
-        add_route_rule(START, RouteRule("skip-intake", lambda s: "extract"))
+        add_route_rule(START, RouteRule("skip-intake", lambda s, p: "extract"))
         assert branch.path.invoke({}) == "extract"
