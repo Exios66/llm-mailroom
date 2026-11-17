@@ -1756,36 +1756,47 @@ class TestBounds:
         decision_points({"extract.post": {"node": "extract", "backend": "b", "timeout_seconds": 3600}})
         assert get_decision_points_config()["extract.post"]["timeout_seconds"] == 3600.0
 
-    def test_the_cap_cannot_be_overshot_by_concurrent_callers(self):
+    def test_healthy_concurrent_calls_are_never_refused(self):
         cap, callers = 2, 8
         live: list = []
         lock = threading.Lock()
-        release = threading.Event()
         barrier = threading.Barrier(callers)
-        started, refused = [], []
+        results, errors = [], []
 
         def call():
-            started.append(1)
-            release.wait(10)
+            time.sleep(0.05)
+            return 1
 
         def caller():
             barrier.wait()
             try:
-                dp.run_bounded(call, name="t", abandoned=live, max_abandoned=cap, lock=lock, timeout=0.2)
-            except dp.DecisionBackendTimeout as exc:
-                if "stalled" in str(exc):
-                    refused.append(1)
+                results.append(dp.run_bounded(call, name="t", abandoned=live, max_abandoned=cap, lock=lock, timeout=5))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
 
         threads = [threading.Thread(target=caller) for _ in range(callers)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(10)
+        assert errors == [] and results == [1] * callers  # in-flight calls do not count
+        assert live == []
+
+    def test_stalled_calls_fill_the_cap_and_refuse_new_ones(self):
+        live: list = []
+        lock = threading.Lock()
+        release = threading.Event()
         try:
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join(10)
-            assert len(started) <= cap, f"{len(started)} calls started past a cap of {cap}"
-            assert len(refused) == callers - len(started)
+            for _ in range(2):
+                with pytest.raises(dp.DecisionBackendTimeout, match="exceeded"):
+                    dp.run_bounded(lambda: release.wait(10), name="t", abandoned=live, max_abandoned=2, lock=lock, timeout=0.05)
+            with pytest.raises(dp.DecisionBackendTimeout, match="2 stalled t calls"):
+                dp.run_bounded(lambda: 1, name="t", abandoned=live, max_abandoned=2, lock=lock, timeout=1)
         finally:
             release.set()
+        for t in list(live):
+            t.join(5)
+        assert dp.run_bounded(lambda: 1, name="t", abandoned=live, max_abandoned=2, lock=lock, timeout=1) == 1
 
     def test_finished_calls_free_their_place(self):
         live: list = []
