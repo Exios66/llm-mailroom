@@ -39,7 +39,8 @@ Not for a single lookup you can answer with one `Read` or `Grep`.
 ## Same rules as everywhere else
 
 - Code mode never relaxes a hard rule in `CLAUDE.md`: no real LLM calls, no `--real`, no
-  `sync_*` against hosted services, no secrets printed, files move only through
+  hosted writes (`sync_prompts`, `sync_dataset`, `sync_dashboards`, `sync_evaluators`,
+  `sync_hf_ground_truth --push`), no secrets printed, files move only through
   `pipeline/bins.py`.
 - Script output counts as evidence (`.claude/rules/evidence-contract.md`) only with the
   command that produced it; keep the script until the PR is done and quote both.
