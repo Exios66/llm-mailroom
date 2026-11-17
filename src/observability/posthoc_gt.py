@@ -539,7 +539,7 @@ def _hcpcs_codes(text: str) -> list[str]:
     """
     listed = re.search(r"\(HCPCS\)\s*:\s*([^\n]+)", text, re.IGNORECASE)
     if listed:
-        return [c for c in re.split(r"[,;\s]+", listed.group(1)) if _HCPCS_CODE.fullmatch(c)]
+        return [c for c in (t.strip(".:)(") for t in re.split(r"[,;\s]+", listed.group(1))) if _HCPCS_CODE.fullmatch(c)]
     return re.findall(rf"\bHCPCS\s+({_HCPCS_CODE.pattern})\b", text)
 
 

@@ -108,6 +108,8 @@ def test_hcpcs_heading_words_are_not_counted_as_codes():
     # CPT Category III / PLA codes end in a letter and are still codes.
     assert _hcpcs_codes("HCPCS 0075T\nHCPCS 0001U") == ["0075T", "0001U"]
     assert _hcpcs_codes("Services (HCPCS): 0075T, 90816") == ["0075T", "90816"]
+    # Sentence punctuation after the last listed code does not drop it.
+    assert _hcpcs_codes("Services (HCPCS): 97110, G0283.") == ["97110", "G0283"]
 
 
 def test_supporting_documents_guidance_names_every_cms_reference_form():
