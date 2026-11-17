@@ -19,6 +19,7 @@ from langchain_agents.doc_inventories import (
     CORPORATE_GT_KEYS,
     CORRESPONDENCE_GT_KEYS,
     INSURANCE_GT_KEYS,
+    cms_source_table_for,
     coerce_gt_value,
     normalize_claim_line,
     normalize_communication_type,
@@ -166,6 +167,11 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
         token = normalize_claim_line(claim)  # product line: a CMS table row is health (#174 §2)
         if token or claim:
             expected_fields["claim_type"] = token or claim
+        # Dojo #93: the CMS table is its own label, derived from the Hub subclass the way
+        # the Dojo scorer derives it (a published cms_source_table column still wins).
+        table = cms_source_table_for(subclass, expected_fields.get("claim_type"))
+        if table and expected_fields.get("cms_source_table") in (None, ""):
+            expected_fields["cms_source_table"] = table
         for key in INSURANCE_GT_KEYS:
             if key == "claim_type":
                 continue
