@@ -1397,7 +1397,8 @@ def _decision_review_classify(state: DocumentState) -> dict[str, Any]:
     if route.causes:
         reason += f" [{', '.join(route.causes)}] -- routing to human review"
     if backend_error is not None:
-        reason += f" [{backend_error}]"
+        # Exception text is audit-only: ``[cause: ...]`` is cut from the sender echo (#260).
+        reason += f" [cause: {backend_error}]"
     updates: dict[str, Any] = {
         "reviewer_doc_type": reviewer_type,
         "reviewer_contract_subtype": (
