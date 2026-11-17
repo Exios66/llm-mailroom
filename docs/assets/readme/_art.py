@@ -379,7 +379,7 @@ NODES = {
     'hf': ('HF Hub', 'mailroom-dataset · pinned tag', 'external service', YELLOW, True),
     'ml': ('mailroom-ml', 'ModernBERT intake classifier', 'standalone contractor', PINK, True),
     'sandbox': ('local-mailroom-sandbox', 'offline/local + Modal/vLLM GPU', 'testing harness', VIOLET, False),
-    'pipeline': ('llm-mailroom', '13-node LangGraph pipeline', 'FastAPI producer', GREEN, False),
+    'pipeline': ('llm-mailroom', '14-node LangGraph pipeline', 'FastAPI producer', GREEN, False),
     'dojo': ('llm-dojo-scoring', 'ALL scoring engine + metrics', 'error analysis & interpretation', AMBER, False),
     'langfuse': ('Langfuse', 'external · trace store', '', '#fb7185', True),
     'viz': ('The-Mailroom', 'pixel-art visualizer', 'shared by pipeline + sandbox', '#c084fc', False),

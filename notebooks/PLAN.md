@@ -13,7 +13,7 @@ Lucius-Morningstar Hub corpora, LegalBench, and vision ingestion).
 > 15-agent roster and 7-doc-class references below describe the original plan
 > and are retained as the plan of record, not the live surface (hub#53).
 
-Audience: anyone who wants to *see* the mailroom think — how the 13-node
+Audience: anyone who wants to *see* the mailroom think — how the 14-node
 LangGraph pipeline routes a legal document through its specialist agents,
 where the retry/review/judge/arbiter dynamics kick in, and what every agent
 contributes to the final output — without an API key, without Langfuse, and
@@ -74,7 +74,7 @@ bench"); 11 also uses `huggingface_lab.py` and 12 uses `legalbench_lab.py`.
 
 ### 00 — `pipeline_anatomy.ipynb` (static map)
 
-- **Goal:** the mental model before any run: 13 nodes, entry routing, the
+- **Goal:** the mental model before any run: 14 nodes, entry routing, the
   conditional-edge map, the 15-agent roster and which node each agent powers,
   the 7 doc classes and their specialists + extraction schemas.
 - **Content:** render the node/edge table from the LIVE graph object and

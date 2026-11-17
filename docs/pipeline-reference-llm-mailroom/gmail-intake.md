@@ -235,8 +235,10 @@ One accepted attachment per email (`route: triage`) and
         ▼
  triage read            GmailTriageAgent (openrouter/free, $0):
  (advisory)             primary_doc_class + doc_subclass + confidence +
-                        one-sentence gist + ≤6 keywords;
-                        validate_triage clamps to the live taxonomy
+                        one-sentence gist + ≤6 keywords + key entities
+                        (schema-driven: the class's EXTRACTION_SCHEMAS
+                        fields); validate_triage clamps the class to the
+                        live taxonomy and the entities to that schema
         ▼
  auditable-hash archive triage_ingested / triage_classified /
                         triage_archived audit entries (OWN section — never
@@ -288,7 +290,7 @@ pipeline`. The document then follows **Pathway C** exactly.
 
 Two or more accepted attachments (`route: pipeline`; triage dropped), any
 document after a Pathway-B handoff, and everything when
-`MAILROOM_GMAIL_TRIAGE=0` runs the standard 13-node graph **per document**:
+`MAILROOM_GMAIL_TRIAGE=0` runs the standard 14-node graph **per document**:
 
 ```
  intake (transcription: direct PDF text / paid LLM transcription for scans /

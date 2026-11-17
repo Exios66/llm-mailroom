@@ -22,7 +22,7 @@ services:
       - ollama_data:/root/.ollama     # pre-pulled models survive restarts
     environment:
       OLLAMA_HOST: "0.0.0.0"
-      OLLAMA_KEEP_ALIVE: "30m"        # keep the loaded model resident (13-node graph is serial)
+      OLLAMA_KEEP_ALIVE: "30m"        # keep the loaded model resident (14-node graph is serial)
       OLLAMA_NUM_PARALLEL: "1"        # one completion at a time
       OLLAMA_MAX_LOADED_MODELS: "1"
     healthcheck:

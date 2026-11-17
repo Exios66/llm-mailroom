@@ -49,7 +49,7 @@
 </g>
 <g data-node="pipeline"><rect x="350" y="390" width="230" height="96" rx="14" fill="#14213d" stroke="#22c55e" stroke-width="2"/>
 <text x="366" y="424" font-size="16" fill="#e2e8f0" font-weight="700">llm-mailroom</text>
-<text x="366" y="448" font-size="12" fill="#94a3b8">13-node LangGraph pipeline</text>
+<text x="366" y="448" font-size="12" fill="#94a3b8">14-node LangGraph pipeline</text>
 <text x="366" y="468" font-size="12" fill="#64748b">FastAPI producer</text>
 </g>
 <g data-node="dojo"><rect x="20" y="520" width="230" height="96" rx="14" fill="#0f172a" stroke="#f59e0b" stroke-width="2"/>
