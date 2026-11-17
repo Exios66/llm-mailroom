@@ -6,8 +6,8 @@ measure whether prompts that state the ground-truth labeling rules score better
 against the interim and near_gold labels:
 
 * ``rules``: field definitions, closed vocabularies and edge-case rules copied
-  from the gold-label guide (local-mailroom-sandbox
-  ``docs/gold-labels/LABELING_GUIDE.md``), which the near_gold catalog follows.
+  from the gold-label guide, which the near_gold catalog follows:
+  [LABELING_GUIDE.md](https://github.com/Exios66/local-mailroom-sandbox/blob/main/docs/gold-labels/LABELING_GUIDE.md).
 * ``rules_few_shot``: the rules plus short worked examples. The examples are
   synthetic texts that reproduce cases settled by reviewed (near_gold) labels;
   no corpus document is quoted, so no eval document leaks into the prompt.
