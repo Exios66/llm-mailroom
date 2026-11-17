@@ -8,12 +8,14 @@ The journey of a document:
 
 ```
 intake → classify → (extract | retry_classify | human_review) → extract → compile_report
-      → catalog_write → archive
+      → score_common → score_<type> → catalog_write → archive
 ```
 
 At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **confidence score** and decides what happens next: proceed, retry with a stronger prompt, send to the Boss, or route to a human.
 
-## The 14 nodes (in `build_graph.py`)
+## The nodes (in `build_graph.py`)
+
+14 pipeline nodes, plus the unified audit row's scoring family (`score_common` and one `score_<type>` per Dojo scorer, including `score_generic`) and the terminal `audit_failed` node: 22 in all.
 
 | Node | What it does |
 |---|---|
@@ -29,8 +31,10 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
 | `human_review` | Parks the file in `review/` (idempotent upsert) and pauses the graph with LangGraph `interrupt()` until a human `Command(resume=...)` |
 | `boss_escalation` | Boss LLM adjudicates conflicts / repeated failures |
 | `compile_report` | Procedural reporter assembles the matter-record summary (no LLM) |
+| `score_common` / `score_<type>` | Score the compiled report for the unified audit row (Dojo scorers; a scorer error is recorded as `status: error` and never fails the document) |
 | `catalog_write` | Writes the document + matter to the database (best-effort) |
 | `archive` | Moves file to `archive/<matter_id>/<type>/`, writes audit entry |
+| `audit_failed` | Writes the terminal `failed` audit row when a human rejects a parked document, then ends the run |
 
 ## Technical reference
 
