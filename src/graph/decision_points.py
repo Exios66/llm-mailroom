@@ -1076,6 +1076,37 @@ def _proposal(node: str, state: Mapping[str, Any]) -> "str | None":
         return None
 
 
+def _earlier_rule_answers(node: str, state: Mapping[str, Any], proposed: "str | None") -> bool:
+    """Whether a rule evaluated before the ``decision_point:*`` rules answers for ``node``.
+
+    :func:`~graph.route_spec.decide_route` returns the first valid destination a rule gives,
+    so such a rule (declared on the spec, or registered ahead of the slots) takes the route
+    and no slot of the node is applied or charged. Mirrors ``decide_route``'s validity check;
+    a rule that raises or answers outside the node's destinations does not count.
+    """
+    from graph.route_spec import route_rules
+
+    spec = _SPEC_BY_NODE.get(node)
+    if spec is None:
+        return False
+    earlier = list(spec.rules)
+    for rule in route_rules(node):
+        if rule.name.startswith(RULE_PREFIX):
+            break
+        earlier.append(rule)
+    view = MappingProxyType(dict(state))
+    for rule in earlier:
+        try:
+            answer = rule.decide(view, proposed)
+            if isinstance(answer, str) and type(answer) is not str:
+                answer = str.__str__(answer)
+            if isinstance(answer, str) and answer in spec.destinations:
+                return True
+        except Exception:  # noqa: BLE001 - decide_route skips a failing rule too
+            continue
+    return False
+
+
 def _rule_answers(node: str, proposed: "str | None", hint: str) -> bool:
     """Whether the slot's rule would return ``hint`` against the router's ``proposed``.
 
@@ -1104,7 +1135,8 @@ def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy
     document (``decision_override_counts``, never reset within a run). Rules run in config
     order and the first answer wins, so a slot is charged only when no earlier slot of the
     node already answers (an earlier slot that is capped, agrees with the router or has no
-    hint does not shield it). Past the budget the outcome is stored with ``capped: true``
+    hint does not shield it), and none is charged when a route rule evaluated before the
+    slots (declared on the node's spec or registered ahead of them) already answers. Past the budget the outcome is stored with ``capped: true``
     and no vetted route, and the rule leaves the router's proposal alone, so hint cycles
     across slots end whatever the topology. Parks are exempt: they need a person, cannot
     loop on their own, and ``fail_safe`` must keep parking; an answering park still
@@ -1126,6 +1158,7 @@ def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy
         counts = dict(prior_counts) if isinstance(prior_counts, Mapping) else {}
         changed = counts_changed = claimed = False
         proposal: list = []  # asked once, only if some slot has a hint
+        preempted: list = []  # likewise: does a rule ahead of the slots take the route?
         for policy in mine:
             had = policy.slot in outcomes
             outcomes.pop(policy.slot, None)
@@ -1144,6 +1177,12 @@ def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy
                 if hint is not None and not claimed:
                     if not proposal:
                         proposal.append(_proposal(node, merged))
+                        preempted.append(_earlier_rule_answers(node, merged, proposal[0]))
+                    if preempted[0]:
+                        stored["shadowed"] = True  # an earlier, non-slot rule takes the route
+                        outcomes[policy.slot] = stored
+                        changed = True
+                        continue
                     answers = _rule_answers(node, proposal[0], hint)
                     if answers and hint != PARK:
                         used = counts.get(policy.slot, 0)

@@ -1332,6 +1332,19 @@ class TestOverrideBudget:
         assert capped and capped[0][0] == "warning" and capped[0][2]["slot"] == "extract.post"
         assert capped[0][2]["max_overrides"] == 0
 
+    @pytest.mark.parametrize("answer, charged", [("compile_report", False), ("nowhere", True)])
+    def test_a_rule_ahead_of_the_slots_that_takes_the_route_spends_nothing(self, answer, charged):
+        from graph.route_spec import RouteRule, add_route_rule
+
+        add_route_rule("extract", RouteRule("ops:pin", lambda view, proposed: answer))
+        dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
+        out = dp.wrap_node("extract", node_returning({}), [redirecting(max_overrides=1)])(dict(PROPOSES_COMPILE))
+        stored = out["decision_outcomes"]["extract.post"]
+        if charged:  # an answer outside the destinations is skipped by decide_route
+            assert out["decision_override_counts"] == {"extract.post": 1}
+        else:
+            assert "decision_override_counts" not in out and stored["shadowed"] is True
+
     def test_a_hint_equal_to_the_proposal_spends_nothing(self):
         dp.register_decision_point_backend("fake", lambda i: hint_to("compile_report"))
         p = policy(allow=("compile_report",))
