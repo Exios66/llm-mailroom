@@ -22,18 +22,18 @@ HERO = {
     'title': 'The LLM-Mailroom',
     'kicker': 'THE MAILROOM CONSTELLATION · THE PIPELINE',
     'tagline': 'Ingest, classify, extract, verify — and archive every legal document with a hash-chained receipt.',
-    'eyebrow': '13 GRAPH NODES · 5 DOCUMENT CLASSES · SQLITE-FIRST · FASTAPI + WATCHER',
+    'eyebrow': '14 GRAPH NODES · 5 DOCUMENT CLASSES · SQLITE-FIRST · FASTAPI + WATCHER',
     'caption': 'one LangGraph run per document · filesystem bins you can ls · every decision is a named node with a trace',
     'alt': 'Animated banner: envelopes ride a conveyor through intake, classify, extract, quality, compile and archive '
            'gates; a flagged envelope drops off the belt into a human-review bin.',
     'tagline_lines': ['Ingest, classify, extract, verify —', 'archive with a hash-chained receipt.'],
     'mobile_cards': [('Intake', 'claim · clean · prepare'), ('Classify', 'five classes + confidence'),
                      ('Extract', 'one specialist per class'), ('Archive', 'hash-chained audit log')],
-    'mobile_note': 'one LangGraph run per document · 13 nodes',
+    'mobile_note': 'one LangGraph run per document · 14 nodes',
 }
 GATES = [('INTAKE', art.SKY), ('CLASSIFY', art.GREEN), ('EXTRACT', art.LIME),
          ('QUALITY', art.VIOLET), ('COMPILE', art.ORANGE), ('ARCHIVE', art.PINK)]
-STATS = [('13', 'graph nodes', art.SKY), ('5', 'document classes', art.VIOLET),
+STATS = [('14', 'graph nodes', art.SKY), ('5', 'document classes', art.VIOLET),
          ('SQLite', 'default catalog · no DB server', art.PINK), ('Hash chain', 'tamper-evident audit', art.GREEN),
          ('FastAPI', 'upload · status · audit', art.AMBER)]
 STAGES = [('Intake', 'claim · transcribe · clean', 'manifest written'),
@@ -58,7 +58,7 @@ TERMINAL = [('cmd', 'git clone https://github.com/Exios66/llm-mailroom.git'),
             ('cmd', 'curl http://localhost:8000/v1/health')]
 
 
-TUI_GAUGES = [('graph nodes', '13', None, art.SKY), ('checkpoints', 'MemorySaver', None, art.VIOLET),
+TUI_GAUGES = [('graph nodes', '14', None, art.SKY), ('checkpoints', 'MemorySaver', None, art.VIOLET),
               ('catalog', 'SQLite first', None, art.GREEN), ('audit trail', 'hash chain', None, art.PINK),
               ('API', 'FastAPI', None, art.AMBER)]
 TUI_LOG = [('ok', 'intake → classify → extract'), ('ok', 'quality → compile → archive'),
@@ -82,7 +82,7 @@ def build() -> dict[str, str]:
         'constellation.svg': art.constellation('llm-mailroom'),
         'constellation-mobile.svg': art.constellation('llm-mailroom', mobile=True),
         'tui.svg': art.tui('~/llm-mailroom — pipeline status', TUI_GAUGES, TUI_LOG, TUI_STATUS,
-                           'Dashboard: the pipeline in facts (13 graph nodes, MemorySaver checkpoints, SQLite catalog, hash-chained audit trail, FastAPI) and the routing notes for documents that are not sure.', left='PIPELINE', right='ROUTING'),
+                           'Dashboard: the pipeline in facts (14 graph nodes, MemorySaver checkpoints, SQLite catalog, hash-chained audit trail, FastAPI) and the routing notes for documents that are not sure.', left='PIPELINE', right='ROUTING'),
         'terminal.svg': art.terminal('~/llm-mailroom — zsh', TERMINAL,
                                      'Animated terminal: clone, install, run the offline routing test, start the API '
                                      'and check its health endpoint.'),

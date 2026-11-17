@@ -1,9 +1,9 @@
-"""Network-free smoke coverage for every node in the 13-node pipeline graph.
+"""Network-free smoke coverage for every node in the 14-node pipeline graph.
 
 The plan (test-coverage audit) found two nodes with zero direct tests —
 ``human_review_node`` and ``catalog_write_node`` — and several others only
 covered indirectly (compile_report, entry_route). This file exercises each
-of the 13 nodes' happy path AND its primary error path using the established
+of the 14 nodes' happy path AND its primary error path using the established
 house fixtures:
 
 - ``temp_base_dir`` — fresh MAILROOM_BASE_DIR + bins + reset_compiled_graph()
@@ -513,11 +513,11 @@ class TestArchiveNode:
         assert updates["stage"] == "failed" or updates.get("run_aborted") is not None
 
 
-# --- topology (all 13 registered) --------------------------------------------
+# --- topology (all 14 registered) --------------------------------------------
 
 
-def test_all_thirteen_nodes_registered():
-    """The graph registers exactly the 13 nodes; a rename here fails loudly
+def test_all_fourteen_nodes_registered():
+    """The graph registers exactly the 14 nodes; a rename here fails loudly
     instead of silently dropping a node from the pipeline."""
     graph = bg.build_graph()
     node_names = {node for node in graph.nodes}

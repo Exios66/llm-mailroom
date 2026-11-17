@@ -4,7 +4,7 @@
 
 ## 1. Pipeline at a glance
 
-The Mailroom is a **13-node LangGraph state machine executed once per document**. Two auxiliary flows operate outside the graph: the Gmail triage lane (free model swarm for single-document emails) and the relations clerk (post-archive association scanning). Operationally, the graph nodes collapse into six phases:
+The Mailroom is a **14-node LangGraph state machine executed once per document**. Two auxiliary flows operate outside the graph: the Gmail triage lane (free model swarm for single-document emails) and the relations clerk (post-archive association scanning). Operationally, the graph nodes collapse into six phases:
 
 ```mermaid
 flowchart TD
@@ -37,7 +37,7 @@ flowchart TD
 | Phase           | Graph nodes                                                              | Operator meaning                                                                                                                                    | Primary artifact             |
 | --------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
 | **1. Intake**   | `intake`                                                                 | Claim file, ingest specialist transcribes PDFs/images, deterministic intake clerk normalizes text, gated LLM triage/clean/prepare, create manifest. | Manifest                     |
-| **2. Classify** | `classify`, `retry_classify`, `review_classify`                          | Determine a live class and confidence; ambiguous/unknown results are not silently remapped.                                                         | Classification state + trace |
+| **2. Classify** | `classify`, `retry_classify`, `review_classify`, `classification_arbiter` | Determine a live class and confidence; ambiguous/unknown results are not silently remapped.                                                         | Classification state + trace |
 | **3. Extract**  | `extract`, `retry_extract`, `judge_verify`, `arbiter`, `boss_escalation` | Dispatch specialist, validate output, resolve ambiguity, adjudicate conflicts.                                                                      | Structured extraction        |
 | **4. Compile**  | `compile_report`                                                         | Deterministically assemble the matter record. **No reporter LLM call.**                                                                             | Matter record                |
 | **5. Catalog**  | `catalog_write`                                                          | Persist document/matter metadata and extracted data.                                                                                                | SQLite/Postgres rows         |
