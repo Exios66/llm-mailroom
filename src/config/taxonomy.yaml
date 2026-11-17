@@ -511,6 +511,17 @@ doc_classes:
       territory: free_text
       cuad_family: label
       cuad_clauses: entity_list:free_text
+    # Closed-label vocabularies (#285). Single source of truth: each `label` field below
+    # that names a closed set lists its values here. After extraction a value off its list
+    # (case, spacing, `_`/`-` folded) routes the document to review with cause
+    # `out_of_vocabulary`; absence is valid. Values match the Dojo's scored vocabulary
+    # (llm_dojo_scoring.schemas.scored_enums.SCORED_ENUM_FIELDS; a test pins the match).
+    label_vocabularies:
+      cuad_family: [affiliate, agency, collaboration, co_branding, consulting, development,
+                    distributor, endorsement, franchise, hosting, ip, joint_venture, license,
+                    maintenance, manufacturing, marketing, non_compete_no_solicit, outsourcing,
+                    promotion, reseller, service, sponsorship, strategic_alliance, supply,
+                    transportation, other]
 
   - key: merger_agreement
     label: "Merger Agreement"
@@ -539,6 +550,8 @@ doc_classes:
       intent: label
       subject_matter: free_text
       keywords: entity_list:name
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      merger_consideration: [all_cash, all_stock, mixed_cash_stock, mixed_cash_stock_election, other]
 
   - key: corporate_record
     label: "Corporate Record"
@@ -573,6 +586,10 @@ doc_classes:
       intent: label
       subject_matter: free_text
       keywords: entity_list:name
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      communication_type: [email, letter, memo, notice, demand, attorney_demand, press_release,
+                           meeting_request, other]
+      urgency: [routine, time-sensitive, urgent, critical]
 
   - key: insurance_claim
     label: "Insurance Claim"
@@ -597,6 +614,11 @@ doc_classes:
       subject_matter: free_text
       keywords: entity_list:name
       claim_checklist: entity_list:free_text
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      # Product lines only. A CMS table token (pde, inpatient, outpatient, carrier) is not a
+      # product line: #280 folds it onto `health`, and one that reaches the check is off-list.
+      claim_type: [auto, property, liability, health, life, workers_comp, other]
+      coverage_determination: [approved, denied, partial, pending]
 
 file_extensions:
   - .txt

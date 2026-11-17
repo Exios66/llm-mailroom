@@ -49,6 +49,7 @@ JUDGE_INCOMPLETE = "judge_incomplete"
 JUDGE_ERROR = "judge_error"
 RETRIES_EXHAUSTED = "retries_exhausted"
 CHUNK_FAILED = "chunk_failed"
+OUT_OF_VOCABULARY = "out_of_vocabulary"
 
 CAUSE_LABELS: dict[str, str] = {
     CLASS_MISS: "classification miss vs ground truth",
@@ -83,6 +84,7 @@ CAUSE_LABELS: dict[str, str] = {
     JUDGE_ERROR: "judge verification failed",
     RETRIES_EXHAUSTED: "confidence retry budget spent without a settled answer",
     CHUNK_FAILED: "one or more extraction windows failed",
+    OUT_OF_VOCABULARY: "a closed-label field holds a value off its vocabulary",
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})
@@ -355,6 +357,18 @@ def _failed_chunks(extracted: Mapping[str, Any]) -> int:
     return _as_int(value)
 
 
+def _off_vocabulary(doc_type: Any, extracted: Mapping[str, Any]) -> dict[str, Any]:
+    """Closed-label fields off their taxonomy vocabulary (#285); never raises."""
+    if not isinstance(doc_type, str):
+        return {}
+    try:
+        from pipeline.label_vocab import out_of_vocabulary_fields
+
+        return out_of_vocabulary_fields(doc_type, extracted)
+    except Exception:  # noqa: BLE001 - a config problem must not break parking
+        return {}
+
+
 def _state_derived_causes(
     data: Mapping[str, Any], extracted: Mapping[str, Any], known: set[str]
 ) -> list[str]:
@@ -455,6 +469,9 @@ def _state_derived_causes(
 
     if _failed_chunks(extracted) > 0:
         add(CHUNK_FAILED)
+
+    if not stub and extracted and _off_vocabulary(doc_type, extracted):
+        add(OUT_OF_VOCABULARY)
 
     attempts = _as_int(data.get("extraction_attempts"))
     schema_probe = (

@@ -379,13 +379,17 @@ def _enrich_contract_result(result: dict | None, state: dict) -> dict:
         pass
     try:
         from langchain_agents.doc_inventories import enrich_extraction
+        from pipeline.label_vocab import canonicalize_labels
 
-        return enrich_extraction(
+        enriched = enrich_extraction(
             payload,
             doc_type=doc_type,
             extract_class=extract_class,
             subtype=state.get("contract_subtype") or state.get("doc_subclass"),
         )
+        # After the inventory step, so a CMS table token on claim_type is already `health`
+        # (#280). A value that still folds onto no token is left for the routing check (#285).
+        return canonicalize_labels(doc_type, enriched)
     except Exception:
         logger.exception("contract_inventory_enrich_failed")
         return payload

@@ -369,6 +369,15 @@ The token mappers compact the value to lowercase letters and digits, then try an
 
 The extract call also gets a matching instruction block in its handoff context (`specialist_handoff`), which lists the allowed tokens for the class, so the model is told the vocabulary before enrichment runs.
 
+### 3a. Closed-label vocabularies (#285)
+
+Seven fields are closed labels that the Dojo scores exactly: contract `cuad_family`, merger `merger_consideration`, correspondence `communication_type` and `urgency`, insurance `claim_type` and `coverage_determination`. Their vocabularies live in `taxonomy.yaml` under `doc_classes[].label_vocabularies` (the single source of truth, pinned to the Dojo's scored vocabulary by `test_label_vocabularies.py`); `pipeline/label_vocab.py` reads them.
+
+* The extract and retry nodes first run inventory enrichment (so #280 has already folded a CMS table token on `claim_type` onto `health`), then write each on-list value as its canonical token. Case, surrounding whitespace and runs of space, `_` and `-` are folded for the match, so `Time Sensitive` becomes `time-sensitive`.
+* A non-blank value that matches no token is left as the model wrote it. `after_extraction` (and so `after_retry_extraction`) sends the document straight to `human_review`, with no retry and no mapping to `other`, and `collect_review_causes` adds `out_of_vocabulary`.
+* A blank or missing value is not off-list. `intent` and `record_type` are not covered here.
+* The reviewer's own `correct` fields are not checked against the vocabulary.
+
 ### 4. Guardrail
 
 `pipeline/guards.py:guard_extraction` reports an issue when the payload has `_parse_error`, fails `model_validate` against the Pydantic schema, or has no populated field. Any issue clamps `extraction_confidence` to at most `0.5` (or `0.0` if there was none), so routing sends the document to retry or review. For `insurance_claim` it also logs determination-consistency issues, which are informational and do not change routing.
