@@ -8,6 +8,7 @@ declaration.
 """
 from __future__ import annotations
 
+import contextlib
 import threading
 from typing import Literal, TypedDict
 
@@ -136,6 +137,30 @@ def compiled():
 
     return build_graph()
 
+
+
+@contextlib.contextmanager
+def _recorded_route_logs():
+    """Record route_spec's log calls whatever the process-wide structlog level.
+
+    ``structlog.testing.capture_logs`` only sees events the configured filtering
+    logger lets through, and the full suite configures INFO, which drops DEBUG.
+    """
+    records: list[dict] = []
+
+    class _Recorder:
+        def __getattr__(self, level):
+            def log(event, **kw):
+                records.append({"event": event, "log_level": level, **kw})
+
+            return log
+
+    original = rs.logger
+    rs.logger = _Recorder()
+    try:
+        yield records
+    finally:
+        rs.logger = original
 
 def _spec(router, destinations, node="classify", rules=()):
     return RouteSpec(node, router, destinations, tuple(rules))
@@ -326,7 +351,7 @@ class TestRuleEvaluation:
     def test_rule_returning_the_proposal_is_a_no_op_override(self):
         router, calls = _counting_router()
         spec = _spec(router, DESTS, rules=[RouteRule("echo", lambda s, p: p), RouteRule("later", lambda s, p: "review")])
-        with structlog.testing.capture_logs() as logs:
+        with _recorded_route_logs() as logs:
             assert decide_route(spec, {}) == "keep"  # same as the proposal, and it ends the evaluation
         assert len(calls) == 1
         applied = [l for l in logs if l["event"] == "route_rule_applied"]
@@ -628,7 +653,7 @@ def test_applied_log_is_info_on_override_and_debug_on_agreement():
     router, _ = _counting_router()
     override = _spec(router, DESTS, rules=[RouteRule("park", lambda s, p: "review")])
     agree = _spec(router, DESTS, rules=[RouteRule("agree", lambda s, p: p)])
-    with structlog.testing.capture_logs() as logs:
+    with _recorded_route_logs() as logs:
         assert decide_route(override, {}) == "review"
         assert decide_route(agree, {}) == "keep"
     applied = [(l["rule"], l["log_level"], l["overrode"]) for l in logs if l["event"] == "route_rule_applied"]
