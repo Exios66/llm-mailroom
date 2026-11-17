@@ -51,10 +51,10 @@ How the pieces fit (``build_graph()`` calls :func:`prepare_slots`, :func:`wrap_n
   attribute error, or an async callable, is a ``DecisionPointConfigError``. A bare name that
   is not registered yet only logs ``decision_point_backend_unregistered`` (slot, backend,
   ``on_failure``; once per slot per process): registering lazily stays allowed.
-* **Limits of this phase.** The live-thread cap (``_MAX_ABANDONED_DECISION_POINT_THREADS``:
-  running plus timed-out calls, reserved under a lock) is one list shared by every slot, so
-  a stalled backend, or four slow ones at once, can make other slots' calls refuse
-  (``unavailable``). A consultation runs inside the node's ``_bounded`` wrapper, after the
+* **Limits of this phase.** The stalled-thread cap (``_MAX_ABANDONED_DECISION_POINT_THREADS``:
+  timed-out calls whose thread still runs; healthy in-flight calls never count) is one list
+  shared by every slot, so four stalled calls make every slot's calls refuse
+  (``unavailable``) until one finishes. A consultation runs inside the node's ``_bounded`` wrapper, after the
   node itself: its time (the slot's ``timeout_seconds``, at most the time left on the run
   deadline) counts toward the node's wall-clock budget, not a separate one. There is no
   circuit breaker: every document consults its slot, and a failing
@@ -172,13 +172,15 @@ def run_bounded(
     block the worker nor keep the process alive; on expiry :class:`DecisionBackendTimeout`
     is raised and the stray thread stays tracked in ``abandoned``.
 
-    ``abandoned`` holds every live thread of this kind: a call reserves its place in it,
-    under ``lock``, in the same step that checks the cap and starts the thread, so
-    concurrent callers cannot overshoot ``max_abandoned``. In-flight calls count too (any of
-    them may be abandoned a moment later): at ``max_abandoned`` live threads, new calls are
-    refused with :class:`DecisionBackendTimeout` instead of starting another. Exceptions
-    raised by ``call`` propagate unchanged. The caller's contextvars (run deadline, token
-    accounting, tracing) are visible to ``call``.
+    ``abandoned`` holds the timed-out threads of this kind that are still running. At
+    ``max_abandoned`` of them, new calls are refused with :class:`DecisionBackendTimeout`
+    instead of starting another. Healthy in-flight calls do not count, so concurrent
+    documents are never refused for being busy. The cap check and the thread start happen
+    under ``lock``, and a timed-out thread is added under it too; calls already in flight
+    when the cap is reached can still time out and join the list, so the list can exceed
+    the cap by at most the number of concurrent callers. Exceptions raised by ``call``
+    propagate unchanged. The caller's contextvars (run deadline, token accounting,
+    tracing) are visible to ``call``.
     """
     from pipeline import limits
 
@@ -206,7 +208,7 @@ def run_bounded(
             box["error"] = exc
 
     thread = threading.Thread(target=_target, name=name, daemon=True)
-    with lock:  # check, reserve and start in one step: the cap cannot be overshot
+    with lock:  # check the cap and start in one step
         abandoned[:] = [t for t in abandoned if t.is_alive()]
         if len(abandoned) >= max_abandoned:
             raise DecisionBackendTimeout(f"{len(abandoned)} stalled {name} calls still running")
@@ -214,20 +216,21 @@ def run_bounded(
             thread.start()
         except RuntimeError:  # cannot start a new thread: no answer, not a backend fault
             raise DecisionBackendTimeout(f"could not start a {name} thread") from None
-        abandoned.append(thread)
     try:
         thread.join(timeout)
     except OverflowError:  # belt and braces: the clamp above should make this unreachable
         thread.join(float(threading.TIMEOUT_MAX))
     if thread.is_alive():
+        with lock:
+            abandoned.append(thread)
         raise DecisionBackendTimeout(f"{name} exceeded {timeout:.0f}s")
     if "error" in box:
         raise box["error"]
     return box.get("value")
 
 
-# Live decision-point threads: running calls and timed-out ones that left a daemon thread
-# behind. At this many, new calls are refused (the slot's on_failure applies). Own list and
+# Timed-out decision-point calls whose daemon thread is still running. At this many, new
+# calls are refused (the slot's on_failure applies). Own list and
 # cap: stalled slots can never make the classification reviewer or the extraction gate
 # refuse calls, and the reverse.
 _MAX_ABANDONED_DECISION_POINT_THREADS = 4
