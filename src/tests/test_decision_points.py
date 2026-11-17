@@ -455,6 +455,29 @@ class TestConsult:
         got = dp.consult(policy(), inp())
         assert got.status == "invalid" and got.route_hint is None
 
+    @pytest.mark.parametrize("status", ["unavailable", "invalid"])
+    def test_a_backend_declared_failure_keeps_none_of_its_own_evidence(self, status):
+        answer = {"status": status, "route_hint": "x" + DOC_TEXT[:40],
+                  "evidence": {"reason": DOC_TEXT, "detail": DOC_TEXT, "error": DOC_TEXT}}
+        dp.register_decision_point_backend("fake", lambda i: answer)
+        with capture_logs() as logs:
+            got = dp.consult(policy(), inp())
+        assert got.status == status and got.evidence == {"reason": "backend_declined"}
+        assert "CONFIDENTIAL" not in json.dumps([logs, got.to_dict()], default=str)
+
+    def test_an_unlisted_route_hint_is_not_logged(self):
+        dp.register_decision_point_backend(
+            "fake", lambda i: ok(route_hint=DOC_TEXT[:60], confidence=0.9))
+        with capture_logs() as logs:
+            dp.consult(policy(allow=("compile_report",)), inp())
+        events = [e for e in logs if e["event"] == "decision_point_consulted"]
+        assert events and events[0]["route_hint"] == "<unlisted>"
+        assert "CONFIDENTIAL" not in json.dumps(logs, default=str)
+        dp.register_decision_point_backend("fake", lambda i: ok(route_hint="compile_report", confidence=0.9))
+        with capture_logs() as logs:
+            dp.consult(policy(allow=("compile_report",)), inp())
+        assert [e["route_hint"] for e in logs if e["event"] == "decision_point_consulted"] == ["compile_report"]
+
     def test_backend_declared_unavailable_loses_its_hint(self):
         dp.register_decision_point_backend("fake", lambda i: {**PARK, "status": "unavailable"})
         got = dp.consult(policy(), inp())
@@ -1251,7 +1274,19 @@ class TestOverrideBudget:
                        "max_overrides": 8, "enabled": False},                       # inactive
         })
         assert [p.slot for p in dp.prepare_slots()] == ["a.post", "b.post", "c.post"]
-        assert [p.can_redirect for p in dp.load_slot_policies()] == [True, False, False, True]
+        assert [p.can_redirect for p in dp.load_slot_policies()] == [True, False, False, False]
+
+    def test_a_disabled_slots_own_allow_does_not_count(self, decision_points):
+        # Off slot-wide; the one class that turns it on may only record. Its slot-wide
+        # allow is never in force, so it cannot redirect and costs nothing in the total.
+        decision_points({
+            "a.post": {"node": "extract", "backend": "b", "max_overrides": 8, "enabled": False,
+                       "allow": ["compile_report"],
+                       "by_class": {"contract": {"enabled": True, "allow": []}}},
+            "b.post": {"node": "classify", "backend": "b", "max_overrides": 1, "allow": ["extract"]},
+        })
+        assert [p.can_redirect for p in dp.load_slot_policies()] == [False, True]
+        assert [p.slot for p in dp.prepare_slots()] == ["a.post", "b.post"]
 
     def test_a_class_override_can_make_a_slot_redirect(self, decision_points):
         decision_points({"a.post": {"node": "extract", "backend": "b", "max_overrides": 8,

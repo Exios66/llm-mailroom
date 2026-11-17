@@ -64,6 +64,7 @@ caught before. Check each one. The orchestrator adds a line when a new one gets 
 `.claude/rules/pr-flow.md`).
 
 - Response-shape validation must cover absent attributes as well as explicit nulls; exercise both inside the retry wrapper.
+- Plug-in answers are untrusted text everywhere: logs, spans and stored evidence carry only our own tokens or operator-configured names, never a backend's reason, detail or hint; and a config-derived property ("can redirect") reads only the settings in force (`enabled` respected).
 
 - A fact changed in one doc but not in the other pages that repeat it (versions, counts,
   pins, ports, defaults).
