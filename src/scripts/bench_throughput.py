@@ -610,23 +610,46 @@ def worker_main(cfg: dict, out: Path) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _git(*args: str) -> str:
+def _git(*args: str) -> str | None:
+    """Run git in the repo; ``None`` when the command fails (unverifiable, not empty)."""
     try:
         out = subprocess.run(
             ["git", *args], cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=30
         )
-        return out.stdout.strip() if out.returncode == 0 else ""
     except Exception:  # noqa: BLE001
-        return ""
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def _untracked_digest(listing: str) -> str | None:
+    """Hash the names and bytes of untracked files; ``None`` if one cannot be read."""
+    h = hashlib.sha256()
+    for name in sorted(n for n in listing.split("\0") if n):
+        try:
+            data = (REPO_ROOT / name).read_bytes()
+        except OSError:
+            return None
+        h.update(name.encode() + b"\0" + hashlib.sha256(data).digest())
+    return h.hexdigest()
 
 
 def git_state() -> dict:
-    """The commit and cleanliness the benchmark is measuring."""
+    """The commit and working-tree content the benchmark is measuring.
+
+    Any failed git call makes the whole observation unverifiable (``commit`` is
+    empty), which ``provenance_changed`` treats as changed.
+    """
+    commit = _git("rev-parse", "HEAD")
     status = _git("status", "--porcelain")
-    # Fingerprint the working-tree content too, so a dirty tree that changes while
-    # the levels run (and stays dirty) is still caught.
-    dirty = hashlib.sha256((status + "\n" + _git("diff", "HEAD")).encode()).hexdigest()
-    return {"commit": _git("rev-parse", "HEAD"), "tree_clean": status == "", "tree_fingerprint": dirty}
+    diff = _git("diff", "HEAD")
+    untracked = _git("ls-files", "--others", "--exclude-standard", "-z")
+    digest = _untracked_digest(untracked) if untracked is not None else None
+    if None in (commit, status, diff, digest):
+        return {"commit": "", "tree_clean": None, "tree_fingerprint": None}
+    # Fingerprint tracked changes and untracked file contents, so a dirty tree that
+    # changes while the levels run (and stays dirty) is still caught.
+    fingerprint = hashlib.sha256(f"{status}\n{diff}\n{digest}".encode()).hexdigest()
+    return {"commit": commit, "tree_clean": status == "", "tree_fingerprint": fingerprint}
 
 
 def provenance_changed(before: dict, after: dict) -> bool:

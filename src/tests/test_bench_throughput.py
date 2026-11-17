@@ -223,14 +223,42 @@ def test_provenance_changed_treats_unverifiable_commit_as_changed():
     assert bench.provenance_changed(snap, dict(snap)) is True
 
 
-def test_git_state_fingerprint_tracks_dirty_content(monkeypatch):
-    outputs = {"status": " M a.py", "diff": "+x", "rev-parse": "abc"}
+def _fake_git(monkeypatch, outputs):
     monkeypatch.setattr(bench, "_git", lambda *a: outputs[a[0]])
+
+
+def test_git_state_fingerprint_tracks_dirty_content(monkeypatch):
+    outputs = {"status": " M a.py", "diff": "+x", "rev-parse": "abc", "ls-files": ""}
+    _fake_git(monkeypatch, outputs)
     first = bench.git_state()
     outputs["diff"] = "+y"
     second = bench.git_state()
     assert first["tree_clean"] is second["tree_clean"] is False
     assert first["tree_fingerprint"] != second["tree_fingerprint"]
+
+
+def test_git_state_fingerprint_tracks_untracked_file_content(monkeypatch, tmp_path):
+    monkeypatch.setattr(bench, "REPO_ROOT", tmp_path)
+    (tmp_path / "new_mod.py").write_text("x = 1\n")
+    _fake_git(monkeypatch, {"status": "?? new_mod.py", "diff": "", "rev-parse": "abc", "ls-files": "new_mod.py\0"})
+    first = bench.git_state()
+    (tmp_path / "new_mod.py").write_text("x = 2\n")  # same name, same status, new content
+    second = bench.git_state()
+    assert bench.provenance_changed(first, second) is True
+
+
+@pytest.mark.parametrize("failing", ["rev-parse", "status", "diff", "ls-files"])
+def test_git_state_failed_git_call_is_unverifiable(monkeypatch, failing):
+    outputs = {"status": "", "diff": "", "rev-parse": "abc", "ls-files": "", failing: None}
+    _fake_git(monkeypatch, outputs)
+    snap = bench.git_state()
+    assert snap["commit"] == "" and snap["tree_fingerprint"] is None
+    assert bench.provenance_changed(snap, dict(snap)) is True
+
+
+def test_git_returns_none_when_git_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(bench, "REPO_ROOT", tmp_path)  # not a repository
+    assert bench._git("rev-parse", "HEAD") is None
 
 
 def _fake_main_env(monkeypatch, snapshots):
