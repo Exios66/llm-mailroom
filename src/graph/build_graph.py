@@ -3778,6 +3778,8 @@ def build_graph(checkpointer=None):
     workflow.add_node("compile_report", traced_node("compile-report")(_bounded(_dp("compile_report", compile_report_node))))
     workflow.add_node("catalog_write", traced_node("write-catalog")(_bounded(catalog_write_node)))
     workflow.add_node("archive", traced_node("archive-document")(_bounded(archive_node)))
+    # Not _bounded on purpose: the terminal "failed" row must be written even when the
+    # run deadline or token budget has just been spent.
     workflow.add_node("audit_failed", traced_node("audit-failed")(audit_failed_node))
     # Unified audit row (spec 5.1): the report is scored before it is catalogued. Nodes only;
     # their edges are declared in route_spec.scoring_topology().

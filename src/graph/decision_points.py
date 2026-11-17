@@ -636,8 +636,8 @@ def validate_slot_policies(
 ) -> None:
     """Raise :class:`DecisionPointConfigError` listing every way a slot disagrees with the graph.
 
-    A slot's node must have a conditional route (``intake``, ``catalog_write`` and
-    ``archive`` have none) and must not be ``human_review`` (a person's decision is not
+    A slot's node must have a conditional route in ``ROUTE_SPECS`` (``intake``,
+    ``catalog_write``, ``archive``, ``audit_failed`` and the ``score_*`` nodes have none) and must not be ``human_review`` (a person's decision is not
     refined by a model) or ``START``. Every ``allow`` entry (slot and per class) must be
     a destination of that node's route, and never the node itself (a self-loop is the
     transient-retry budget). ``fail_safe`` needs ``human_review`` among the destinations.
