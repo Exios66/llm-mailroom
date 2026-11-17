@@ -2,7 +2,7 @@
 
 ## What this folder is (plain English)
 
-This is the **engine room**. Mailroom is built on **LangGraph**: for every document, it runs a fixed "assembly line" of steps (called *nodes*). Each node takes the document's current state, does one thing, and hands the result to the next node. The file `build_graph.py` wires all the nodes together.
+This is the **engine room**. Mailroom is built on **LangGraph**: for every document, it runs a fixed "assembly line" of steps (called *nodes*). Each node takes the document's current state, does one thing, and hands the result to the next node. The file `build_graph.py` registers the nodes; `route_spec.py` declares which node follows which, and `build_graph()` wires those edges through `wire_edges`.
 
 The journey of a document:
 
@@ -41,5 +41,5 @@ At a few points a *conditional edge* (in `routing.py`) looks at the LLM's **conf
   - **Chunked extraction** (`_run_chunked_extraction`): every live specialist (contracts, corporate records, correspondence, insurance). Window size is capped at the agent's `max_input_chars`.
   - `run_pipeline(file_path, matter_id)` — convenience entrypoint that reuses the process-level graph and runs one document.
   - **Judge gating**: for grounded runs with deterministic field scoring, `_emit_pipeline_result` suppresses the `pipeline-result` generation when the verdict is unambiguous (see `field_scoring.type_bands` in `taxonomy.yaml`) — saving both LLM-as-judge evaluator calls.
-- Conditionals are wired with `add_conditional_edges("classify", after_classify, {...})`; `after_classify` can return `"retry_classify"`, `"extract"`, or `"human_review"`.
+- Conditional edges are declared once in `route_spec.py` (`ROUTE_SPECS`: each node's router from `routing.py` and its destination map; `PLAIN_EDGES`), and `wire_edges` adds them after checking that every destination exists and each router's `Literal` return annotation matches its map. For example `after_classify` can return `"classify"` (transient self-loop), `"retry_classify"`, `"review_classify"`, `"extract"` or `"human_review"`. `add_route_rule` lets a rule refine a node's route; see the module docstring for the contract.
 - Architecture doc: `docs/architecture.md`.

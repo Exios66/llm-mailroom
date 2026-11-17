@@ -48,10 +48,26 @@ Rule semantics (the contract a decision model plugs into):
 * A rule receives a read-only view of the state (``types.MappingProxyType``), so it
   cannot reassign or delete top-level keys. Nested values are the live objects;
   a rule must treat them as read-only too.
+* Rules are pure and synchronous: a rule reads state, it does not call a model or
+  write state. Work that produces evidence (a decision model's answer, a review
+  cause) belongs in a node, which writes it to state for a rule to read.
+  ``add_route_rule`` refuses ``async def`` rules.
+* A rule that redirects to ``human_review`` must only do so on state that already
+  carries a review cause. ``human_review_node`` derives the park reason from state
+  (``pipeline.reconsideration.collect_review_causes``), not from the route, so a
+  rule that parks a clean document parks it with no cause or reason, and
+  ``test_review_cause_coverage.py`` (which covers the routers) cannot see it.
+* The routers are bound here at import time. Patching ``graph.build_graph.after_x``
+  no longer changes the graph; patch ``graph.routing`` before import, or register a
+  rule.
+* ``route_rule_applied`` is logged at INFO when a rule changes the route and at
+  DEBUG when it returns the router's own proposal, so a mostly-agreeing rule adds no
+  INFO line per document.
 """
 from __future__ import annotations
 
 import functools
+import inspect
 import threading
 import typing
 from dataclasses import dataclass
@@ -309,6 +325,10 @@ def add_route_rule(node: str, rule: RouteRule, *, position: "int | Literal['firs
     """
     global _RULES
     _check_node(node)
+    if inspect.iscoroutinefunction(rule.decide) or inspect.iscoroutinefunction(
+        getattr(rule.decide, "__call__", None)
+    ):
+        raise TypeError(f"route rule {rule.name!r} must be synchronous; async rules are not supported")
     with _LOCK:
         current = list(_RULES.get(node, ()))
         if any(r.name == rule.name for r in current):
@@ -410,7 +430,7 @@ def decide_route(spec: RouteSpec, state: Mapping[str, Any]) -> str:
                 allowed=sorted(spec.destinations),
             )
             continue
-        logger.info(
+        (logger.info if changed else logger.debug)(
             "route_rule_applied",
             node=spec.node,
             rule=rule.name,

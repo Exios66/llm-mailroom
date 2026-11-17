@@ -622,3 +622,28 @@ class TestRulesChangeCompiledRoutes:
         assert branch.path.invoke({}) == "intake"
         add_route_rule(START, RouteRule("skip-intake", lambda s, p: "extract"))
         assert branch.path.invoke({}) == "extract"
+
+
+def test_applied_log_is_info_on_override_and_debug_on_agreement():
+    router, _ = _counting_router()
+    override = _spec(router, DESTS, rules=[RouteRule("park", lambda s, p: "review")])
+    agree = _spec(router, DESTS, rules=[RouteRule("agree", lambda s, p: p)])
+    with structlog.testing.capture_logs() as logs:
+        assert decide_route(override, {}) == "review"
+        assert decide_route(agree, {}) == "keep"
+    applied = [(l["rule"], l["log_level"], l["overrode"]) for l in logs if l["event"] == "route_rule_applied"]
+    assert applied == [("park", "info", True), ("agree", "debug", False)]
+
+
+def test_async_rules_are_refused():
+    async def decide(state, proposed):
+        return None
+
+    class AsyncCallable:
+        async def __call__(self, state, proposed):
+            return None
+
+    for name, fn in (("coro-fn", decide), ("coro-callable", AsyncCallable())):
+        with pytest.raises(TypeError, match="synchronous"):
+            add_route_rule("extract", RouteRule(name, fn))
+    assert route_rules("extract") == ()
