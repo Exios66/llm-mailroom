@@ -78,7 +78,7 @@ The scoring layer the pipeline and the other core packages consume:
 * **v0.12.1** ([PR #10](https://github.com/Exios66/llm-dojo-scoring/pull/10)) adds the `local_vs_api` serving suite: `compare_serving` tables, scorecards, and cost cards for local-vs-API-key runs. Document-pipeline scoring formulas from v0.11.0 are unchanged.
 * **v0.11.0** ([PR #8](https://github.com/Exios66/llm-dojo-scoring/pull/8)) is additive on the 0.10.0 scoring surface: T0/T1 `MetricDef`s carry `citation` / `inclusion` / `ground_truth`; `llm_dojo_scoring.prompts` vendors production + docclass templates with metric names in catalog metadata only (anti-priming). `field_presence` stays unemitted.
 
-### Auto-bump when dojo publishes
+### Bump the pin when dojo publishes
 
 Mailroom keeps the dojo pin current with `src/scripts/bump_dojo_scoring.py`, run by hand when dojo publishes a release (GitHub Actions is off; CI is CircleCI only). When the pin is behind, `--apply` rewrites `pyproject.toml` plus the documented pin references; when the pin is already the release's commit but the release rows are stale (`--check` prints `release_metadata_stale=true`), it only rewrites those docs and keeps the SHA pin. Open a PR with the result and merge after CI is green.
 
