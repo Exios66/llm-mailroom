@@ -254,11 +254,19 @@ class TestWatcherInboxEvents:
                 self.dest_path = str(dest or src)
                 self.is_directory = is_directory
 
-        handler.on_modified(_Evt(created))
-        handler.on_moved(_Evt(inbox / "elsewhere.txt", moved))
-        deadline = time.time() + 10
-        while time.time() < deadline and len(scheduled) < 2:
-            time.sleep(0.02)
+        try:
+            handler.on_modified(_Evt(created))
+            handler.on_moved(_Evt(inbox / "elsewhere.txt", moved))
+            deadline = time.time() + 10
+            while time.time() < deadline and len(scheduled) < 2:
+                time.sleep(0.02)
+        finally:
+            # The pool is module-global: retire the workers this test started (sized
+            # by the default cap) so a later Watcher does not reuse them past its own cap.
+            watcher._dispatch.close()
+            # Leave it open for the next test: a closed pool rejects every submit,
+            # which would let a "not scheduled" assertion pass for the wrong reason.
+            watcher._dispatch.reopen()
         assert "a.txt" in scheduled
         assert "b.txt" in scheduled
 
