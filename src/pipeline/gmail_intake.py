@@ -2419,12 +2419,11 @@ def build_echo_html(
 def _load_audit_rows(doc_id: str) -> tuple[list[dict], bool | None]:
     """Audit chain rows + hash-chain verdict for the echo body (best-effort)."""
     try:
-        import asyncio
-
         from storage.audit_log import get_audit_chain
+        from storage.loop_bridge import run_sync
         from schemas.audit import AuditLogEntry, verify_chain
 
-        records = asyncio.run(get_audit_chain(doc_id))
+        records = run_sync(get_audit_chain(doc_id))
         entries = [
             AuditLogEntry(
                 entry_id=r["entry_id"],

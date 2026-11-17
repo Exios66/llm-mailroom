@@ -508,19 +508,21 @@ def _publish_export(stamp, doc_rows, audit_rows, latest_updated):
 
 
 def _run_async(coro):
+    """Run ``coro`` from sync code on the shared storage loop.
+
+    From a thread that already runs a loop (an async API handler) the old code
+    bounded the wait with 30 s; that bound is kept for that case (the work is
+    now cancelled on expiry instead of left running). Elsewhere it was unbounded.
+    """
     import asyncio
+
+    from storage.loop_bridge import run_sync
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
-    # A loop is running in THIS thread (async API handler). Scheduling onto it
-    # and blocking on the future would deadlock it, so run the coroutine on a
-    # fresh loop in a helper thread instead.
-    import concurrent.futures
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result(timeout=30)
+        return run_sync(coro)
+    return run_sync(coro, timeout=30)
 
 
 def export_document_to_warehouse(doc_id: str, *, stamp: date | None = None) -> bool:
