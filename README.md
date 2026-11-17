@@ -118,7 +118,7 @@ and [documentation home](docs/README.md).
 | | Phase | Graph node(s) | What happens |
 | :---: | :--- | :--- | :--- |
 | 📥 | **Intake** | `intake-document` | The ingest specialist claims the file, transcribes it, cleans it and writes its manifest |
-| 🏷️ | **Classify** | `classify-document`, `(retry)`, `(reviewer)`, `arbitrate-classification` | `SorterAgent` picks one of the five classes with a confidence score. High confidence goes to extraction. Medium confidence gets a retry (a retry that reaches high confidence goes straight to extraction) and, if it stays medium, a reviewer's second opinion, with the arbiter stepping in when that review fails. Low or unknown confidence goes to a human |
+| 🏷️ | **Classify** | `classify-document`, `(retry)`, `(reviewer)`, `arbitrate-classification` | `SorterAgent` picks one of the five classes with a confidence score. High confidence goes to extraction. Medium or low confidence gets a retry first. After the retry, high confidence goes to extraction and medium confidence gets a reviewer's second opinion; confidence still below the low threshold, or an unknown class, goes to a human. An exhausted or failed LLM review also goes to a human. A class configured as a decision-model review lane (`reviewer.by_class` mode `decision_only`, none by default) is reviewed at any sorter confidence, and when that review parks, is exhausted or its backend fails it goes to the classification arbiter, then to a human unless the arbiter accepts a class |
 | 🔍 | **Extract** | `extract-fields`, `(retry)` | The class specialist fills a Pydantic schema, gated on schema validity, confidence, factuality and completeness |
 | ⚖️ | **Quality** | `judge-verify`, `arbitrate-verdict`, `adjudicate-conflict` | The Judge checks ambiguous completeness. The Arbiter lets the verdict stand, orders a re-extraction or escalates. The Boss adjudicates matter conflicts |
 | 🧑‍⚖️ | **Human review** | `route-for-review` | The governance boundary: a person approves, rejects or requeues. A rejection ends in `FAILED` |
@@ -307,16 +307,17 @@ flowchart TD
     START --> INTAKE
     INTAKE --> CLASSIFY
 
-    CLASSIFY -- "confidence >= high (0.97)" --> EXTRACT
-    CLASSIFY -- "low <= confidence < high (0.88–0.97)" --> REVIEW
-    CLASSIFY -- "confidence < low, attempts <= retry_max" --> RETRY_CLASS
-    CLASSIFY -- "unknown type / still low after retries" --> REVIEW
+    CLASSIFY -- "confidence >= high (0.97), not decision_only" --> EXTRACT
+    CLASSIFY -- "confidence < high, attempts <= retry_max (medium or low)" --> RETRY_CLASS
+    CLASSIFY -- "decision_only class, or ground-truth class miss" --> REVIEW_CLASS
+    CLASSIFY -- "unknown type / retries spent below high" --> REVIEW
     RETRY_CLASS -- "confidence >= high" --> EXTRACT
-    RETRY_CLASS -- "medium band exhausted (Lane A)" --> REVIEW_CLASS
-    RETRY_CLASS -- "medium or still low confidence" --> REVIEW
+    RETRY_CLASS -- "low <= confidence < high (0.88–0.97, Lane A)" --> REVIEW_CLASS
+    RETRY_CLASS -- "decision_only class at any confidence" --> REVIEW_CLASS
+    RETRY_CLASS -- "unknown type / still below low" --> REVIEW
     REVIEW_CLASS -- "high-confidence reviewer verdict" --> EXTRACT
-    REVIEW_CLASS -- "decision-model result not extract, or review exhausted / failed" --> CLASS_ARBITER
-    REVIEW_CLASS -- "anything else" --> REVIEW
+    REVIEW_CLASS -- "decision_only lane: not extract, exhausted or backend failed (not no-text)" --> CLASS_ARBITER
+    REVIEW_CLASS -- "LLM reviewer: no high-confidence verdict, exhausted or failed" --> REVIEW
     CLASS_ARBITER -- "accepted class (no ground-truth class miss)" --> EXTRACT
     CLASS_ARBITER -- "anything else" --> REVIEW
 
