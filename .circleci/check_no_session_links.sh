@@ -24,7 +24,7 @@ if ! commits=$(git rev-list $range); then
 fi
 bad=()
 for c in $commits; do
-  if git log -1 --format=%B "$c" | grep -Eiq "$PATTERN"; then bad+=("$(git log -1 --format='%h %s' "$c")"); fi
+  if git log -1 --format=%B "$c" | grep -Eiq "$PATTERN"; then bad+=("$(git log -1 --format='%h' "$c")"); fi
 done
 if [ ${#bad[@]} -gt 0 ]; then
   # Name the commits only: printing the matched text would leak it into public CI logs.
