@@ -845,6 +845,23 @@ class TestWrapNode:
         wrapped({"doc_type": "contract", "doc_text": DOC_TEXT, "extraction_confidence": 0.1})
         assert seen[0].handoff["extraction_confidence"] == 0.42
 
+    @pytest.mark.parametrize("on_failure,route", [("fail_open", None), ("fail_safe", "human_review")])
+    def test_input_that_cannot_be_built_is_invalid_not_a_crash(self, monkeypatch, on_failure, route):
+        calls = []
+        dp.register_decision_point_backend("fake", lambda i: calls.append(1) or ok())
+
+        def boom(policy, state):
+            raise RuntimeError("cannot copy")
+
+        monkeypatch.setattr(dp, "_build_input", boom)
+        wrapped = dp.wrap_node("extract", node_returning({"x": 1}), [policy(on_failure=on_failure)])
+        out = wrapped({"doc_type": "contract", "doc_text": DOC_TEXT})
+        stored = out["decision_outcomes"]["extract.post"]
+        assert calls == [] and out["x"] == 1
+        assert stored["status"] == "invalid" and stored["evidence"]["reason"] == "input_build_failed"
+        assert stored["evidence"]["error_type"] == "RuntimeError"
+        assert stored["vetted_route"] == route
+
     def test_transient_retry_is_not_consulted_and_drops_the_stale_entry(self):
         calls = []
         dp.register_decision_point_backend("fake", lambda i: calls.append(1) or PARK)
@@ -1240,6 +1257,16 @@ class TestOverrideBudget:
         assert out["decision_override_counts"] == {"extract.a": 1}  # a wins; b's rule never runs
         assert out["decision_outcomes"]["extract.b"]["vetted_route"] == "boss_escalation"
         assert "capped" not in out["decision_outcomes"]["extract.b"]
+
+    def test_a_park_shadowed_by_an_earlier_slot_is_not_a_review_cause(self):
+        dp.register_decision_point_backend("first", lambda i: hint_to("judge_verify"))
+        dp.register_decision_point_backend("second", lambda i: dict(PARK))
+        a = policy(slot="extract.a", backend="first", allow=("judge_verify",))
+        b = policy(slot="extract.b", backend="second", allow=("human_review",))
+        out = dp.wrap_node("extract", node_returning({}), [a, b])(dict(PROPOSES_COMPILE))
+        assert out["decision_outcomes"]["extract.b"]["shadowed"] is True
+        assert "shadowed" not in out["decision_outcomes"]["extract.a"]
+        assert collect_review_causes(out) == []  # b never parked the document
 
     def test_a_capped_first_slot_does_not_shield_the_second(self):
         out = self.two_slots({"max_overrides": 0}, {})
