@@ -44,7 +44,7 @@ blind = load_dataset("Lucius-Morningstar/mailroom-dataset", "default")
 gt = load_dataset("Lucius-Morningstar/mailroom-dataset", "ground_truth")
 ```
 
-The pipeline itself does not depend on the `datasets` library; it loads the corpus through `pipeline/hf_corpus_loader.py`, which also verifies each row's `content_sha256` against its text.
+The pipeline itself does not depend on the `datasets` library; it loads the corpus through `pipeline/hf_corpus_loader.py`, which also verifies each row's `content_sha256` against its text. Every row comes back with a `content_verified` flag and the provenance carries an `integrity` block (counts, plus up to 20 mismatched filenames); a mismatch is reported, never silently scored and never a silent block. `strict=True` (`--strict-integrity` on `run_pilot.py` and `run_calibration_sweep.py`) turns any mismatch, missing text or missing hash column into a `CorpusIntegrityError`, and the runners print verified-subset scores next to the all-rows scores. `pull_live_manifest.py` and `smoke_live_documents.py` still refuse a mismatch outright.
 
 ## Rules everyone follows
 

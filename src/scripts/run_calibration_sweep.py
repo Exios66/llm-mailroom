@@ -145,6 +145,9 @@ class Doc:
     expected_fields: dict | None = None
     content_sha256: str | None = None
     source_corpus: str | None = None  # corpus the row came from (e.g. sec_edgar), for --source filtering
+    # #258: True when the row's text matches the pinned content_sha256; None when the corpus
+    # was not integrity-checked (manifest and fixture sources).
+    content_verified: bool | None = None
     gold_meta: dict = field(default_factory=dict)
 
 
@@ -689,6 +692,8 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
         "gold_meta": doc.gold_meta,
         "node_errors": [],
     }
+    if doc.content_verified is not None:
+        diag["content_verified"] = doc.content_verified
     record.diagnostics = diag
     complete = True
     transient: list[str] = []  # stages whose transient-error retries were exhausted
@@ -951,15 +956,18 @@ def load_manifest_docs(manifest: Path, samples_dir: Path | None) -> tuple[list[D
     return docs, {"dataset_id": f"manifest:{manifest.name}", "dataset_revision": None, "split": "unsplit"}
 
 
-def load_hf_docs(split: str, per_class: int, seed: int) -> tuple[list[Doc], dict]:
+def load_hf_docs(split: str, per_class: int, seed: int, strict: bool = False) -> tuple[list[Doc], dict]:
     """Seeded per-class sample of the pinned corpus via ``pipeline.hf_corpus_loader.load_corpus``.
 
-    Full document text, never truncated. Network only through the loader.
+    Full document text, never truncated. Network only through the loader. Every row is
+    sampled whether or not its text matches ``content_sha256`` (#258): each ``Doc`` carries
+    ``content_verified`` and the returned provenance carries the loader's ``integrity`` block.
+    ``strict=True`` (``--strict-integrity``) makes the loader raise on any mismatch instead.
     """
     from pipeline import hf_corpus_loader as loader
     from scripts import run_hf_pilot as hp
 
-    frame, prov = loader.load_corpus(split=split)
+    frame, prov = loader.load_corpus(split=split, **({"strict": True} if strict else {}))
     by_class: dict[str, list[dict]] = {}
     for rec in frame.to_dict("records"):
         rec = {k: _clean(v) for k, v in rec.items()}
@@ -984,11 +992,15 @@ def load_hf_docs(split: str, per_class: int, seed: int) -> tuple[list[Doc], dict
                 review_expected=_as_bool(review_expected),
                 expected_fields=fields or None,
                 content_sha256=_clean(rec.get("content_sha256")),
+                content_verified=_as_bool(rec["content_verified"]) if "content_verified" in rec else None,
                 source_corpus=_clean(rec.get("source_corpus")) or None,
                 gold_meta={k: meta.get(k) for k in ("sources", "n_fields", "n_posthoc", "coverage", "specialist")},
             ))
     revision = (prov.get("revision_requested") or prov.get("hub_sha_tip")) if isinstance(prov, dict) else None
-    return docs, {"dataset_id": loader.FULL_CORPUS_ID, "dataset_revision": revision, "split": split}
+    ds = {"dataset_id": loader.FULL_CORPUS_ID, "dataset_revision": revision, "split": split}
+    if isinstance(prov, dict) and prov.get("integrity") is not None:
+        ds["integrity"] = prov["integrity"]
+    return docs, ds
 
 
 # --------------------------------------------------------------------------------------
@@ -1272,6 +1284,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     mode.add_argument("--real", action="store_true", help=f"Real LLM; refused unless {ALLOW_REAL_ENV}=1.")
     p.add_argument("--out", type=Path, required=True, help="Output JSONL (appended to).")
     p.add_argument("--per-class", type=int, default=5, help="HF: documents per class.")
+    p.add_argument("--strict-integrity", action="store_true",
+                   help="HF: refuse (exit non-zero) if any row's text fails its pinned content_sha256 or has no text. "
+                        "Default: score every row, flag it content_verified in diagnostics, report the verified subset.")
     p.add_argument("--seed", type=int, default=0, help="HF: sampling seed.")
     p.add_argument("--samples-dir", type=Path, default=None, help="Manifest: root for sample files.")
     p.add_argument("--limit", type=_nonneg_int, default=None, help="Sweep only the first N documents.")
@@ -1324,7 +1339,7 @@ def main(argv: list[str] | None = None) -> int:
 
                 configure(field_scoring__embedding_enabled=False)
         if args.hf_split:
-            docs, ds = load_hf_docs(args.hf_split, args.per_class, args.seed)
+            docs, ds = load_hf_docs(args.hf_split, args.per_class, args.seed, strict=args.strict_integrity)
         elif args.manifest:
             docs, ds = load_manifest_docs(args.manifest, args.samples_dir)
         else:
@@ -1408,7 +1423,7 @@ def main(argv: list[str] | None = None) -> int:
               f"concurrency={args.concurrency}, base_dir={base_dir}", flush=True)
         records = _run_all(todo, ctx, args.out, mock)
 
-    return _summarise(records, len(docs) - len(todo))
+    return _summarise(records, len(docs) - len(todo), integrity=ds.get("integrity"))
 
 
 def _dojo_version() -> str | None:
@@ -1444,7 +1459,24 @@ def _run_all(todo: list[Doc], ctx: SweepContext, out: Path, mock: bool) -> list[
     return records
 
 
-def _summarise(records: list[RunRecord], skipped: int) -> int:
+def _integrity_unclean(integrity: dict | None) -> bool:
+    """True when some row of the corpus is not content-verified (#258)."""
+    return bool(integrity) and bool(
+        integrity.get("mismatched") or integrity.get("missing_text") or integrity.get("unverifiable")
+    )
+
+
+def _headline(records: list[RunRecord]) -> dict:
+    n = len(records)
+    errors = sum(1 for r in records if r.error)
+    full = sum(1 for r in records if r.observed.full_information)
+    return {
+        "docs": n, "errors": errors, "full_information": full,
+        "full_information_share": round(full / n, 4) if n else None,
+    }
+
+
+def _summarise(records: list[RunRecord], skipped: int, integrity: dict | None = None) -> int:
     n = len(records)
     errors = sum(1 for r in records if r.error)
     full = sum(1 for r in records if r.observed.full_information)
@@ -1454,6 +1486,13 @@ def _summarise(records: list[RunRecord], skipped: int) -> int:
         "full_information": full, "full_information_share": round(full / n, 4) if n else None,
         "est_cost_usd": round(cost, 6),
     }
+    if integrity is not None:
+        summary["integrity"] = integrity
+    if _integrity_unclean(integrity):
+        # #258: every row was scored; the verified subset is reported next to the all-rows numbers.
+        summary["verified_subset"] = _headline(
+            [r for r in records if r.diagnostics.get("content_verified") is True]
+        )
     print("SUMMARY " + json.dumps(summary, sort_keys=True))
     return 1 if errors else 0
 
