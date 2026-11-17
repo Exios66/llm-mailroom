@@ -185,14 +185,19 @@ def _claim_over_orphan(path: Path, worker_id: str) -> Path | None:
     if _is_claim_in_flight(occupant):
         logger.info("claim_skipped_live_same_name", file=str(path), claim=str(occupant))
         return None
-    action, dest = reconcile_stale_processing_file(occupant)
-    logger.warning(
-        "orphan_claim_reconciled_for_new_claim",
-        file=str(path),
-        orphan=str(occupant),
-        action=action,
-        dest=str(dest),
-    )
+    try:
+        action, dest = reconcile_stale_processing_file(occupant)
+    except FileNotFoundError:
+        # The periodic reconcile moved the orphan first: the name is free, claim again.
+        logger.info("orphan_claim_already_reconciled", file=str(path), orphan=str(occupant))
+    else:
+        logger.warning(
+            "orphan_claim_reconciled_for_new_claim",
+            file=str(path),
+            orphan=str(occupant),
+            action=action,
+            dest=str(dest),
+        )
     return claim_file(path, worker_id)
 
 # ---------------------------------------------------------------------------

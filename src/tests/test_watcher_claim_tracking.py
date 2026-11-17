@@ -159,3 +159,26 @@ def test_inbox_handler_releases_its_claim_when_the_run_fails(env, monkeypatch):
     handler._process(src)
     assert watcher._active_claims == set()
     assert not watcher._is_in_flight("e.txt")
+
+
+def test_claim_tolerates_an_orphan_the_periodic_reconcile_already_moved(env, monkeypatch):
+    """Reconcile raced the claim and moved the orphan first: the name is free, the claim goes on."""
+    watcher = env
+    from pipeline import bins
+
+    w = watcher.Watcher()
+    orphan_dir = bins.processing_dir(w.worker_id)
+    orphan_dir.mkdir(parents=True, exist_ok=True)
+    (orphan_dir / "f.txt").write_text("orphan")
+    new = bins.inbox_dir() / "f.txt"
+    new.write_text("new document")
+
+    def vanished(path):
+        path.unlink()  # the other thread got there first
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(watcher, "reconcile_stale_processing_file", vanished)
+    calls: list = []
+    monkeypatch.setattr(watcher, "run_pipeline", _fake_pipeline(calls))
+    w._process_existing(new)
+    assert calls == [(orphan_dir / "f.txt", "new document")]

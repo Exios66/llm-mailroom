@@ -371,12 +371,11 @@ The extract call also gets a matching instruction block in its handoff context (
 
 ### 3a. Closed-label vocabularies (#285)
 
-Seven fields are closed labels that the Dojo scores exactly: contract `cuad_family`, merger `merger_consideration`, correspondence `communication_type` and `urgency`, insurance `claim_type` and `coverage_determination`. Their vocabularies live in `taxonomy.yaml` under `doc_classes[].label_vocabularies` (the single source of truth, pinned to the Dojo's scored vocabulary by `test_label_vocabularies.py`); `pipeline/label_vocab.py` reads them.
+Closed labels are scored exactly by the Dojo: contract `cuad_family`, merger `merger_consideration`, correspondence `communication_type` and `urgency`, insurance `claim_type` and `coverage_determination`, and each class's `intent`. Their vocabularies live in `taxonomy.yaml` under `doc_classes[].label_vocabularies` (the single source of truth, pinned to the Dojo's scored vocabulary by `test_label_vocabularies.py`); `pipeline/label_vocab.py` reads them.
 
-* The extract and retry nodes first run inventory enrichment (so #280 has already folded a CMS table token on `claim_type` onto `health`), then write each on-list value as its canonical token. Case, surrounding whitespace and runs of space, `_` and `-` are folded for the match, so `Time Sensitive` becomes `time-sensitive`.
+* A value is matched the way the Dojo scorer matches it (`scored_enums.canonical_label`; a local case, whitespace, `_` and `-` fold if the Dojo does not fold it), so `License_Agreements`, `Approved.`, `covered` and `timesensitive` are on-list. The extract and retry nodes run inventory enrichment first (so #280 has already folded a CMS table token on `claim_type` onto `health`), then write each on-list value as its canonical token, even if enrichment raised.
 * A non-blank value that matches no token is left as the model wrote it. `after_extraction` (and so `after_retry_extraction`) sends the document straight to `human_review`, with no retry and no mapping to `other`, and `collect_review_causes` adds `out_of_vocabulary`.
-* A blank or missing value is not off-list. `intent` and `record_type` are not covered here.
-* The reviewer's own `correct` fields are not checked against the vocabulary.
+* A blank or missing value is not off-list. `cms_source_table` (derived from the sorter subclass) and `record_type` (a `name` field) are not covered, and the reviewer's own `correct` fields are not checked. An `approved` review re-extracts; if that is still off-list it parks again with its fields, and approving those applies them without a re-check.
 
 ### 4. Guardrail
 

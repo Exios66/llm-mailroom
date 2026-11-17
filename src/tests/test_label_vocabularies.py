@@ -21,6 +21,8 @@ from pipeline.label_vocab import (
 )
 
 # (doc_type, field, a valid token, an off-list value, a minimal valid extraction around it)
+_CLASSES = ("contract", "merger_agreement", "corporate_record", "correspondence", "insurance_claim")
+
 CASES = [
     ("contract", "cuad_family", "license", "software licence", {"document_name": "MSA"}),
     ("merger_agreement", "merger_consideration", "all_cash", "cash and stock", {"document_name": "APM"}),
@@ -28,6 +30,10 @@ CASES = [
     ("correspondence", "urgency", "routine", "asap", {"sender": "A", "recipient": "B"}),
     ("insurance_claim", "claim_type", "auto", "marine", {"claim_number": "C-1"}),
     ("insurance_claim", "coverage_determination", "denied", "under appeal", {"claim_number": "C-1"}),
+    ("merger_agreement", "intent", "effect_merger", "hostile_takeover", {"document_name": "APM"}),
+    ("corporate_record", "intent", "entity_formation", "board vibes", {"entity_name": "Acme"}),
+    ("correspondence", "intent", "notice", "chit chat", {"sender": "A", "recipient": "B"}),
+    ("insurance_claim", "intent", "loss_report", "gossip", {"claim_number": "C-1"}),
 ]
 _IDS = [f"{c[0]}.{c[1]}" for c in CASES]
 
@@ -47,17 +53,30 @@ def test_taxonomy_vocabularies_match_the_dojo_scored_vocabulary():
     from llm_dojo_scoring.schemas.scored_enums import SCORED_ENUM_FIELDS
 
     declared = 0
-    for doc_type in ("contract", "merger_agreement", "correspondence", "insurance_claim"):
+    for doc_type in _CLASSES:
         for field, vocabulary in get_label_vocabularies(doc_type).items():
             declared += 1
             assert set(vocabulary) == set(SCORED_ENUM_FIELDS[doc_type][field][0]), (doc_type, field)
     assert declared == len(CASES)
 
 
+def test_every_label_field_the_dojo_has_a_vocabulary_for_is_gated():
+    """No ``field_types: label`` field with a Dojo closed vocabulary is left unchecked."""
+    from llm_dojo_scoring.schemas.scored_enums import SCORED_ENUM_FIELDS
+
+    from pipeline.config import get_doc_class
+
+    for doc_type in _CLASSES:
+        labels = {f for f, t in get_doc_class(doc_type)["field_types"].items() if t == "label"}
+        covered = set(get_label_vocabularies(doc_type))
+        with_dojo_vocab = {f for f in labels if f in SCORED_ENUM_FIELDS.get(doc_type, {})}
+        assert with_dojo_vocab <= covered, (doc_type, with_dojo_vocab - covered)
+
+
 def test_every_declared_vocabulary_is_a_label_field_of_its_class():
     from pipeline.config import get_doc_class
 
-    for doc_type in ("contract", "merger_agreement", "correspondence", "insurance_claim"):
+    for doc_type in _CLASSES:
         types = get_doc_class(doc_type)["field_types"]
         for field in get_label_vocabularies(doc_type):
             assert types[field] == "label"
@@ -98,7 +117,7 @@ def test_case_and_spacing_are_normalised_to_the_canonical_token():
     )
     assert out["communication_type"] == "press_release"
     assert out["urgency"] == "time-sensitive"
-    assert canonical_label_value(("workers_comp", "other"), "Workers-Comp") == "workers_comp"
+    assert canonical_label_value(("workers_comp", "other"), "Workers-Comp") == "workers_comp"  # local fold
 
 
 def test_cms_table_token_is_folded_to_health_by_the_extract_enrichment_before_the_check():
@@ -143,3 +162,101 @@ def test_unknown_class_and_missing_extraction_have_no_vocabulary_findings():
 
 def test_cause_has_a_label():
     assert rc.OUT_OF_VOCABULARY in rc.CAUSE_LABELS
+
+
+# Values the Dojo scorer credits (``canonical_label``) that a plain case/spacing fold parked.
+DOJO_FOLDS = [
+    ("contract", "cuad_family", "License Agreement", "license"),
+    ("contract", "cuad_family", "License_Agreements", "license"),
+    ("contract", "cuad_family", "Service Agreement", "service"),
+    ("contract", "cuad_family", "Non-Compete/No-Solicit", "non_compete_no_solicit"),
+    ("insurance_claim", "coverage_determination", "covered", "approved"),
+    ("insurance_claim", "coverage_determination", "not covered", "denied"),
+    ("insurance_claim", "coverage_determination", "Partially approved", "partial"),
+    ("insurance_claim", "coverage_determination", "under review", "pending"),
+    ("insurance_claim", "coverage_determination", "paid", "approved"),
+    ("insurance_claim", "coverage_determination", "Approved.", "approved"),
+    ("correspondence", "urgency", "timesensitive", "time-sensitive"),
+    ("merger_agreement", "intent", "plan_of_merger", "effect_merger"),
+]
+
+
+@pytest.mark.parametrize("doc_type, field, written, token", DOJO_FOLDS)
+def test_values_the_dojo_credits_are_canonicalised_not_parked(doc_type, field, written, token):
+    from llm_dojo_scoring.schemas.scored_enums import canonical_label
+
+    assert canonical_label(doc_type, field, written) == token  # the Dojo's own verdict
+    extracted = {field: written}
+    assert out_of_vocabulary_fields(doc_type, extracted) == {}
+    assert canonicalize_labels(doc_type, extracted)[field] == token  # archived value is canonical
+
+
+def test_local_fold_still_applies_when_the_dojo_import_fails(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_dojo(name, *args, **kwargs):
+        if name.startswith("llm_dojo_scoring.schemas.scored_enums"):
+            raise ImportError("no dojo")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_dojo)
+    assert out_of_vocabulary_fields("correspondence", {"urgency": "Time Sensitive"}) == {}
+    assert out_of_vocabulary_fields("correspondence", {"urgency": "asap"}) == {"urgency": "asap"}
+
+
+def test_labels_are_canonicalised_even_when_the_inventory_step_raises(monkeypatch):
+    import graph.build_graph as bg
+    import langchain_agents.doc_inventories as inv
+
+    def boom(*a, **k):
+        raise RuntimeError("enrich exploded")
+
+    monkeypatch.setattr(inv, "enrich_extraction", boom)
+    state = {"doc_type": "insurance_claim"}
+    out = bg._enrich_contract_result({"claim_number": "C-1", "coverage_determination": "Covered"}, state)
+    assert out["coverage_determination"] == "approved"
+    # ...and an unmapped CMS table token (the #280 fold did not run) stays off-list and is parked.
+    out = bg._enrich_contract_result({"claim_number": "C-1", "claim_type": "inpatient"}, state)
+    assert out["claim_type"] == "inpatient"
+    assert routing.after_extraction(_state("insurance_claim", out)) == "human_review"
+
+
+def test_out_of_vocabulary_cause_is_weighted_like_a_deterministic_defect():
+    from pipeline.config import load_config
+
+    weights = load_config()["review_queue"]["cause_weights"]
+    assert weights["out_of_vocabulary"] >= max(
+        weights[k] for k in ("hollow_extraction", "judge_miss", "judge_incomplete", "schema_invalid")
+    )
+
+
+# --- a re-extraction that is still off-list needs a person once more, and then ends ------------
+
+
+def test_approve_then_still_off_list_is_bounded_by_the_second_decision(mocker):
+    """First approval has no fields (re-extract); the re-park carries them, and the next approval archives."""
+    from graph.build_graph import human_review_node
+
+    parked = _state("insurance_claim", {"claim_number": "C-1", "claim_type": "marine"})
+    # Leg 1: a park without extracted data (e.g. transient) is approved: back to extract.
+    mocker.patch(
+        "graph.build_graph.interrupt",
+        return_value={"decision": "approved", "resolution": "approve_as_is"},
+    )
+    first = human_review_node({"doc_id": "d-loop", "matter_id": "M", "doc_type": "insurance_claim",
+                               "transient_error": True})
+    assert first["review_decision"] == "approved"
+    assert routing.after_human_review({**parked, **first}) == "extract"
+    # Leg 2: the fresh extraction is off-list, so it parks again, now WITH its fields.
+    assert routing.after_extraction({**parked, "review_decision": "approved"}) == "human_review"
+    # Leg 3: approving those fields applies them (never re-extracted or re-checked): the run proceeds.
+    mocker.patch(
+        "graph.build_graph.interrupt",
+        return_value={"decision": "approved", "resolution": "approve_as_is",
+                      "extracted_data": parked["extracted_data"]},
+    )
+    second = human_review_node(parked)
+    assert second["review_decision"] == "human_applied"
+    assert routing.after_human_review({**parked, **second}) == "compile_report"

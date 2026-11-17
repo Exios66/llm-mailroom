@@ -7,12 +7,15 @@ not on their list, and routing sends such a document to review (cause ``out_of_v
 instead of archiving it unflagged. The judge does not reliably catch these, so the check is
 deterministic.
 
-A value is compared after folding case, surrounding whitespace and runs of whitespace,
-``_`` and ``-`` to one separator, so ``"All Cash"`` and ``"ALL_CASH"`` are ``all_cash`` and
-``"Time Sensitive"`` is ``time-sensitive``. A value that matches is rewritten to its
-canonical token (``canonicalize_labels``); one that does not is left as the model wrote it, so
-a reviewer sees what was extracted. A missing or blank value is not off-list: leaving a field
-empty is a valid answer. The taxonomy is ``lru_cache``d; edits need a restart.
+A value is matched the way the Dojo scorer matches it, so the gate never parks a value the
+Dojo would credit: ``llm_dojo_scoring.schemas.scored_enums.canonical_label`` folds it onto a
+token (``License_Agreements`` is ``license``, ``Approved.`` is ``approved``, ``timesensitive``
+is ``time-sensitive``, ``plan_of_merger`` is ``effect_merger``). If the Dojo is unavailable, or
+does not fold the value, a local fold of case, whitespace, ``_`` and ``-`` is tried. A value
+that matches is rewritten to its canonical token (``canonicalize_labels``); one that does not
+is left as the model wrote it, so a reviewer sees what was extracted, and is never mapped to
+``other``. A missing or blank value is not off-list: leaving a field empty is a valid answer.
+The taxonomy is ``lru_cache``d; edits need a restart.
 """
 
 from __future__ import annotations
@@ -42,7 +45,7 @@ def get_label_vocabularies(doc_type: str | None) -> dict[str, tuple[str, ...]]:
 
 
 def canonical_label_value(vocabulary: tuple[str, ...], value: Any) -> str | None:
-    """The vocabulary token ``value`` folds onto, or None when it is off the list."""
+    """The vocabulary token ``value`` folds onto by the local fold, or None when it is off the list."""
     if value is None or isinstance(value, (bool, list, tuple, dict, set)):
         return None
     folded = _fold(value)
@@ -52,6 +55,26 @@ def canonical_label_value(vocabulary: tuple[str, ...], value: Any) -> str | None
         if _fold(token) == folded:
             return token
     return None
+
+
+def canonical_token(doc_type: str | None, field: str, value: Any) -> str | None:
+    """The taxonomy token for ``value`` of ``field`` (Dojo fold first, then the local one), else None."""
+    from pipeline.config import resolve_extract_class
+
+    vocabulary = get_label_vocabularies(doc_type).get(field)
+    if not vocabulary or value is None or isinstance(value, (bool, list, tuple, dict, set)):
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        from llm_dojo_scoring.schemas.scored_enums import canonical_label
+
+        token = canonical_label(resolve_extract_class(doc_type), field, str(value))
+    except Exception:  # noqa: BLE001 - an old or missing Dojo falls back to the local fold
+        token = ""
+    if token and token in vocabulary:
+        return token
+    return canonical_label_value(vocabulary, value)
 
 
 def _is_blank(value: Any) -> bool:
@@ -67,7 +90,7 @@ def out_of_vocabulary_fields(doc_type: str | None, extracted: Mapping[str, Any] 
         value = extracted.get(field)
         if _is_blank(value):
             continue
-        if canonical_label_value(vocabulary, value) is None:
+        if canonical_token(doc_type, field, value) is None:
             off[field] = value
     return off
 
@@ -75,10 +98,10 @@ def out_of_vocabulary_fields(doc_type: str | None, extracted: Mapping[str, Any] 
 def canonicalize_labels(doc_type: str | None, extracted: Mapping[str, Any] | None) -> dict[str, Any]:
     """A copy of ``extracted`` with each on-list closed-label value written as its canonical token."""
     result = dict(extracted or {})
-    for field, vocabulary in get_label_vocabularies(doc_type).items():
+    for field in get_label_vocabularies(doc_type):
         value = result.get(field)
         if isinstance(value, str):
-            token = canonical_label_value(vocabulary, value)
+            token = canonical_token(doc_type, field, value)
             if token is not None and token != value:
                 result[field] = token
     return result

@@ -395,6 +395,7 @@ review_queue:
     sorter_low_confidence: 1.2
     reviewer_low_confidence: 1.2
     reporting_incomplete: 1.2
+    out_of_vocabulary: 3.0         # a closed label the Dojo scores wrong: deterministic, like schema_invalid
   class_tier_weight:               # cost of a wrong answer per class
     contract: 1.3
     merger_agreement: 1.4
@@ -513,7 +514,7 @@ doc_classes:
       cuad_clauses: entity_list:free_text
     # Closed-label vocabularies (#285). Single source of truth: each `label` field below
     # that names a closed set lists its values here. After extraction a value off its list
-    # (case, spacing, `_`/`-` folded) routes the document to review with cause
+    # (as the Dojo's canonical_label folds it) routes the document to review with cause
     # `out_of_vocabulary`; absence is valid. Values match the Dojo's scored vocabulary
     # (llm_dojo_scoring.schemas.scored_enums.SCORED_ENUM_FIELDS; a test pins the match).
     label_vocabularies:
@@ -552,6 +553,7 @@ doc_classes:
       keywords: entity_list:name
     label_vocabularies:  # closed labels, see the contract class (#285)
       merger_consideration: [all_cash, all_stock, mixed_cash_stock, mixed_cash_stock_election, other]
+      intent: [effect_merger, amend_merger, other]
 
   - key: corporate_record
     label: "Corporate Record"
@@ -568,6 +570,9 @@ doc_classes:
       intent: label
       subject_matter: free_text
       keywords: entity_list:name
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      intent: [governance_rules, corporate_action_approval, entity_formation, authority_delegation,
+               investor_rights, other]
 
   - key: correspondence
     label: "Correspondence"
@@ -590,6 +595,8 @@ doc_classes:
       communication_type: [email, letter, memo, notice, demand, attorney_demand, press_release,
                            meeting_request, other]
       urgency: [routine, time-sensitive, urgent, critical]
+      intent: [payment_demand, notice, analysis, request, update, meeting_invite,
+               press_communication, other]
 
   - key: insurance_claim
     label: "Insurance Claim"
@@ -619,6 +626,7 @@ doc_classes:
       # product line: #280 folds it onto `health`, and one that reaches the check is off-list.
       claim_type: [auto, property, liability, health, life, workers_comp, other]
       coverage_determination: [approved, denied, partial, pending]
+      intent: [claim_filing, coverage_determination, loss_report, claim_data_record, other]
 
 file_extensions:
   - .txt
