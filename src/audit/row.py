@@ -362,17 +362,15 @@ def _attempts(trace: list[dict], state: Mapping[str, Any]) -> list[AttemptRow]:
 
 
 def _run(coro_fn):
-    """Run an async writer from synchronous code, using a thread if a loop is active."""
-    import asyncio
+    """Run an async writer from synchronous code on the shared storage loop.
 
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro_fn())
-    import concurrent.futures
+    ``storage.loop_bridge.run_sync`` keeps one event loop (so one engine) per process,
+    falls back to a private loop when called from that loop's own thread, and honours
+    the ``MAILROOM_DB_SHARED_LOOP=0`` kill switch.
+    """
+    from storage.loop_bridge import run_sync
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro_fn()).result()
+    return run_sync(coro_fn)
 
 
 def write_row(

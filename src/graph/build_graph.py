@@ -3503,30 +3503,22 @@ def _maybe_export_warehouse(doc_id: str) -> None:
 
 
 def _run_coro(coro):
-    """Run a coroutine from a sync context: a fresh loop in this thread, or,
-    when a loop is already running in this thread, a fresh loop in a helper
-    thread.
+    """Run a coroutine factory from sync code on the process-wide storage loop.
 
-    `asyncio.get_event_loop()` is deprecated when no loop is running, and
-    graph nodes execute both from the watcher's daemon threads (no loop) and
-    from the API's `asyncio.to_thread` (a running loop in another thread), so
-    both branches are needed.
+    Graph nodes execute from the watcher's daemon threads (no loop) and from
+    the API's ``asyncio.to_thread`` (a loop running in another thread). Both
+    now submit to ONE long-lived loop (``storage.loop_bridge``), so all sync
+    callers share a single SQLAlchemy engine instead of paying a fresh loop,
+    engine and set of SQLite connections per call. ``MAILROOM_DB_SHARED_LOOP=0``
+    restores the old ``asyncio.run`` per call.
+
+    No timeout: a write under ``storage.db.run_write_with_retry`` can
+    legitimately take ~30 s, and a timeout raised after the write had
+    committed logged a false error.
     """
-    import asyncio
+    from storage.loop_bridge import run_sync
 
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro())
-    import concurrent.futures
-
-    # get_running_loop() only sees a loop running in THIS thread; blocking on
-    # a future scheduled onto it would deadlock, so use a helper thread.
-    # No timeout: the ``with`` block waits for the thread anyway, and a write
-    # under ``storage.db.run_write_with_retry`` can legitimately take ~30 s.
-    # A timeout here raised after the write had committed, logging a false error.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro()).result()
+    return run_sync(coro)
 
 
 def _file_sha256(path) -> str:

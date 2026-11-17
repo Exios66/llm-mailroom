@@ -37,13 +37,12 @@ by the relations agent, and confidence-gated ``llm_asserted`` edges are
 recorded with the deterministic ones. Nothing unvalidated ever reaches the
 ledger (the validator refuses unproposed pairs and invented types).
 
-Sync surface for daemon threads wraps the async storage with ``asyncio.run``
+Sync surface for daemon threads wraps the async storage with ``storage.loop_bridge.run_sync``
 (house pattern — the Gmail echo's audit read).
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import threading
@@ -240,7 +239,9 @@ def _embed(texts: list[str]) -> list[list[float]] | None:
 
 
 def _run(coro):
-    return asyncio.run(coro)
+    from storage.loop_bridge import run_sync
+
+    return run_sync(coro)
 
 
 def verify_ledger() -> tuple[bool, int]:

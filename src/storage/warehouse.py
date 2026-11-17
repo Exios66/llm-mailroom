@@ -16,6 +16,7 @@ Full/incremental backfill: ``scripts/export_warehouse.py``.
 
 from __future__ import annotations
 
+import asyncio
 import errno
 import json
 import os
@@ -549,7 +550,10 @@ async def export_to_warehouse(
         return {"status": "skipped", "reason": "warehouse export disabled or pyarrow missing"}
 
     stamp = stamp or datetime.now(timezone.utc).date()
-    wh_manifest = load_warehouse_manifest()
+    # File I/O (and below, parquet work under a blocking flock) runs in a
+    # worker thread: this coroutine may run on the shared storage loop
+    # (storage.loop_bridge), which must never block for other callers.
+    wh_manifest = await asyncio.to_thread(load_warehouse_manifest)
 
     from_watermark = False
     if full:
@@ -604,8 +608,8 @@ async def export_to_warehouse(
         key=_as_utc,
         default=None,
     )
-    n_docs, n_audit, wh_manifest, n_legacy = _publish_export(
-        stamp, doc_rows, audit_rows, latest_updated, unified=unified, legacy=legacy
+    n_docs, n_audit, wh_manifest, n_legacy = await asyncio.to_thread(
+        _publish_export, stamp, doc_rows, audit_rows, latest_updated, unified=unified, legacy=legacy
     )
 
     logger.info(
@@ -728,19 +732,21 @@ def _publish_export(stamp, doc_rows, audit_rows, latest_updated, *, unified=(), 
 
 
 def _run_async(coro):
+    """Run ``coro`` from sync code on the shared storage loop.
+
+    From a thread that already runs a loop (an async API handler) the old code
+    bounded the wait with 30 s; that bound is kept for that case (the work is
+    now cancelled on expiry instead of left running). Elsewhere it was unbounded.
+    """
     import asyncio
+
+    from storage.loop_bridge import run_sync
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
-    # A loop is running in THIS thread (async API handler). Scheduling onto it
-    # and blocking on the future would deadlock it, so run the coroutine on a
-    # fresh loop in a helper thread instead.
-    import concurrent.futures
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result(timeout=30)
+        return run_sync(coro)
+    return run_sync(coro, timeout=30)
 
 
 def export_document_to_warehouse(doc_id: str, *, stamp: date | None = None) -> bool:
