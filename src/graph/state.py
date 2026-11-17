@@ -160,6 +160,10 @@ class DocumentState(TypedDict, total=False):
     # slot; the node wrapper rewrites a slot's entry on every pass of its node and a
     # resolved human review clears them all.
     decision_outcomes: dict[str, dict[str, Any]]
+    # Non-park redirects each decision-point slot has made for this document (slot ->
+    # count), so a slot's ``max_overrides`` budget holds across loops. Written only by the
+    # slot's node wrapper; never reset within a run (a human resume keeps it).
+    decision_override_counts: dict[str, int]
     # Classified abort reason (llm_timeout / llm_auth / io_error / …).
     failure_class: str | None
     messages: Annotated[list, add_messages]
