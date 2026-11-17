@@ -1,4 +1,11 @@
-"""The ``langfuse`` trace sink (opt-in, ``MAILROOM_TRACE_SINKS``): I/O as a Langfuse event. Write-only."""
+"""The ``langfuse`` trace sink (opt-in, ``MAILROOM_TRACE_SINKS``): I/O as a Langfuse event. Write-only.
+
+Every Langfuse trace must carry tags (``AGENTS.md`` -> "classify and tag every logged run"), and
+tags reach a span only through the attributes ``pipeline_trace`` propagates to its children. An
+event created with no active observation (a pending row captured after the run's trace closed, a
+background thread) would open a *new root trace* with no tags, so the sink creates events only
+while a trace is active and otherwise keeps nothing (``None``: not stored).
+"""
 
 from __future__ import annotations
 
@@ -14,12 +21,25 @@ def _client():
     return None if isinstance(client, _NoopLangfuse) else client
 
 
+def _active_client():
+    """The client only while a tagged pipeline trace is active, else ``None``."""
+    client = _client()
+    if client is None:
+        return None
+    try:
+        if not client.get_current_trace_id():
+            return None
+    except Exception:
+        return None
+    return client
+
+
 class LangfuseSink:
     name = "langfuse"
     recoverable = False  # write-only: ``fetch_pending`` is always empty
 
     def record_io(self, visit_id: str, doc_id: str | None, prompt: str | None, completion: str | None) -> str | None:
-        client = _client()
+        client = _active_client()
         if client is None:
             return None
         client.create_event(name="audit-io", input=prompt, output=completion,
@@ -27,7 +47,7 @@ class LangfuseSink:
         return visit_id
 
     def capture_pending(self, record: dict[str, Any]) -> str | None:
-        client = _client()
+        client = _active_client()
         if client is None:
             return None
         client.create_event(name="audit-pending-row", input=json.loads(json.dumps(record, default=str)),

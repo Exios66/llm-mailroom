@@ -12,6 +12,12 @@ complete copy turns up later gets one ``recovered_detail`` addendum
 live writer records a repeat write (``audit_repeat_write_recovered``). A copy whose
 digest or content the document already holds is spent and only dropped; the manifest
 is set once the document's records are confirmed.
+
+A copy whose write fails for a reason that will not change (an integrity error that retrying cannot
+cure, such as a duplicate primary key, or a malformed record) is **quarantined**: moved, not deleted,
+to a separate table of the same spool, reported as ``quarantined`` and no longer read as
+pending, so later runs do not fail on it forever. Any other failure (a locked database, a
+conflict that outlasted its retries, an unrecognised error) leaves the copy in place for the next run.
 """
 
 from __future__ import annotations
@@ -37,13 +43,25 @@ class ReconcileReport:
     skipped_existing: int = 0
     rejected_hash: int = 0
     failed: int = 0
+    #: Documents whose copies were moved to quarantine by this run (also counted in ``failed``).
+    quarantined: int = 0
+    #: Copies the sinks hold in quarantine from this and earlier runs (informational: not a failure).
+    quarantine_held: int = 0
+    #: Sinks whose pending records could not be read at all, and how many: the report is then
+    #: incomplete, so the CLI exits nonzero rather than reporting a clean, all-zero run.
+    sink_read_failed: int = 0
+    sink_read_failed_names: list[str] = field(default_factory=list)
+    #: Spool files that do not exist (nothing was ever parked there, or the volume is not mounted).
+    spool_missing: list[str] = field(default_factory=list)
     dry_run: bool = False
     docs: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         """Return the counters, dry-run flag and per-document actions as a dict."""
         return {k: getattr(self, k) for k in ("recovered", "partial", "gap_closed", "resumed",
-                                               "skipped_existing", "rejected_hash", "failed", "dry_run", "docs")}
+                                               "skipped_existing", "rejected_hash", "failed", "quarantined",
+                                               "quarantine_held", "sink_read_failed", "sink_read_failed_names",
+                                               "spool_missing", "dry_run", "docs")}
 
 
 def _ts(value: Any) -> datetime | None:
@@ -87,16 +105,34 @@ def hash_ok(record: dict[str, Any]) -> bool:
         return False
 
 
-def _gather() -> list[dict[str, Any]]:
+def _gather(report: ReconcileReport | None = None) -> list[dict[str, Any]]:
+    """Every sink's pending records; a sink that cannot be read is recorded on ``report``.
+
+    A sink that raises from ``fetch_pending`` is an unknown, not an empty sink: it is counted in
+    ``report.sink_read_failed`` (and named) so a run that read nothing cannot pass for a clean one.
+    A sink whose store does not exist (``missing_store()``) is listed in ``report.spool_missing``
+    but is not a failure: a spool is created by the first parked row.
+    """
     from audit import sinks
 
     out = []
     for sink in sinks.active_sinks():
+        name = getattr(sink, "name", "?")
         try:
             for rec in sink.fetch_pending() or []:
-                out.append({**rec, "_sink": sink.name})
+                out.append({**rec, "_sink": name})
+            missing = getattr(sink, "missing_store", None)
+            gone = missing() if callable(missing) else None
+            if gone and report is not None:
+                report.spool_missing.append(str(gone))
+            held = getattr(sink, "quarantined_count", None)
+            if callable(held) and report is not None:
+                report.quarantine_held += int(held() or 0)
         except Exception:
-            logger.warning("audit_reconcile_sink_read_failed", sink=sink.name, exc_info=True)
+            logger.warning("audit_reconcile_sink_read_failed", sink=name, exc_info=True)
+            if report is not None:
+                report.sink_read_failed += 1
+                report.sink_read_failed_names.append(name)
     return out
 
 
@@ -111,6 +147,41 @@ def _drop(records: list[dict[str, Any]]) -> None:
                 sink.drop_pending(rec["ref"])
             except Exception:
                 logger.warning("audit_reconcile_drop_failed", sink=sink.name, ref=rec.get("ref"), exc_info=True)
+
+
+def _is_deterministic(exc: BaseException) -> bool:
+    """True for a failure that will repeat identically on every run, so its copies are quarantined.
+
+    That is an integrity error the writer does not retry (a duplicate primary key: ``_is_retryable``
+    is false) and a ``ValueError`` (a malformed record: an unknown event or stage, a bad timestamp).
+    Contention, a dropped connection, a conflict that outlasted its retries and anything unrecognised
+    (possibly a bug a later deploy fixes) stay pending and are retried by the next run.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    from audit.writer import _is_retryable
+
+    if isinstance(exc, IntegrityError):
+        return not _is_retryable(exc)
+    return isinstance(exc, ValueError)
+
+
+def _quarantine(records: list[dict[str, Any]], error: str) -> int:
+    """Move each record to its sink's quarantine (kept, not deleted); return how many moved."""
+    from audit import sinks
+
+    by_name = {s.name: s for s in sinks.active_sinks()}
+    moved = 0
+    for rec in records:
+        sink = by_name.get(rec.get("_sink"))
+        if sink is not None and hasattr(sink, "quarantine_pending") and rec.get("ref"):
+            try:
+                if sink.quarantine_pending(rec["ref"], error):
+                    moved += 1
+            except Exception:
+                logger.warning("audit_reconcile_quarantine_failed", sink=sink.name, ref=rec.get("ref"),
+                               exc_info=True)
+    return moved
 
 
 def _recovered_from(rec: dict[str, Any]) -> dict[str, Any]:
@@ -237,23 +308,28 @@ def _fresh(unique: list[dict[str, Any]], present: set[str]) -> list[dict[str, An
     return sorted(out, key=lambda c: str(c.get("captured_at") or ""))
 
 
-async def _write_repeat(doc_id: str, rec: dict[str, Any]) -> None:
+async def _write_repeat(doc_id: str, rec: dict[str, Any], known: set[str] | None = None) -> bool:
     """Write a parked repeat terminal write the way the live writer does: a ``resumed`` addendum.
 
     Same shape as ``writer._as_resumed`` (the requested event rides in ``detail.event``, the attempt
     ids are new), plus ``recovered_from``. Its ``detail_sha256`` is what keeps a copy that turns up
-    again from being written twice.
+    again from being written twice. Return whether a new addendum was written: ``write_addendum``
+    returns the existing one when a racing reconcile already recorded this copy (``known`` holds the
+    addendum ids seen before the write).
     """
     from audit.models import Addendum
     from audit.writer import write_addendum
 
-    await write_addendum(Addendum(
+    result = await write_addendum(Addendum(
         doc_id=doc_id, kind="resumed", actor=rec["actor"],
         detail={**rec["detail"], "event": rec["event"], "recovered_from": _recovered_from(rec)},
         attempts=_attempts(rec), reidentify_attempts=True,
     ))
-    logger.info("audit_repeat_write_recovered", doc_id=doc_id, sink=rec["_sink"], ref=rec.get("ref"),
-                complete=rec.get("complete", True))
+    created = result.entry_id not in (known or set())
+    if created:
+        logger.info("audit_repeat_write_recovered", doc_id=doc_id, sink=rec["_sink"], ref=rec.get("ref"),
+                    complete=rec.get("complete", True))
+    return created
 
 
 async def _reconcile_repeats(report: ReconcileReport, doc_id: str, row: dict[str, Any],
@@ -268,16 +344,26 @@ async def _reconcile_repeats(report: ReconcileReport, doc_id: str, row: dict[str
     complete_shas = {c["detail_sha256"] for c in unique if c.get("complete", True)}
     open_partials = [c for c in copies if not c.get("complete", True)
                      and c.get("full_detail_sha256") not in present and c.get("full_detail_sha256") not in complete_shas]
-    if not fresh:
+    if dry_run:
+        # Proposed actions: nothing is written, so the fresh copies are counted as they would be.
+        if not fresh:
+            report.skipped_existing += 1
+            report.docs.append({"doc_id": doc_id, "action": "skipped_existing"})
+        for _ in fresh:
+            report.resumed += 1
+            report.docs.append({"doc_id": doc_id, "action": "resumed"})
+        return
+    # Count real writes only: a racing reconcile may have recorded a copy since ``row`` was read.
+    known = {a.get("addendum_id") for a in row.get("addenda") or []}
+    written = 0
+    for rec in fresh:
+        if await _write_repeat(doc_id, rec, known):
+            written += 1
+            report.resumed += 1
+            report.docs.append({"doc_id": doc_id, "action": "resumed"})
+    if not written:
         report.skipped_existing += 1
         report.docs.append({"doc_id": doc_id, "action": "skipped_existing"})
-    for _ in fresh:
-        report.resumed += 1
-        report.docs.append({"doc_id": doc_id, "action": "resumed"})
-    if dry_run:
-        return
-    for rec in fresh:
-        await _write_repeat(doc_id, rec)
     rf = (row.get("detail") or {}).get("recovered_from") or {}
     row_gap = rf if rf.get("complete") is False and not any(
         a["kind"] == "recovered_detail" for a in row.get("addenda") or []
@@ -417,7 +503,7 @@ async def reconcile(*, dry_run: bool = False) -> ReconcileReport:
     """
     report = ReconcileReport(dry_run=dry_run)
     by_doc: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for rec in _gather():
+    for rec in _gather(report):
         if not hash_ok(rec):
             report.rejected_hash += 1
             logger.error("audit_reconcile_hash_mismatch", doc_id=rec.get("doc_id"), sink=rec.get("_sink"),
@@ -433,10 +519,18 @@ async def reconcile(*, dry_run: bool = False) -> ReconcileReport:
         except AuditMigrationPending:
             raise  # no document can be written before the migration: stop, do not log one failure per document
         except Exception as exc:  # noqa: BLE001 - one bad document must not strand the ones after it
+            error = f"{type(exc).__name__}: {exc}"
             report.failed += 1
-            report.docs.append({"doc_id": doc_id, "action": "failed", "error": f"{type(exc).__name__}: {exc}"})
-            logger.error("audit_reconcile_doc_failed", doc_id=doc_id, error=f"{type(exc).__name__}: {exc}",
-                         exc_info=True)
+            entry = {"doc_id": doc_id, "action": "failed", "error": error}
+            logger.error("audit_reconcile_doc_failed", doc_id=doc_id, error=error, exc_info=True)
+            moved = _quarantine(copies, error) if _is_deterministic(exc) and not dry_run else 0
+            if moved:
+                # It fails the same way on every run: keep the copies aside so the next run does not.
+                report.quarantined += 1
+                report.quarantine_held += moved
+                entry["action"] = "quarantined"
+                logger.error("audit_reconcile_quarantined", doc_id=doc_id, copies=moved, error=error)
+            report.docs.append(entry)
     return report
 
 

@@ -49,13 +49,19 @@ def collector(monkeypatch):
     server.close()
 
 
+@pytest.fixture
+def full_trace(monkeypatch):
+    """Sinks only receive prompt/completion text with ``audit.full_trace`` on (#239 review)."""
+    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "1")
+
+
 def _names():
     from audit.sinks import active_sinks
 
     return [s.name for s in active_sinks()]
 
 
-def test_sql_sink_always_active(monkeypatch):
+def test_sql_sink_always_active(monkeypatch, full_trace):
     from audit.sinks import record_io
     from audit.sinks.sql import SqlSink
 
@@ -67,23 +73,39 @@ def test_sql_sink_always_active(monkeypatch):
     assert (stored["prompt"], stored["completion"], stored["sha256"], stored["doc_id"]) == ("p", "c", sha, "d-1")
 
 
-def test_phoenix_added_when_importable_enabled_and_reachable(collector, monkeypatch):
+def test_phoenix_added_when_named_importable_enabled_and_reachable(collector, monkeypatch):
     pytest.importorskip("opentelemetry.sdk.trace")
+    monkeypatch.setenv("MAILROOM_TRACE_SINKS", "sql,phoenix")
     assert _names() == ["sql", "phoenix"]
     monkeypatch.setenv("PHOENIX_TRACING", "disabled")
     assert _names() == ["sql"]
+
+
+def test_phoenix_is_not_added_without_an_explicit_opt_in(collector):
+    """#239 review: a reachable collector and the OTel SDK must not, alone, ship document text out."""
+    pytest.importorskip("opentelemetry.sdk.trace")
+    assert _names() == ["sql"]
+
+
+@pytest.mark.parametrize("sinks", ["", "sql", "langfuse"])
+def test_phoenix_requires_naming_it(collector, monkeypatch, sinks):
+    pytest.importorskip("opentelemetry.sdk.trace")
+    monkeypatch.setenv("MAILROOM_TRACE_SINKS", sinks)
+    assert "phoenix" not in _names()
 
 
 def test_phoenix_skipped_when_unreachable(monkeypatch):
     from audit.sinks.phoenix import PROBE_TIMEOUT_S
 
     monkeypatch.setenv("PHOENIX_TRACING", "enabled")
+    monkeypatch.setenv("MAILROOM_TRACE_SINKS", "phoenix")
     assert _names() == ["sql"]
     assert PROBE_TIMEOUT_S == 1.0
 
 
 def test_phoenix_skipped_on_railway_localhost_endpoint(collector, monkeypatch):
     pytest.importorskip("opentelemetry.sdk.trace")
+    monkeypatch.setenv("MAILROOM_TRACE_SINKS", "phoenix")
     monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
     assert _names() == ["sql"]  # a localhost collector cannot exist in a hosted container
     monkeypatch.delenv("RAILWAY_ENVIRONMENT")
@@ -127,7 +149,7 @@ class _EntryPoint:
         return self._obj
 
 
-def test_entry_point_sink_loaded(monkeypatch):
+def test_entry_point_sink_loaded(monkeypatch, full_trace):
     from audit.sinks import record_io
 
     monkeypatch.setenv("PHOENIX_TRACING", "disabled")
@@ -180,7 +202,7 @@ def test_full_trace_copies_io_into_visit(monkeypatch):
     assert (v["prompt"], v["completion"]) == ("the prompt", "the completion") and v["trace_sink"] == "sql"
     monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "0")
     v = visit("classify", {"doc_id": "d"}, {}, started_at=now, ended_at=now, llm=llm)
-    assert "prompt" not in v and "completion" not in v and v["trace_sink"] == "sql"
+    assert "prompt" not in v and "completion" not in v and v["trace_sink"] is None  # off: no sink stores the text
 
 
 def test_full_trace_default_from_taxonomy():
@@ -218,25 +240,61 @@ def test_pending_rows_round_trip_through_spool(monkeypatch, tmp_path):
     assert SqlSink().fetch_pending() == []
 
 
-def test_sql_sink_stores_io_even_when_full_trace_is_off(monkeypatch):
-    """T22 (#229): ``audit.full_trace: false`` keeps I/O out of the row, not out of ``audit_trace_io``.
+def test_no_sink_stores_text_when_full_trace_is_off(monkeypatch):
+    """#239 review (supersedes T22): ``audit.full_trace: false`` keeps document text out of the row
+    *and* out of ``audit_trace_io`` and every other sink; the digest and the metadata remain."""
+    from datetime import datetime, timezone
 
-    The taxonomy comment for ``audit.full_trace`` says so; this pins the behavior it describes.
-    """
+    from audit.digests import io_sha256
+    from audit.sinks.sql import SqlSink
+    from audit.trace import visit
+
+    monkeypatch.setenv("PHOENIX_TRACING", "disabled")
+    monkeypatch.setenv("MAILROOM_TRACE_SINKS", "sql,langfuse,otlp,braintrust")
+    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "0")
+    seen = []
+    monkeypatch.setattr("audit.sinks._entry_points", lambda: [_EntryPoint("memory", type(
+        "Spy", (_MemorySink,), {"record_io": lambda self, *a: seen.append(a) or "ref"}))])
+    now = datetime.now(timezone.utc)
+    v = visit("classify", {"doc_id": "d-pii"}, {}, started_at=now, ended_at=now,
+              llm={"prompt": "Jane Doe, SSN 000-00-0000", "completion": "ok", "model": "m", "prompt_tokens": 7})
+    assert "prompt" not in v and "completion" not in v  # not in the row ...
+    assert SqlSink().fetch_io(v["visit_id"]) is None  # ... nor in audit_trace_io ...
+    assert seen == []  # ... nor handed to any other sink (built-in or entry point)
+    assert v["io_sha256"] == io_sha256("Jane Doe, SSN 000-00-0000", "ok") and v["trace_sink"] is None
+    assert (v["model"], v["prompt_tokens"]) == ("m", 7)  # metadata is still recorded
+
+
+def test_sql_sink_stores_io_when_full_trace_is_on(monkeypatch, full_trace):
     from datetime import datetime, timezone
 
     from audit.sinks.sql import SqlSink
     from audit.trace import visit
 
     monkeypatch.setenv("PHOENIX_TRACING", "disabled")
-    monkeypatch.delenv("MAILROOM_TRACE_SINKS", raising=False)
-    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "0")
     now = datetime.now(timezone.utc)
-    v = visit("classify", {"doc_id": "d-pii"}, {}, started_at=now, ended_at=now,
-              llm={"prompt": "Jane Doe, SSN 000-00-0000", "completion": "ok", "model": "m"})
-    assert "prompt" not in v and "completion" not in v  # not in the row ...
+    v = visit("classify", {"doc_id": "d"}, {}, started_at=now, ended_at=now,
+              llm={"prompt": "the prompt", "completion": "ok", "model": "m"})
     stored = SqlSink().fetch_io(v["visit_id"])
-    assert stored["prompt"] == "Jane Doe, SSN 000-00-0000" and stored["sha256"] == v["io_sha256"]  # ... but stored
+    assert stored["prompt"] == "the prompt" and stored["sha256"] == v["io_sha256"]
+
+
+def test_entry_points_are_scanned_once_per_process(monkeypatch):
+    """#239 review: ``active_sinks`` runs on every node visit; the entry-point scan must not."""
+    import importlib.metadata
+
+    from audit import sinks
+
+    sinks._scan_entry_points.cache_clear()
+    calls = []
+    real = importlib.metadata.entry_points
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda **kw: calls.append(kw) or real(**kw))
+    try:
+        for _ in range(5):
+            sinks._scan_entry_points()
+        assert len(calls) == 1
+    finally:
+        sinks._scan_entry_points.cache_clear()
 
 
 def test_one_malformed_spool_row_does_not_block_the_valid_ones(monkeypatch, tmp_path):
@@ -343,3 +401,30 @@ def test_capture_pending_marks_a_copy_only_a_recoverable_sink_can_return_as_comp
     kept = sinks.capture_pending({"doc_id": "d-1"})
     assert [(k["sink"], k["complete"], k["recoverable"]) for k in kept] == [
         ("write-only", False, False), ("read-back", True, True)]
+
+
+class _FakeLangfuse:
+    """A Langfuse client double: ``trace_id`` is what ``get_current_trace_id`` returns."""
+
+    def __init__(self, trace_id):
+        self.trace_id, self.events = trace_id, []
+
+    def get_current_trace_id(self):
+        return self.trace_id
+
+    def create_event(self, **kwargs):
+        self.events.append(kwargs)
+
+
+@pytest.mark.parametrize("trace_id, created", [(None, False), ("abc123", True)])
+def test_langfuse_sink_never_opens_an_untagged_root_trace(monkeypatch, trace_id, created):
+    """#239 review: an event created with no active observation opens a new root trace without tags."""
+    from audit.sinks import langfuse as lf
+
+    client = _FakeLangfuse(trace_id)
+    monkeypatch.setattr(lf, "_client", lambda: client)
+    sink = lf.LangfuseSink()
+    io_ref = sink.record_io("v-1", "d-1", "p", "c")
+    pending_ref = sink.capture_pending({"doc_id": "d-1", "event": "archived"})
+    assert (io_ref is not None, pending_ref is not None) == (created, created)
+    assert [e["name"] for e in client.events] == (["audit-io", "audit-pending-row"] if created else [])

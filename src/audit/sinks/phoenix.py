@@ -1,11 +1,12 @@
-"""The ``phoenix`` trace sink (spec §5.5): added automatically when it is usable.
+"""The ``phoenix`` trace sink (spec §5.5): opt-in through ``MAILROOM_TRACE_SINKS`` (``sql,phoenix``).
 
-Usable means: the OpenTelemetry packages import, ``PHOENIX_TRACING`` is not
+Naming it is not enough on its own, because it must also be usable. Usable means: the OpenTelemetry packages import, ``PHOENIX_TRACING`` is not
 disabled, the hosted-container rule allows it (a Hugging Face Space or Railway
 container has no local ``phoenix serve``, so a localhost endpoint is skipped
 there), and a 1-second TCP probe of ``PHOENIX_ENDPOINT`` answers. I/O becomes
 attributes of an ``audit.io`` span; pending rows become ``audit.pending_row``
-spans. Phoenix is write-only here: nothing is read back.
+spans. Phoenix is write-only here: nothing is read back. Prompt and completion text reaches
+it only with ``audit.full_trace`` on (``audit.sinks.record_io`` hands no sink any text otherwise).
 """
 
 from __future__ import annotations

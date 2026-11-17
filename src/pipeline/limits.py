@@ -40,7 +40,11 @@ class RunBudgetExceeded(Exception):
         super().__init__(f"run output-token budget exceeded: {used} >= {cap}")
 
 
-_run_usage: contextvars.ContextVar[list] = contextvars.ContextVar("run_usage", default=[])
+# No shared default: a call made outside an active run (Gmail triage, relations
+# scan threads, ad-hoc scripts) has no accumulator and records nothing, so the
+# prompts/completions kept for the audit visit can never pile up in a
+# module-level list. ``reset_run_usage()`` opens the accumulator for a run.
+_run_usage: contextvars.ContextVar[list | None] = contextvars.ContextVar("run_usage", default=None)
 _run_deadline: contextvars.ContextVar = contextvars.ContextVar("run_deadline", default=None)
 _run_started: contextvars.ContextVar = contextvars.ContextVar("run_started", default=None)
 
@@ -141,7 +145,12 @@ def record_usage(
                 agent=agent,
             )
         return
-    _run_usage.get().append(
+    accumulator = _run_usage.get()
+    if accumulator is None:
+        # Outside an active run: nothing reads this record, so keep nothing
+        # (and never retain prompt/completion text).
+        return
+    accumulator.append(
         {
             "prompt_tokens": prompt_n,
             "completion_tokens": completion_n,
@@ -156,8 +165,12 @@ def record_usage(
 
 
 def run_calls() -> list[dict]:
-    """Return the current run's mutable LLM-call accumulator, oldest first."""
-    return _run_usage.get()
+    """Return the current run's mutable LLM-call accumulator, oldest first.
+
+    Outside an active run this is a fresh empty list (appending to it is lost).
+    """
+    accumulator = _run_usage.get()
+    return accumulator if accumulator is not None else []
 
 
 def call_cost_usd(call: dict) -> float | None:
@@ -178,7 +191,7 @@ def usage_summary() -> dict:
     prompt_tokens, completion_tokens, total, models, served_models} (unattributed calls
     land under ``None`` → key ``"unattributed"``).
     """
-    items = _run_usage.get()
+    items = _run_usage.get() or []
     prompt = sum(i["prompt_tokens"] for i in items)
     completion = sum(i["completion_tokens"] for i in items)
     by_agent: dict[str, dict] = {}
@@ -274,7 +287,7 @@ def estimate_cost() -> float:
     """Estimate USD cost for the current run from recorded usage and the
     `cost_models` table. Unknown models contribute 0."""
     total = 0.0
-    for call in _run_usage.get():
+    for call in _run_usage.get() or []:
         price = _price_for(call.get("model"))
         if not price:
             continue

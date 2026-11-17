@@ -15,8 +15,14 @@ Usage:
 With ``--json`` stdout is the report and nothing else: log lines go to stderr
 (the level and format still come from ``LOG_LEVEL`` / ``LOG_FORMAT``).
 
-Exit status: 0 when no hash or document write errors occurred; 1 on either error.
-Partial records and unreadable/write-only copies may still require operator follow-up.
+Exit status: 0 when nothing went wrong; 1 on a hash mismatch, a document write error, a sink whose
+pending records could not be read (``sink_read_failed``: the report is incomplete, not clean), or
+an unmigrated audit database (``AuditMigrationPending``: with ``--json`` a ``{"error": ...}`` object
+on stdout). A spool file that does not exist is reported (``spool_missing``) but is not an error:
+the spool is created by the first parked row, so a deployment that never parked one has none.
+A document whose copy fails for a reason that will not change is moved to the spool's
+``quarantined_rows`` table (kept, not deleted) and counted in ``quarantined``; later runs
+no longer fail on it. Partial records and write-only copies may still need operator follow-up.
 """
 
 from __future__ import annotations
@@ -53,9 +59,18 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = _parser().parse_args(argv)
 
+    from audit.models import AuditMigrationPending
     from audit.reconcile import reconcile
 
-    report = asyncio.run(reconcile(dry_run=args.dry_run))
+    try:
+        report = asyncio.run(reconcile(dry_run=args.dry_run))
+    except AuditMigrationPending as exc:
+        message = f"audit migration has not run: {exc}"
+        if args.json:
+            print(json.dumps({"error": "audit_migration_pending", "message": message}, indent=2))
+        else:
+            print(f"audit-reconcile: {message}", file=sys.stderr)
+        return 1
     if args.json:
         print(json.dumps(report.as_dict(), indent=2))
     else:
@@ -63,7 +78,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"audit-reconcile: {verb} {report.recovered} recovered, {report.partial} partial, "
               f"{report.gap_closed} recovered_detail, {report.resumed} resumed, {report.failed} failed; skipped {report.skipped_existing} with a row; "
               f"refused {report.rejected_hash} on hash mismatch")
-    return 1 if report.rejected_hash or report.failed else 0
+        if report.quarantined or report.quarantine_held:
+            print(f"audit-reconcile: {report.quarantined} quarantined this run, {report.quarantine_held} held "
+                  f"in quarantine (kept in the spool's quarantined_rows table)")
+        if report.spool_missing:
+            print(f"audit-reconcile: no spool at {', '.join(report.spool_missing)} (nothing parked, or its "
+                  f"volume is not mounted)")
+        if report.sink_read_failed:
+            print(f"audit-reconcile: could not read {report.sink_read_failed} sink(s): "
+                  f"{', '.join(report.sink_read_failed_names)}; this report is incomplete", file=sys.stderr)
+    return 1 if report.rejected_hash or report.failed or report.sink_read_failed else 0
 
 
 if __name__ == "__main__":

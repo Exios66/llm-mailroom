@@ -287,8 +287,10 @@ def end_visit(token: contextvars.Token) -> dict | None:
 def record_visit(event: str, *, actor: str = "pipeline", detail: dict | None = None) -> None:
     """Attach an event to the running node's visit (``decision["audit_event"]``).
 
-    Replaces the old per-stage audit rows: nothing is written to the audit DB.
-    A later call in the same node replaces the earlier note. Outside a traced
+    Replaces the old per-stage audit rows: the note rides on the node's visit and reaches
+    the unified row. (While the audit migration is pending, ``traced_node`` also appends the
+    per-event entry through ``audit.legacy_events``, so an unmigrated database keeps its
+    stage-by-stage trail.) A later call in the same node replaces the earlier note. Outside a traced
     node the note is dropped.
     """
     slot = _current_event.get()

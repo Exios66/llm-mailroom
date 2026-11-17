@@ -640,14 +640,16 @@ relations:
   context_limit: 6
   embedding_text_chars: 8000
 
-# Unified audit row (spec §5.5). full_trace copies each visit's prompt and
-# completion into the row itself (MAILROOM_AUDIT_FULL_TRACE wins when set). Off
-# by default: document text and personal data would then be part of the row.
-# It does NOT switch off the always-on `sql` trace sink: with full_trace false
-# the sink still stores every captured prompt and completion in the audit
-# database table `audit_trace_io` (they can hold document text and personal
-# data), and any other enabled sink (MAILROOM_TRACE_SINKS) receives them too.
-# Protect and retain that table like the documents themselves.
+# Unified audit row (spec §5.5). full_trace is the one switch for document text
+# in the audit trail (MAILROOM_AUDIT_FULL_TRACE wins when set). Off by default:
+# document text and personal data would otherwise be part of the row. With it
+# false each visit keeps its io_sha256 digest and its metadata (model, tokens,
+# latency) but NO prompt or completion text is stored anywhere: not in the row,
+# not in the `sql` sink's `audit_trace_io` table, and not handed to any other
+# sink (phoenix, langfuse, braintrust, otlp or an entry-point sink). With it
+# true the text goes into the row and to every active sink; protect and retain
+# `audit_trace_io` like the documents themselves. Sinks other than `sql` are
+# opt-in through MAILROOM_TRACE_SINKS (phoenix included).
 audit:
   full_trace: false
 
