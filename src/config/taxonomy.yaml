@@ -335,7 +335,9 @@ reviewer:
 # and HINT where the document goes next. Each slot is consulted right after its node
 # returns (never when the node asked for a transient retry); the outcome is written to
 # state["decision_outcomes"][slot]. The base router still decides first; the hint can
-# only refine its proposal, and never overrides a park (human_review) or a self-loop.
+# only refine its proposal, and never overrides a park (human_review), a self-loop or a
+# proposed retry_extract (the extraction integrity gate: lost windows, invalid schema,
+# hollow extraction). Duplicate keys anywhere in this file are an error at load time.
 # Example (not enabled):
 #   decision_points:
 #     extract.post:                # slot name: <node>.post
