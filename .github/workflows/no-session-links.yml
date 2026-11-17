@@ -51,7 +51,11 @@ jobs:
           AFTER: ${{ github.sha }}
         run: |
           if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then range="$AFTER -1"; else range="$BEFORE..$AFTER"; fi
-          if git log --format=%B $range | grep -Eiq "$PATTERN"; then
+          if ! messages=$(git log --format=%B $range); then
+            echo "::error::Cannot read commit range $range; failing closed."
+            exit 1
+          fi
+          if printf '%s\n' "$messages" | grep -Eiq "$PATTERN"; then
             echo "::error::A commit pushed to main carries a claude.ai session link."
             exit 1
           fi
