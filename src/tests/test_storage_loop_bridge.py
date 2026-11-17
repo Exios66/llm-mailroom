@@ -391,11 +391,12 @@ def test_wired_call_sites_use_the_bridge():
     from pipeline import relations
     from storage import warehouse
 
-    for fn in (build_graph._run_coro, relations._run):
+    for fn in (build_graph._run_coro, relations._run, warehouse._run_async):
         assert "run_sync" in inspect.getsource(fn), fn.__qualname__
-    # The warehouse export does blocking parquet/flock work inside its
-    # coroutine, so it must stay off the shared loop (it would stall it).
-    assert "run_sync" not in inspect.getsource(warehouse._run_async)
+    # The export's blocking parquet/flock work must run off the loop thread.
+    export_src = inspect.getsource(warehouse.export_to_warehouse)
+    assert "asyncio.to_thread(\n        _publish_export" in export_src
+    assert "asyncio.to_thread(load_warehouse_manifest)" in export_src
 
 
 def test_system_exit_in_coroutine_reaches_caller_and_loop_survives():
