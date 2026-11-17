@@ -178,3 +178,64 @@ def test_watcher_and_api_start_with_the_real_pins(temp_base_dir, monkeypatch, re
         w.stop()
     with TestClient(reload_api) as client:
         assert client.get("/health").status_code == 200
+
+
+@pytest.fixture
+def bad_decision_points(monkeypatch):
+    """A taxonomy ``decision_points:`` section that names a node the graph does not have."""
+    import copy
+
+    import pipeline.config as config
+
+    cfg = copy.deepcopy(config.load_config())
+    cfg["decision_points"] = {"nowhere.post": {"node": "not_a_node", "backend": "b"}}
+    monkeypatch.setattr(config, "load_config", lambda: cfg)
+    return config.DecisionPointConfigError
+
+
+def test_watcher_start_refuses_a_bad_decision_points_section(
+    temp_base_dir, monkeypatch, bad_decision_points
+):
+    """The section is validated at startup, before any lock, observer or worker thread."""
+    import pipeline.watcher as watcher_mod
+
+    monkeypatch.setattr(watcher_mod, "Observer", MagicMock)
+    w = watcher_mod.Watcher()
+    w.observer = MagicMock()
+    try:
+        with pytest.raises(bad_decision_points, match="not_a_node"):
+            w.start()
+        assert w._lock is None
+        assert w._running is False
+        assert watcher_mod._watcher_owned is False
+        w.observer.schedule.assert_not_called()
+        w.observer.start.assert_not_called()
+    finally:
+        if w._running or w._lock is not None:  # only when the guard is missing
+            w.stop()
+
+
+@pytest.mark.parametrize("embed", ["1", "0"])
+def test_api_lifespan_refuses_a_bad_decision_points_section(
+    monkeypatch, reload_api, bad_decision_points, embed
+):
+    """Whether or not the watcher is embedded, the API must not accept uploads on a
+    section that would only fail at the first document's graph build."""
+    started = []
+
+    class FakeWatcher:
+        worker_id = "test-worker"
+        _running = False
+
+        def start(self):
+            started.append("start")
+
+        def stop(self):
+            started.append("stop")
+
+    monkeypatch.setenv("MAILROOM_EMBED_WATCHER", embed)
+    monkeypatch.setattr("pipeline.watcher.Watcher", FakeWatcher)
+    with pytest.raises(bad_decision_points, match="not_a_node"):
+        with TestClient(reload_api):
+            pass
+    assert started == []  # the check runs before any watcher is started
