@@ -184,8 +184,6 @@ def chunk_merge_settings(agent_name: str) -> ChunkMergeSettings:
         # Keep the safe fallback, but say so: a malformed ``chunking.merge``
         # (e.g. a list under ``by_agent``) would otherwise silently run union.
         logger.warning("chunk_merge_config_unreadable", agent=agent_name, error_type=type(exc).__name__)
-        policy, min_windows = "union", _DEFAULT_MERGE_MIN_WINDOWS
-        fields = frozenset(_DEFAULT_EVIDENCE_FIELDS)
     return ChunkMergeSettings(policy, min_windows, fields)
 
 
