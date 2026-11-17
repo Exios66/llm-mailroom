@@ -313,10 +313,11 @@ class DecisionInput:
 
 
 class OutcomeValidationError(ValueError):
-    """Raised only by :class:`DecisionOutcome` validation, so its message is ours.
+    """Raised by :class:`DecisionOutcome` validation (a ``ValueError`` for existing callers).
 
-    :func:`_safe_detail` records the text of this error only; any other exception, even a
-    ``ValueError`` raised by a backend-controlled object, is recorded by its class name.
+    A backend can import and raise it too, so its type does not prove the text is ours:
+    :func:`_safe_detail` echoes only the exact messages in :data:`_VALIDATION_MESSAGES` and
+    records anything else, this class included, by class name.
     """
 
 
