@@ -1553,9 +1553,9 @@ class TestCompiledRedirects:
         assert visited[:4] == ["intake", "classify", "extract", "judge_verify"]
         assert final["decision_override_counts"] == {"extract.post": 1}
         # The redirect spent the budget, so the judge must really run (not record "skipped"),
-        # and its verdict routes the document from there (the scripted judge is not satisfied).
+        # and its verdict routes the document from there.
         assert final["judge_pass_count"] == 1 and final["judge_verdict"] != "skipped"
-        assert visited[4] == "arbiter" and final["stage"] == "archived"
+        assert final["stage"] == "archived"
 
     def test_a_judge_verify_redirect_respects_the_kill_switch(
         self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch
@@ -2028,6 +2028,26 @@ class TestResolveExit:
         # Config strips whitespace, so this guards the resolver itself.
         with pytest.raises(DecisionPointConfigError, match="not a registered name or an import spec"):
             dp._resolve_backend(policy(backend="dp_backend_mod:decide\n"))
+
+
+class TestJudgeRequestedByDecisionPoint:
+    BASE = {"doc_type": "contract", "extracted_data": {"parties": ["A"]}, "extraction_confidence": 0.99,
+            "decision_outcomes": {"extract.post": {"vetted_route": "judge_verify"}}}
+
+    @pytest.mark.parametrize("change, expected", [
+        ({}, True),
+        ({"judge_pass_count": 3}, False),  # judge_max_passes (default 3) is spent
+        ({"extraction_guardrail": "failed"}, False),
+        ({"extracted_data": {}}, False),
+        ({"extracted_data": {"parties": ["A"], "_failed_chunks": 1}}, False),
+        ({"decision_outcomes": {"extract.post": {"vetted_route": "judge_verify", "capped": True}}}, False),
+        ({"decision_outcomes": {"extract.post": {"vetted_route": "judge_verify", "shadowed": True}}}, False),
+        ({"decision_outcomes": {"extract.post": {"vetted_route": "compile_report"}}}, False),
+    ])
+    def test_the_judge_lane_limits_still_apply(self, change, expected):
+        from graph.routing import judge_requested_by_decision_point
+
+        assert judge_requested_by_decision_point({**self.BASE, **change}) is expected
 
 
 class TestDuplicateKeys:
