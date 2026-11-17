@@ -423,7 +423,8 @@ def test_rate_limit_decision_is_deterministic_per_doc_and_call():
 
 def test_smoke_run_writes_json_and_markdown(tmp_path):
     json_out, md_out = tmp_path / "out.json", tmp_path / "out.md"
-    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
+    # Pin the storage mode: an inherited MAILROOM_DB_SHARED_LOOP=0 would build an engine per call.
+    env = {**os.environ, "PYTHONPATH": str(ROOT / "src"), "MAILROOM_DB_SHARED_LOOP": "1"}
     proc = subprocess.run(
         [
             sys.executable, str(ROOT / "src/scripts/bench_throughput.py"),

@@ -413,3 +413,31 @@ def test_system_exit_in_coroutine_reaches_caller_and_loop_survives():
         return 7
 
     assert loop_bridge.run_sync(_ok, timeout=10) == 7
+
+
+def test_reentrant_fallback_keeps_caller_context_and_enforces_timeout():
+    """From the loop thread: context reaches the helper loop, and timeout cancels work."""
+    import contextvars
+    import time as _time
+
+    from storage import loop_bridge
+
+    var = contextvars.ContextVar("doc", default="unset")
+
+    async def _inner_read():
+        return var.get()
+
+    async def _outer():
+        var.set("document-a")
+        # Sync code on the loop thread calling back into the bridge.
+        return loop_bridge.run_sync(_inner_read, timeout=10)
+
+    assert loop_bridge.run_sync(_outer, timeout=10) == "document-a"
+
+    async def _outer_slow():
+        started = _time.monotonic()
+        with pytest.raises(TimeoutError):
+            loop_bridge.run_sync(asyncio.sleep(30), timeout=0.2)
+        return _time.monotonic() - started
+
+    assert loop_bridge.run_sync(_outer_slow, timeout=20) < 5
