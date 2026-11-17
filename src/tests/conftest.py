@@ -20,7 +20,10 @@ def _set_test_env():
 
     _load_env()
     os.environ.setdefault("OPENROUTER_API_KEY", "test-key-not-real")
-    os.environ.setdefault("MAILROOM_BASE_DIR", os.environ.get("MAILROOM_BASE_DIR", "/tmp/mailroom-test"))
+    # One default base dir per pytest-xdist worker (CI runs -n 4): concurrent
+    # workers must not share a SQLite catalog, heartbeat or JSONL files.
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "")
+    os.environ.setdefault("MAILROOM_BASE_DIR", f"/tmp/mailroom-test-{worker}" if worker else "/tmp/mailroom-test")
     # Keep tests hermetic: never pick up the real .env Langfuse/Braintrust keys
     # (llm/client.py now loads .env at import time).
     os.environ["OBSERVABILITY_PROVIDER"] = "none"
@@ -49,6 +52,10 @@ def _set_test_env():
               "BERT_INTAKE_MIN_CONFIDENCE"):
         os.environ.pop(k, None)
     for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"):
+        os.environ.pop(k, None)
+    # The staged interim GT overlay (observability.interim_gt) is opt-in; a .env
+    # that opts in must not turn Hub-only gold into overlay gold under the suite.
+    for k in ("MAILROOM_INTERIM_GT_DIR", "MAILROOM_INTERIM_GT_SHA256"):
         os.environ.pop(k, None)
     os.environ.pop("MAILROOM_VISION_ENABLED", None)
     os.environ.pop("DEFAULT_PROVIDER", None)
