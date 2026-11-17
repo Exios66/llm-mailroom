@@ -240,7 +240,10 @@ def test_unmatched_ground_truth_filename_is_reported(temp_base_dir, monkeypatch,
         merged, prov = loader.load_corpus(revision="v1")
     assert prov["unmatched_text"] == 1
     # The integrity block still counts only rows that have text.
-    assert prov["integrity"] == {"checked": 1, "verified": 1, "mismatched": 0}
+    assert prov["integrity"] == {
+        "checked": 1, "verified": 1, "mismatched": 0, "missing_text": 1, "mismatched_filenames": [],
+    }
+    assert merged["content_verified"].tolist() == [True, False]  # the textless row is unverified
     msgs = [r.getMessage() for r in caplog.records]
     assert any("1 of 2" in m and "no default row" in m for m in msgs)
     assert not any("content_sha256 mismatch" in m for m in msgs)

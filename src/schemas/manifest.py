@@ -43,6 +43,11 @@ class DocumentManifest(BaseModel):
     judge_verdict: str | None = None
     judge_score: float | None = None
     judge_findings: list[str] | None = None
+    # #277: windows of the source the judge and each arbiter read, with calls and tokens
+    # ({windows_total, windows_checked, calls, prompt_tokens, completion_tokens}).
+    judge_coverage: dict | None = None
+    arbiter_coverage: dict | None = None
+    classification_arbiter_coverage: dict | None = None
     # #254: every extraction attempt with its judge verdict (None on older
     # manifests), and which one the manifest's extraction came from.
     extraction_attempt_history: list[dict] | None = None
