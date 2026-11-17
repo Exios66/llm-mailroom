@@ -438,6 +438,7 @@ def test_pending_record_stays_on_the_box_unless_full_trace(monkeypatch, tmp_path
     class OffBox:
         name = "phoenix"
         recoverable = False
+        off_box = True
 
         def __init__(self):
             self.got = []
@@ -449,6 +450,7 @@ def test_pending_record_stays_on_the_box_unless_full_trace(monkeypatch, tmp_path
     class Local(OffBox):
         name = "sql"
         recoverable = True
+        off_box = False
 
     off, local = OffBox(), Local()
     monkeypatch.setattr(sinks, "active_sinks", lambda: [local, off])
@@ -461,3 +463,14 @@ def test_pending_record_stays_on_the_box_unless_full_trace(monkeypatch, tmp_path
     monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "1")
     kept = sinks.capture_pending(record)
     assert [k["sink"] for k in kept] == ["sql", "phoenix"] and off.got == [record]
+
+
+def test_every_built_in_sink_but_sql_is_marked_off_box():
+    from audit.sinks.braintrust import BraintrustSink
+    from audit.sinks.langfuse import LangfuseSink
+    from audit.sinks.otlp import OtlpSink
+    from audit.sinks.phoenix import PhoenixSink
+    from audit.sinks.sql import SqlSink
+
+    assert all(getattr(s, "off_box", False) for s in (BraintrustSink, LangfuseSink, OtlpSink, PhoenixSink))
+    assert not getattr(SqlSink, "off_box", False)

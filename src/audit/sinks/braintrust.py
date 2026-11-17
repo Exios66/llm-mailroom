@@ -15,6 +15,7 @@ def _span():
 class BraintrustSink:
     name = "braintrust"
     recoverable = False  # write-only: ``fetch_pending`` is always empty
+    off_box = True  # sends data out of the process: pending rows only with audit.full_trace
 
     def record_io(self, visit_id: str, doc_id: str | None, prompt: str | None, completion: str | None) -> str | None:
         span = _span()

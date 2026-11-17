@@ -76,6 +76,7 @@ def _tracer():
 class PhoenixSink:
     name = "phoenix"
     recoverable = False  # write-only: ``fetch_pending`` is always empty
+    off_box = True  # sends data out of the process: pending rows only with audit.full_trace
 
     @staticmethod
     def usable() -> bool:
