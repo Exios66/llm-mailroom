@@ -570,7 +570,10 @@ async def export_to_warehouse(
         for doc, entry in (wh_manifest.get("documents") or {}).items()
         if isinstance(entry, dict)
     } if from_watermark else None
-    records = await fetch_terminal_documents(doc_ids=doc_ids, since=since, exported=exported)
+    # ``exported`` is passed only when it applies, so a narrower ``fetch_terminal_documents`` still works.
+    records = await fetch_terminal_documents(
+        doc_ids=doc_ids, since=since, **({} if exported is None else {"exported": exported})
+    )
     if not records:
         # No document to export, but the one-time migrated history must not wait for one.
         return {
