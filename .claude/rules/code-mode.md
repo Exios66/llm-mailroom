@@ -13,8 +13,8 @@ fixed). Read-only agents create scratch scripts through `Bash`, never inside the
 - About five or more tool calls of the same shape (read N files, check N labels, grep N
   patterns, run N commands).
 - Reading data larger than a screen: `.jsonl`/`.csv` files, label overlays, trace
-  mirrors (`data/langfuse_logs/` if present; it is written by `sync_langfuse_logs.py`, which
-  you run only when the user asks; never write under `data/`), experiment results, pytest or CI logs.
+  mirrors (`data/langfuse_logs/` if present; `sync_langfuse_logs.py` reads hosted Langfuse
+  and writes that mirror, so run it only when the user asks; never hand-edit `data/`), experiment results, pytest or CI logs.
 - Comparing or validating sets: labels against the vocabulary in
   `src/config/taxonomy.yaml`, predictions against ground truth, one run against another.
 - Collecting gate results: run the gates in one script, print command, exit code and the
