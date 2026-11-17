@@ -675,3 +675,32 @@ def test_cli_passes_the_coverage_flag_to_a_full_plan_only(project, tmp_path):
     assert json.loads(out.read_text())["coverage"] is True
     assert ci.main(["--full", "--files", "--plan", str(out)]) == 0
     assert json.loads(out.read_text())["coverage"] is False
+
+
+@pytest.mark.parametrize(("workers", "coverage", "expected"), [
+    (None, False, []),
+    ("1", False, []),
+    ("not-a-number", False, []),
+    ("4", False, ["-n", "4", "--dist", "worksteal"]),
+    ("4", True, []),            # the weekly coverage backstop stays serial
+])
+def test_parallel_workers_come_from_the_environment_and_never_touch_coverage(
+        project, monkeypatch, tmp_path, workers, coverage, expected):
+    if workers is None:
+        monkeypatch.delenv("MAILROOM_TEST_WORKERS", raising=False)
+    else:
+        monkeypatch.setenv("MAILROOM_TEST_WORKERS", workers)
+    calls = []
+    monkeypatch.setattr(ci.subprocess, "call", lambda cmd, **kwargs: calls.append(cmd) or 0)
+    plan = ci.make_plan([], full=True, coverage=coverage)
+    assert ci.execute(plan, results=tmp_path / "evidence") == 0
+    pytest_cmd = calls[0]
+    tail = pytest_cmd[len(pytest_cmd) - len(expected):] if expected else []
+    assert tail == expected
+    assert ("-n" in pytest_cmd) == bool(expected)
+
+
+def test_worker_count_does_not_change_the_green_cache_key(project, monkeypatch):
+    plan = ci.make_plan(["src/agents/leaf.py"])
+    monkeypatch.setenv("MAILROOM_TEST_WORKERS", "4")
+    assert ci.cache_key(plan) == ci.cache_key(ci.make_plan(["src/agents/leaf.py"]))
