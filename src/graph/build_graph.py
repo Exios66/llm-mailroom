@@ -4265,9 +4265,10 @@ def _execute_run(
     trace_metadata["oracle_routing"] = oracle_routing
     # Active prompt set (llm/prompt_sets/catalog.yaml), so an A/B result set says
     # which prompts produced it.
-    from llm.prompt_sets import active_prompt_set
+    from llm.prompt_sets import active_prompt_set, prompt_ids
 
     trace_metadata["prompt_set"] = active_prompt_set()
+    trace_metadata["prompt_ids"] = prompt_ids()
     if oracle_routing and ground_truth:
         _warn_oracle_routing_once(run_id)
     public_gt = _public_ground_truth(ground_truth)

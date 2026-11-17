@@ -132,7 +132,9 @@ def _bound_prompt_versions() -> dict[str, str]:
     ``production`` label of ``mailroom-<agent_name>``; vendored LangChain
     agents pin an explicit lineage key.
     """
-    return {
+    from llm.prompt_sets import resolve
+
+    versions = {
         "sorter": "sorter_condensed_v5",
         "sorter_reviewer": "production",
         # Specialists: sandbox / eval-environment frozen v1. Entity-extraction
@@ -155,6 +157,12 @@ def _bound_prompt_versions() -> dict[str, str]:
         "intake": "production",
         "relations": "production",
     }
+    # An agent the active prompt set lists serves that set's file (llm/prompt_sets).
+    for agent in versions:
+        hit = resolve(agent)
+        if hit is not None:
+            versions[agent] = hit[0].split("@", 1)[1]
+    return versions
 
 
 def prompt_templates() -> dict[str, str]:

@@ -42,7 +42,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from langfuse import Evaluation  # noqa: E402
 from pipeline.config import oracle_routing_enabled  # noqa: E402
-from llm.prompt_sets import active_prompt_set  # noqa: E402
+from llm.prompt_sets import active_prompt_set, prompt_ids  # noqa: E402
 
 MANIFEST = REPO_ROOT / "docs" / "examples" / "samples" / "manifest.csv"
 GATED_METRICS = ("class_accuracy", "macro_class_accuracy", "macro_f1", "stage_accuracy")
@@ -197,6 +197,8 @@ def check_regression(current: dict, baseline: dict | None, tolerance: float = DE
             problems.append("oracle_routing mismatch between current run and baseline")
         if "prompt_set" in baseline and current.get("prompt_set") != baseline["prompt_set"]:
             problems.append("prompt_set mismatch between current run and baseline")
+        if "prompt_ids" in baseline and current.get("prompt_ids") != baseline["prompt_ids"]:
+            problems.append("prompt_ids mismatch between current run and baseline")
         cur = current.get("metrics") or {}
         for name, base_value in (baseline.get("metrics") or {}).items():
             if name not in cur:
@@ -384,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
 
     summary["oracle_routing"] = oracle_routing_enabled()
     summary["prompt_set"] = active_prompt_set()
+    summary["prompt_ids"] = prompt_ids()
     baseline = json.loads(Path(args.baseline).read_text()) if args.baseline else None
     problems = check_regression(summary, baseline, args.tolerance)
     public = {
@@ -391,6 +394,7 @@ def main(argv: list[str] | None = None) -> int:
         "mode": "mock" if args.mock else "real",
         "oracle_routing": summary["oracle_routing"],  # #207: True = routing read ground truth
         "prompt_set": summary["prompt_set"],  # llm/prompt_sets/catalog.yaml
+        "prompt_ids": summary["prompt_ids"],  # per-agent served prompt ids
         "n_items": summary["n_items"],
         "n_errors": summary["n_errors"],
         "metrics": summary["metrics"],

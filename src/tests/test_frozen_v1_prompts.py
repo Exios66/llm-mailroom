@@ -312,8 +312,9 @@ def test_corrected_roles_record_their_eval_environment_mutation_keys():
     assert not any(row["eval_environment_key"].endswith("_v2") for row in catalog.values())
 
 
-def test_production_templates_are_frozen_v1_specialists_and_condensed_sorter():
-    """Bind production templates and version labels to their frozen prompts."""
+def test_production_templates_are_frozen_v1_specialists_and_condensed_sorter(monkeypatch):
+    """Bind production templates and version labels to their frozen prompts (frozen_v1 set)."""
+    monkeypatch.setenv("MAILROOM_PROMPT_SET", "frozen_v1")
     templates = prompt_templates()
     assert templates["sorter"] == LP.SORTER_PROMPT_CONDENSED
     for agent in SPECIALIST_AGENTS:

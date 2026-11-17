@@ -198,3 +198,28 @@ def test_trace_metadata_records_the_prompt_set(monkeypatch, tmp_path, temp_base_
     with contextlib.suppress(RuntimeError):
         bg.run_pipeline(doc, "M-1", run_id="r-set")
     assert captured["prompt_set"] == expected
+
+
+def test_bound_prompt_versions_follow_the_set(monkeypatch):
+    from llm.prompts import _bound_prompt_versions
+
+    versions = _bound_prompt_versions()
+    assert versions["correspondence_specialist"] == "deploy_v1" and versions["judge"] == "deploy_v1"
+    assert versions["sorter"] == "sorter_condensed_v5" and versions["merger_agreement_specialist"] == "frozen_v1"
+    monkeypatch.setenv(PS.PROMPT_SET_ENV, "frozen_v1")
+    assert _bound_prompt_versions()["correspondence_specialist"] == "frozen_v1"
+
+
+def test_prompt_ids_show_a_by_agent_pin(monkeypatch):
+    _taxonomy(monkeypatch, {"active": "deploy_v1", "by_agent": {"correspondence_specialist": "deploy_v1_examples"}})
+    ids = PS.prompt_ids()
+    assert ids["correspondence_specialist"] == "correspondence_specialist@deploy_v1_examples"
+    assert ids["contracts_specialist"] == "contracts_specialist@deploy_v1"
+
+
+def test_invalid_by_agent_pin_warns(monkeypatch):
+    calls = []
+    monkeypatch.setattr(PS.logger, "warning", lambda event, **kw: calls.append(event))
+    _taxonomy(monkeypatch, {"active": "deploy_v1", "by_agent": {"judge": "nope"}})
+    assert PS.prompt_id("judge") == "judge@deploy_v1"
+    assert "prompt_set_by_agent_ignored" in calls

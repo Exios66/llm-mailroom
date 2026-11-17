@@ -82,8 +82,11 @@ def _agent_set(agent: str) -> str:
 
     block = load_config().get("prompt_set")
     by_agent = block.get("by_agent") if isinstance(block, dict) else None
-    if isinstance(by_agent, dict) and by_agent.get(agent) in set_names() and not os.environ.get(PROMPT_SET_ENV, "").strip():
-        return by_agent[agent]
+    pinned = by_agent.get(agent) if isinstance(by_agent, dict) else None
+    if pinned is not None and pinned not in set_names():
+        logger.warning("prompt_set_by_agent_ignored", agent=agent, value=pinned)
+    elif pinned is not None and not os.environ.get(PROMPT_SET_ENV, "").strip():
+        return pinned
     return active_prompt_set()
 
 
@@ -116,6 +119,12 @@ def served_prompt(agent: str, default_text: str) -> tuple[str, str]:
 def prompt_id(agent: str) -> str:
     hit = resolve(agent)
     return hit[0] if hit else f"{agent}@code"
+
+
+def prompt_ids() -> dict[str, str]:
+    """Agent -> served prompt id for every agent any set lists (records per-agent A/B pins)."""
+    agents = sorted({a for spec in catalog()["sets"].values() for a in (spec.get("agents") or {})})
+    return {agent: prompt_id(agent) for agent in agents}
 
 
 def set_templates() -> dict[str, str]:
