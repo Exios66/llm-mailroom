@@ -8,7 +8,7 @@
 #   pull request's description when CircleCI reports one.
 set -euo pipefail
 
-PATTERN='claude\.(ai|com)/(code|project|chat|artifact|share)|^[[:space:]]*Claude-Session:|Generated (with|by) \[?Claude Code'
+PATTERN='claude\.(ai|com)/(code|project|chat|artifact|share)|^[[:space:]]*Claude-Session:|Generated (with|by) \[Claude Code\]'
 status=0
 
 if [ "${CIRCLE_BRANCH:-}" = "main" ]; then
