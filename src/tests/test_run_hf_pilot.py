@@ -528,3 +528,12 @@ def test_scan_cap_none_means_unlimited():
     assert len(rows) == 5
     assert len(_take_rows([{"i": i} for i in range(5)], 2)) == 2
 
+
+
+def test_metrics_markdown_flags_a_malformed_interim_gt_record():
+    from scripts.run_hf_pilot import _interim_gt_line
+
+    assert "Hub-only" in _interim_gt_line(None)
+    assert "Hub-only" in _interim_gt_line({})
+    assert "malformed" in _interim_gt_line("abc")
+    assert "malformed" in _interim_gt_line([1])
