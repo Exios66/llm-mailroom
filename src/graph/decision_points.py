@@ -1053,7 +1053,14 @@ def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy
             outcomes.pop(policy.slot, None)
             doc_type = merged.get("doc_type")
             if policy.resolve(doc_type).enabled and not merged.get("transient_error"):
-                outcome = consult(policy, _build_input(policy, merged))
+                try:
+                    inp = _build_input(policy, merged)
+                except Exception as exc:  # noqa: BLE001  never raise into the graph
+                    outcome = _failed_outcome(
+                        policy, "invalid", "input_build_failed", error_type=type(exc).__name__
+                    )
+                else:
+                    outcome = consult(policy, inp)
                 stored = _stored(outcome, policy, doc_type)
                 hint = stored["vetted_route"]
                 if hint is not None and not claimed:
@@ -1071,6 +1078,8 @@ def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy
                             counts[policy.slot] = used + 1
                             counts_changed = True
                     claimed = claimed or answers
+                elif hint is not None:  # an earlier slot on this node already took the route
+                    stored["shadowed"] = True
                 outcomes[policy.slot] = stored
                 changed = True
             elif had:

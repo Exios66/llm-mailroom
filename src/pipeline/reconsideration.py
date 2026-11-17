@@ -529,8 +529,8 @@ def _decision_point_causes(data: Mapping[str, Any]) -> list[str]:
     for slot, record in outcomes.items():
         if not isinstance(slot, str) or not isinstance(record, Mapping):
             continue
-        if record.get("vetted_route") != "human_review":
-            continue
+        if record.get("vetted_route") != "human_review" or record.get("shadowed") is True:
+            continue  # did not ask to park, or an earlier slot on the node took the route
         tokens = record.get("causes")
         if isinstance(tokens, (list, tuple)):
             out.extend(f"{DECISION_POINT_PREFIX}{slot}:{t}" for t in tokens if isinstance(t, str) and t)
