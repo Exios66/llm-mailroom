@@ -343,11 +343,13 @@ That is the default, `chunking.merge.policy: union`. It keeps every window's cla
 * scalar fields: a null is never chosen. A window whose `reasoning` quotes its own source text for the field wins over one without; then the higher window `confidence` (the whole window's, there is no per-field confidence); then document order. The winner's reasoning entry replaces the first-witness one;
 * `confidence` and the rest of the bookkeeping are unchanged.
 
+Under either policy the merged extraction carries `_n_chunks`, `_failed_chunks` and `_chunk_confidences`: each window's own confidence in document order (`null` for a lost window), recorded before the merge takes the minimum. They are `_` keys, so field scoring and the hollow check ignore them.
+
 This deviates from the proposal in #255, which was to keep an item whose quote is verbatim in the window and otherwise pass it to the judge. The filtered items are recorded in `_unsupported_chunk_claims` and are not shown to the judge, because `_clean_fields_for_judge` strips `_` keys and changing the judge prompt is out of scope (prompts are Langfuse-managed and need a matching fallback). The recall cost: a genuine clause that every window paraphrased is lost from the extraction, and the retry passes the same filter, so it is not recovered there. The field scope above limits that cost to clause-like lists; entity and label lists are never filtered by default.
 
 Only the contracts and merger specialists emit `reasoning`; the corporate, correspondence and insurance specialists have only the verbatim check and `min_windows`.
 
-A window that fails to parse is skipped. If every window fails, the result is `{"_parse_error": true}` plus `_n_chunks` and `_failed_chunks` (both the window count), so routing sees the lost windows and review records `chunk_failed`. Window sizes come from `chunking.chunk_chars` and `chunking.overlap_chars`, capped by the specialist's `max_input_chars`; see [Configuration](../pipeline-reference-llm-mailroom/configuration.md).
+A window that fails to parse is skipped. If every window fails, the result is `{"_parse_error": true}` plus `_n_chunks` (the window count), `_failed_chunks` (also the window count) and `_chunk_confidences` (all `null`), so routing sees the lost windows and review records `chunk_failed`. Window sizes come from `chunking.chunk_chars` and `chunking.overlap_chars`, capped by the specialist's `max_input_chars`; see [Configuration](../pipeline-reference-llm-mailroom/configuration.md).
 
 ### 3. Inventory enrichment
 
