@@ -1345,6 +1345,33 @@ class TestOverrideBudget:
         else:
             assert "decision_override_counts" not in out and stored["shadowed"] is True
 
+    def test_a_rule_ahead_of_the_slots_sees_this_passes_outcomes(self):
+        from graph.route_spec import RouteRule, add_route_rule
+
+        # A stale outcome said "park"; this pass's answer is a redirect. The earlier rule
+        # reacts to outcomes, so it must be asked about the answer routing will see.
+        def defer_to_parks(view, proposed):
+            record = (view.get("decision_outcomes") or {}).get("extract.post") or {}
+            return "compile_report" if record.get("vetted_route") == "human_review" else None
+
+        add_route_rule("extract", RouteRule("ops:parks", defer_to_parks))
+        dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
+        stale = {**PROPOSES_COMPILE, "decision_outcomes": {"extract.post": {"vetted_route": "human_review"}}}
+        p = redirecting(max_overrides=1)
+        dp.install_rules([p])  # after ops:parks, as a slot rule is at build time
+        out = dp.wrap_node("extract", node_returning({}), [p])(stale)
+        assert out["decision_override_counts"] == {"extract.post": 1}
+        assert "shadowed" not in out["decision_outcomes"]["extract.post"]
+        state = {**stale, **out}
+        assert decide_route(dp._SPEC_BY_NODE["extract"], state) == "judge_verify"
+
+    def test_a_shadowed_outcome_never_routes(self):
+        p = redirecting(max_overrides=1)
+        record = {"status": "ok", "route_hint": "judge_verify", "confidence": 0.9,
+                  "vetted_route": "judge_verify", "shadowed": True}
+        state = {**PROPOSES_COMPILE, "decision_outcomes": {"extract.post": record}}
+        assert dp.rule_for(p).decide(state, "compile_report") is None
+
     def test_a_hint_equal_to_the_proposal_spends_nothing(self):
         dp.register_decision_point_backend("fake", lambda i: hint_to("compile_report"))
         p = policy(allow=("compile_report",))
@@ -1455,6 +1482,20 @@ def arbiter_accepts(mock_openai_client):
     })
 
 
+def judge_satisfied(monkeypatch):
+    """The judge finds every extraction complete and accurate, so its router proposes
+    compile_report and only a decision-point hint keeps the cycle going."""
+
+    class SatisfiedJudge:
+        def judge_completeness(self, **kw):
+            return {"completeness": 0.99, "completeness_label": "complete", "reasoning": "ok"}
+
+        def judge_extraction_correctness(self, **kw):
+            return {"extraction_correctness": 1.0, "extraction_correctness_label": "accurate", "reasoning": ""}
+
+    monkeypatch.setattr("agents.judge.CompletenessJudge", SatisfiedJudge)
+
+
 def stream_doc(temp_base_dir, mock_langchain_llm, name="doc.txt", thread="dp-stream"):
     """Run one document through a compiled graph; returns (visited nodes in order, final state).
 
@@ -1505,11 +1546,25 @@ class TestCompiledRedirects:
     def test_extract_slot_redirects_to_judge_verify(
         self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
     ):
+        arbiter_accepts(mock_openai_client)
         decision_points({"extract.post": {"node": "extract", "backend": "fake", "allow": ["judge_verify"]}})
         dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
         visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
-        assert visited[:5] == ["intake", "classify", "extract", "judge_verify", "compile_report"]
+        assert visited[:4] == ["intake", "classify", "extract", "judge_verify"]
         assert final["decision_override_counts"] == {"extract.post": 1}
+        # The redirect spent the budget, so the judge must really run (not record "skipped"),
+        # and its verdict routes the document from there (the scripted judge is not satisfied).
+        assert final["judge_pass_count"] == 1 and final["judge_verdict"] != "skipped"
+        assert visited[4] == "arbiter" and final["stage"] == "archived"
+
+    def test_a_judge_verify_redirect_respects_the_kill_switch(
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch
+    ):
+        monkeypatch.setenv("MAILROOM_JUDGE_VERIFY", "off")
+        decision_points({"extract.post": {"node": "extract", "backend": "fake", "allow": ["judge_verify"]}})
+        dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
+        _, final = stream_doc(temp_base_dir, mock_langchain_llm)
+        assert final["judge_verdict"] == "skipped" and not final.get("judge_pass_count")
 
     def test_a_hint_outside_allow_changes_nothing(
         self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
@@ -1521,9 +1576,10 @@ class TestCompiledRedirects:
         assert "decision_override_counts" not in final
 
     def test_cyclic_allow_config_terminates_and_the_document_finishes(
-        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch
     ):
         arbiter_accepts(mock_openai_client)
+        judge_satisfied(monkeypatch)
         decision_points(CYCLE)
         register_cycle_backends()
         visited, final = stream_doc(temp_base_dir, mock_langchain_llm)  # no GraphRecursionError
@@ -1534,9 +1590,10 @@ class TestCompiledRedirects:
         assert any(o.get("capped") for o in final["decision_outcomes"].values())
 
     def test_a_larger_budget_still_terminates_within_the_limit(
-        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch
     ):
         arbiter_accepts(mock_openai_client)
+        judge_satisfied(monkeypatch)
         decision_points({k: {**v, "max_overrides": 2} for k, v in CYCLE.items()})  # 8, the total cap
         register_cycle_backends()
         visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
@@ -1555,6 +1612,7 @@ class TestCompiledRedirects:
         from langgraph.errors import GraphRecursionError
 
         arbiter_accepts(mock_openai_client)
+        judge_satisfied(monkeypatch)
         monkeypatch.setattr(dp, "MAX_TOTAL_OVERRIDES", 1_000_000)
         monkeypatch.setattr(limits, "get_max_total_output_tokens", lambda: 2000)  # end the loop sooner
         decision_points({k: {**v, "max_overrides": 10_000} for k, v in CYCLE.items()})
@@ -2006,6 +2064,21 @@ class TestDuplicateKeys:
     def test_merge_keys_still_load(self, tmp_path, monkeypatch):
         got = self._load(tmp_path, monkeypatch, "base: &b {k: 1, j: 2}\nderived:\n  <<: *b\n  k: 3\n")
         assert got["derived"] == {"k": 3, "j": 2}
+
+    @pytest.mark.parametrize("text", [
+        "a: {<<: {x: 1, x: 2}, y: 3}\n",
+        "b: &b {x: 1}\nd: {<<: [*b, {z: 1, z: 2}]}\n",
+    ])
+    def test_a_duplicate_inside_a_merge_source_is_rejected(self, tmp_path, monkeypatch, text):
+        import yaml
+
+        with pytest.raises(yaml.YAMLError, match="duplicate key"):
+            self._load(tmp_path, monkeypatch, text)
+
+    def test_overrides_through_nested_merges_still_load(self, tmp_path, monkeypatch):
+        got = self._load(tmp_path, monkeypatch,
+                         "b: &b {x: 1}\nc: &c {<<: *b, x: 2}\nd: {<<: *c, x: 3, y: 1}\n")
+        assert got["c"] == {"x": 2} and got["d"] == {"x": 3, "y": 1}
 
     def test_the_shipped_taxonomy_has_no_duplicate_keys(self):
         import yaml

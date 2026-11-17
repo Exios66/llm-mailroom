@@ -261,12 +261,41 @@ def _judge_can_review(state: dict) -> bool:
 
 
 def judge_should_run(state: dict) -> bool:
-    """The ambiguous band, a retry owed a re-judge, or an unsure extraction whose retries are spent."""
+    """The ambiguous band, a retry owed a re-judge, an unsure extraction whose retries are
+    spent, or a decision point that sent the document here."""
     return (
         judge_gate(state)
         or retry_rejudge_due(state)
         or (_judge_can_review(state) and _extraction_still_unsure(state))
+        or judge_requested_by_decision_point(state)
     )
+
+
+def judge_requested_by_decision_point(state: Mapping[str, Any]) -> bool:
+    """True when a decision point's applied hint routed the document to ``judge_verify``.
+
+    A redirect there spends the slot's override budget, so the judge must actually run
+    rather than record ``skipped`` and let an unverified extraction archive. The judge
+    lane's own limits still apply: the ``MAILROOM_JUDGE_VERIFY`` kill switch, a guardrail
+    failure, an empty extraction, a lost window and ``judge_max_passes``. Only an outcome
+    that was charged or allowed through counts (not ``capped`` and not ``shadowed``).
+    """
+    outcomes = state.get("decision_outcomes")
+    if not isinstance(outcomes, Mapping):
+        return False
+    requested = any(
+        isinstance(record, Mapping)
+        and record.get("vetted_route") == "judge_verify"
+        and not record.get("capped")
+        and not record.get("shadowed")
+        for record in outcomes.values()
+    )
+    if not requested:
+        return False
+    passes = int(state.get("judge_pass_count") or 0)
+    if passes >= _judge_max_passes(_thresholds_for(state)):
+        return False
+    return _judge_can_review(state)
 
 
 def _extraction_still_unsure(state: Mapping[str, Any]) -> bool:
