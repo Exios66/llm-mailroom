@@ -27,7 +27,8 @@ CLEAN_ACCURATE = {"extraction_correctness": 1.0, "extraction_correctness_label":
 class ScriptedJudge:
     """Patch point: answers each judge call from ``script`` and records the user messages."""
 
-    def __init__(self, monkeypatch, *, completeness=None, correctness=None, window_chars=WINDOW_CHARS):
+    def __init__(self, monkeypatch, *, completeness=None, correctness=None, window_chars=WINDOW_CHARS,
+                 report_usage=True):
         self.completeness = completeness or (lambda i: CLEAN_COMPLETE)
         self.correctness = correctness or (lambda i: CLEAN_ACCURATE)
         self.messages: list[str] = []
@@ -41,7 +42,8 @@ class ScriptedJudge:
             reply = (outer.completeness if kind == "completeness" else outer.correctness)(outer.calls[kind])
             if isinstance(reply, Exception):
                 raise reply
-            limits.record_usage({"prompt_tokens": 100, "completion_tokens": 10}, "m", agent="judge")
+            if report_usage:
+                limits.record_usage({"prompt_tokens": 100, "completion_tokens": 10}, "m", agent="judge")
             return dict(reply)
 
         monkeypatch.setattr(judge_mod.CompletenessJudge, "_call_structured", call)
@@ -59,7 +61,19 @@ def run_node(text, **state):
 
 @pytest.fixture(autouse=True)
 def _judge_on(monkeypatch):
+    import agents.source_windows as sw
+
     monkeypatch.setenv("MAILROOM_JUDGE_VERIFY", "on")
+    sw._cache.clear()
+    yield
+    sw._cache.clear()
+
+
+def transient_error():
+    import httpx
+    from openai import APIConnectionError
+
+    return APIConnectionError(request=httpx.Request("POST", "https://example.invalid/v1/chat/completions"))
 
 
 # -- windows ---------------------------------------------------------------------------------
@@ -326,3 +340,136 @@ def test_arbiter_node_records_the_coverage(monkeypatch, temp_base_dir):
     update = bg.arbiter_node({"doc_id": "d1", "doc_type": "contract", "doc_text": long_text(),
                               "judge_verdict": "partial", "extracted_data": {"parties": ["A"]}})
     assert update["arbiter_coverage"]["windows_total"] == update["arbiter_coverage"]["windows_checked"] > 2
+
+
+# -- retry resumes, early stop, whitespace, coverage on attempts -----------------------------------
+
+
+def test_a_transient_error_on_window_3_then_a_retry_does_not_recall_windows_1_and_2(monkeypatch):
+    fake = ScriptedJudge(monkeypatch, completeness=lambda i: transient_error() if i == 3 else CLEAN_COMPLETE)
+    text = long_text()
+    n = len(windows_for_budget(text, WINDOW_CHARS))
+    first = run_node(text)
+    assert first["transient_error"] is True and fake.calls["completeness"] == 3
+    fake.messages.clear()
+    second = run_node(text)  # the node's own retry
+    assert second["judge_source_verified"] is True and second["judge_verdict"] == "complete"
+    retry_completeness = [m for m in fake.messages if "Evaluate extraction completeness" in m]
+    assert len(retry_completeness) == n - 2  # windows 3..n only
+    assert not any(f"WINDOW {i} OF" in m for m in retry_completeness for i in (1, 2))
+    assert fake.calls["completeness"] == 3 + (n - 2)
+    assert second["judge_coverage"]["windows_checked"] == n  # cached windows still count as checked
+
+
+def test_the_resume_cache_is_dropped_when_the_node_finishes(monkeypatch):
+    import agents.source_windows as sw
+
+    ScriptedJudge(monkeypatch)
+    run_node(long_text())
+    assert not sw._cache
+
+
+def test_a_changed_extraction_does_not_reuse_cached_windows(monkeypatch):
+    fake = ScriptedJudge(monkeypatch, completeness=lambda i: transient_error() if i == 3 else CLEAN_COMPLETE)
+    text = long_text()
+    run_node(text)
+    before = fake.calls["completeness"]
+    run_node(text, extracted_data={"parties": ["C"]})
+    assert fake.calls["completeness"] - before == len(windows_for_budget(text, WINDOW_CHARS))
+
+
+def test_a_transient_arbiter_error_then_a_retry_does_not_recall_earlier_windows(monkeypatch, temp_base_dir):
+    failed = []
+
+    def reply(i):
+        if i == 3 and not failed:
+            failed.append(i)
+            return transient_error()
+        return ACCEPT
+
+    agent, seen = arbiter_with(monkeypatch, reply)
+    monkeypatch.setattr(arbiter_mod, "ArbiterAgent", lambda: agent)
+    text = long_text()
+    n = len(windows_for_budget(text, WINDOW_CHARS))
+    state = {"doc_id": "d1", "doc_type": "contract", "doc_text": text, "judge_verdict": "partial",
+             "extracted_data": {"parties": ["A"]}}
+    assert bg.arbiter_node(state)["transient_error"] is True
+    del seen[:]
+    update = bg.arbiter_node(state)
+    assert update["arbiter_decision"] == "accept_with_caveats"
+    assert len(seen) == n - 2 and not any(f"WINDOW {i} OF" in m for m in seen for i in (1, 2))
+    assert update["arbiter_coverage"]["windows_checked"] == n
+    assert update["arbiter_coverage"]["calls"] == n - 2
+
+
+def test_the_completeness_pass_stops_at_the_worst_label_and_says_so(monkeypatch):
+    fake = ScriptedJudge(
+        monkeypatch,
+        completeness=lambda i: CLEAN_COMPLETE if i != 2 else
+        {"completeness": 0.1, "completeness_label": "incomplete", "reasoning": "nothing captured"},
+    )
+    text = long_text()
+    n = len(windows_for_budget(text, WINDOW_CHARS))
+    update = run_node(text)
+    assert fake.calls == {"completeness": 2, "correctness": 0}
+    assert update["judge_verdict"] == "incomplete" and update["judge_source_verified"] is False
+    assert update["judge_coverage"]["windows_total"] == n and update["judge_coverage"]["windows_checked"] == 2
+    assert f"[window 2 of {n}] nothing captured" in update["judge_findings"][0]
+
+
+def test_calls_are_counted_even_when_the_provider_reports_no_usage(monkeypatch):
+    ScriptedJudge(monkeypatch, report_usage=False)
+    text = long_text()
+    n = len(windows_for_budget(text, WINDOW_CHARS))
+    update = run_node(text)
+    assert update["judge_coverage"]["calls"] == 2 * n and update["judge_coverage"]["prompt_tokens"] == 0
+
+
+def test_a_null_reasoning_is_empty_not_the_word_none(monkeypatch):
+    ScriptedJudge(
+        monkeypatch,
+        completeness=lambda i: {"completeness": 0.7, "completeness_label": "partial", "reasoning": None},
+        window_chars=100_000,
+    )
+    out = judge_mod.CompletenessJudge().judge_completeness("contract", {"parties": ["A"]}, "short")
+    assert out["reasoning"] == ""
+
+
+@pytest.mark.parametrize("text", ["   \n\n  \t " * 2000, " " * 10_000, "\n" * 9_000])
+def test_blank_text_over_the_budget_is_one_empty_window_never_an_over_budget_one(text):
+    assert len(text) > WINDOW_CHARS
+    assert windows_for_budget(text, WINDOW_CHARS) == [""]
+
+
+def test_the_verdict_coverage_is_recorded_on_the_attempt_and_restored_with_it():
+    from graph import attempts
+
+    cov1 = {"windows_total": 3, "windows_checked": 3, "calls": 6, "prompt_tokens": 1, "completion_tokens": 1}
+    cov2 = {"windows_total": 3, "windows_checked": 1, "calls": 1, "prompt_tokens": 1, "completion_tokens": 1}
+    guard = {"ok": True, "issues": [], "schema_valid": True}
+    state: dict = {}
+    for n, (verdict, cov) in enumerate([("complete", cov1), ("incomplete", cov2)], start=1):
+        state[attempts.HISTORY_KEY] = attempts.record_attempt(
+            state, kind="extract", extracted={"parties": [str(n)]}, confidence=0.5, guard=guard
+        )
+        state[attempts.HISTORY_KEY] = attempts.record_verdict(
+            state, verdict=verdict, score=0.5, findings=[], source_verified=verdict == "complete", coverage=cov
+        )
+    history = state[attempts.HISTORY_KEY]
+    assert history[0]["judge_coverage"] == cov1 and history[1]["judge_coverage"] == cov2
+    chosen = attempts.select_attempt({**state, "judge_coverage": cov2}, enabled=True)
+    assert chosen["selected_attempt"] == 1  # the complete earlier attempt ranks best
+    assert chosen["judge_coverage"] == cov1 and chosen["judge_source_verified"] is True
+    # an attempt that recorded no coverage clears the latest's coverage instead of keeping it
+    history[0]["judge_coverage"] = None
+    assert attempts.select_attempt({**state, "judge_coverage": cov2}, enabled=True)["judge_coverage"] is None
+
+
+def test_the_node_records_its_coverage_on_the_attempt_history(monkeypatch):
+    from graph import attempts
+
+    ScriptedJudge(monkeypatch)
+    guard = {"ok": True, "issues": [], "schema_valid": True}
+    history = attempts.record_attempt({}, kind="extract", extracted={"parties": ["A"]}, confidence=0.3, guard=guard)
+    update = run_node(long_text(), **{attempts.HISTORY_KEY: history})
+    assert update[attempts.HISTORY_KEY][-1]["judge_coverage"] == update["judge_coverage"]

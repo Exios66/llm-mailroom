@@ -2282,6 +2282,20 @@ def _judge_coverage(result: Mapping[str, Any], accuracy: Mapping[str, Any] | Non
 
 
 def judge_verify_node(state: DocumentState) -> dict[str, Any]:
+    """In-pipeline completeness judge; see ``_judge_verify``.
+
+    Window results kept for a node retry (``agents.source_windows``) are dropped as soon as
+    the node returns anything but a transient error.
+    """
+    update = _judge_verify(state)
+    if not update.get("transient_error"):
+        from agents.source_windows import forget_document
+
+        forget_document(str(state.get("doc_text") or ""))
+    return update
+
+
+def _judge_verify(state: DocumentState) -> dict[str, Any]:
     """KANBAN-063 (Lane B): in-pipeline completeness judge.
 
     Reuses the offline-battle-tested ``CompletenessJudge`` rubric against the
@@ -2412,7 +2426,8 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
     }
     # #254: the verdict belongs to the attempt just judged (the latest).
     history = attempt_history.record_verdict(
-        state, verdict=label, score=score, findings=findings, source_verified=source_verified
+        state, verdict=label, score=score, findings=findings, source_verified=source_verified,
+        coverage=coverage,
     )
     if history is not None:
         verdict_update[attempt_history.HISTORY_KEY] = history
@@ -2420,6 +2435,16 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
 
 
 def arbiter_node(state: DocumentState) -> dict[str, Any]:
+    """Lane B arbitration; see ``_arbiter``. Drops the retry resume cache once the node is done."""
+    update = _arbiter(state)
+    if not update.get("transient_error"):
+        from agents.source_windows import forget_document
+
+        forget_document(str(state.get("doc_text") or ""))
+    return update
+
+
+def _arbiter(state: DocumentState) -> dict[str, Any]:
     """KANBAN-063 (Lane B): arbitration on a failed judge verdict.
 
     Bounded decisions only (accept_with_caveats / retry with fix-list up to

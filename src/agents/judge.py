@@ -9,7 +9,7 @@ from llm.prompt_doctrine import (
     JUDGE_COMPLETENESS as _COMPLETENESS_DOCTRINE,
     JUDGE_CORRECTNESS as _CORRECTNESS_DOCTRINE,
 )
-from agents.source_windows import source_windows, window_label
+from agents.source_windows import cached_window, source_windows, store_window, text_digest, window_label
 from llm.prompts import get_managed_prompt
 from pipeline import limits
 from pipeline.config import load_config
@@ -148,15 +148,15 @@ def _content_fields(extracted: dict | None) -> dict:
     return {k: v for k, v in (extracted or {}).items() if _is_content_field(k)}
 
 
-def _join_findings(results: list[dict], ok_label: str, label_key: str) -> str:
+def _join_findings(results: list[dict], ok_label: str, label_key: str, total: int | None = None) -> str:
     """Reasoning of every window that found something, tagged by window.
 
     A single window's reasoning is returned untouched. With several, only windows that
     did not return ``ok_label`` contribute, so a clean document carries no filler.
     """
-    if len(results) == 1:
-        return str(results[0].get("reasoning", ""))
-    total = len(results)
+    total = total or len(results)
+    if total == 1:
+        return str(results[0].get("reasoning") or "")
     parts = [
         f"[{window_label(i, total)}] {r.get('reasoning', '')}"
         for i, r in enumerate(results, start=1)
@@ -165,7 +165,7 @@ def _join_findings(results: list[dict], ok_label: str, label_key: str) -> str:
     return "\n".join(parts)
 
 
-def aggregate_completeness(results: list[dict]) -> dict:
+def aggregate_completeness(results: list[dict], total: int | None = None) -> dict:
     """Combine per-window completeness verdicts: the worst window wins.
 
     The judge's output is one score and one label for the whole extraction, not a
@@ -181,11 +181,11 @@ def aggregate_completeness(results: list[dict]) -> dict:
     return {
         "completeness": min(float(r["completeness"]) for r in results),
         "completeness_label": worst["completeness_label"],
-        "reasoning": _join_findings(results, "complete", "completeness_label"),
+        "reasoning": _join_findings(results, "complete", "completeness_label", total),
     }
 
 
-def aggregate_correctness(results: list[dict]) -> dict:
+def aggregate_correctness(results: list[dict], total: int | None = None) -> dict:
     """Combine per-window accuracy verdicts: the worst window wins (see ``aggregate_completeness``).
 
     Each window is told a value it does not mention is not wrong, so a flagged value is one
@@ -195,19 +195,24 @@ def aggregate_correctness(results: list[dict]) -> dict:
     return {
         "extraction_correctness": min(float(r["extraction_correctness"]) for r in results),
         "extraction_correctness_label": worst["extraction_correctness_label"],
-        "reasoning": _join_findings(results, "accurate", "extraction_correctness_label"),
+        "reasoning": _join_findings(results, "accurate", "extraction_correctness_label", total),
     }
 
 
-def _coverage(results: list[dict], mark: int) -> dict:
-    """Which windows one judge pass read and what the reading cost."""
+def _coverage(results: list[dict], total: int, model_calls: int, mark: int) -> dict:
+    """Which windows one judge pass checked and what it cost.
+
+    ``windows_checked`` counts windows with a usable verdict, cached ones included; a pass that
+    stopped at its worst verdict leaves the rest unchecked. ``calls`` is the model calls this
+    invocation made (counted, since a provider may omit usage); tokens are the usage recorded.
+    """
     failed = [i for i, r in enumerate(results, start=1) if r.get("_parse_error")]
     usage = limits.usage_since(mark, agent="judge")
     return {
-        "windows_total": len(results),
+        "windows_total": total,
         "windows_checked": len(results) - len(failed),
         "failed_windows": failed,
-        "calls": usage["calls"],
+        "calls": model_calls,
         "prompt_tokens": usage["prompt_tokens"],
         "completion_tokens": usage["completion_tokens"],
     }
@@ -245,21 +250,49 @@ class CompletenessJudge(BaseAgent):
         A document that fits the judge's ``max_input_chars`` is one call, as before. A longer
         one is read in overlapping windows (``agents.source_windows``), one call per window,
         and the verdicts are combined by ``aggregate_completeness`` (worst window wins).
-        ``coverage`` on the result says how many windows were read, which failed to parse, and
-        the calls and tokens spent. A window whose output does not parse counts as
+        ``coverage`` on the result says how many windows were checked, which failed to parse,
+        and the calls and tokens spent. The pass stops at the first ``incomplete`` window (no
+        later one can improve the verdict) and the windows after it stay unchecked. A window
+        judged before a transient provider error is not asked again on the node's retry (the
+        resume cache in ``agents.source_windows``). A window whose output does not parse counts as
         ``incomplete`` in the verdict and is listed in ``coverage["failed_windows"]``; a
         provider error propagates so the caller can fail closed or retry.
         """
-        windows = source_windows(self, doc_text)
-        extracted = _content_fields(extracted)
-        mark = limits.usage_mark()
-        results = [
-            self._completeness_window(doc_type, extracted, window, index, len(windows))
-            for index, window in enumerate(windows, start=1)
-        ]
-        verdict = aggregate_completeness(results)
-        verdict["coverage"] = _coverage(results, mark)
+        results, total, calls, mark = self._read_windows(
+            "completeness", doc_type, _content_fields(extracted), doc_text,
+            self._completeness_window, "completeness_label", "incomplete",
+        )
+        verdict = aggregate_completeness(results, total)
+        verdict["coverage"] = _coverage(results, total, calls, mark)
         return verdict
+
+    def _read_windows(self, pass_name, doc_type, extracted, doc_text, run_window, label_key, worst_label):
+        """Run ``run_window`` over the document's windows; ``(results, total, model_calls, usage_mark)``.
+
+        A window already judged in this process (an earlier attempt of the same node before a
+        transient error) is taken from the resume cache, so only unfinished windows cost a call.
+        The pass stops at the first window whose verdict is the worst label (or did not parse):
+        no later window can improve it, and the caller records the windows left unchecked.
+        """
+        windows = source_windows(self, doc_text)
+        doc_digest = text_digest(doc_text or "")
+        context = text_digest([doc_type, extracted])
+        model = str(getattr(self, "model", ""))
+        mark = limits.usage_mark()
+        results: list[dict] = []
+        calls = 0
+        for index, window in enumerate(windows, start=1):
+            key = (doc_digest, "judge", pass_name, index, len(windows), text_digest(window), context, model)
+            result = cached_window(key)
+            if result is None:
+                result = run_window(doc_type, extracted, window, index, len(windows))
+                calls += 1
+                if not result.get("_parse_error"):
+                    store_window(key, result)
+            results.append(result)
+            if result.get("_parse_error") or result.get(label_key) == worst_label:
+                break
+        return results, len(windows), calls, mark
 
     def _completeness_window(self, doc_type: str, extracted: dict, window: str, index: int, total: int) -> dict:
         schema = build_structured_schema(
@@ -320,7 +353,7 @@ Document type: {doc_type}
         return {
             "completeness": max(0.0, min(1.0, completeness)),
             "completeness_label": label,
-            "reasoning": str(result.get("reasoning", "")),
+            "reasoning": str(result.get("reasoning") or ""),
         }
 
     @staticmethod
@@ -409,7 +442,7 @@ Classifier reasoning: {reasoning or 'none provided'}
         return {
             "classification_correct": label,
             "classification_quality": max(0.0, min(1.0, quality)),
-            "reasoning": str(result.get("reasoning", "")),
+            "reasoning": str(result.get("reasoning") or ""),
         }
 
     def judge_extraction_correctness(
@@ -425,15 +458,12 @@ Classifier reasoning: {reasoning or 'none provided'}
         window wins); ``coverage`` reports the windows read, the ones that failed to parse
         and the cost.
         """
-        windows = source_windows(self, doc_text)
-        extracted = _content_fields(extracted)
-        mark = limits.usage_mark()
-        results = [
-            self._correctness_window(doc_type, extracted, window, index, len(windows))
-            for index, window in enumerate(windows, start=1)
-        ]
-        verdict = aggregate_correctness(results)
-        verdict["coverage"] = _coverage(results, mark)
+        results, total, calls, mark = self._read_windows(
+            "correctness", doc_type, _content_fields(extracted), doc_text,
+            self._correctness_window, "extraction_correctness_label", "inaccurate",
+        )
+        verdict = aggregate_correctness(results, total)
+        verdict["coverage"] = _coverage(results, total, calls, mark)
         return verdict
 
     def _correctness_window(self, doc_type: str, extracted: dict, window: str, index: int, total: int) -> dict:
@@ -499,5 +529,5 @@ Document type: {doc_type}
         return {
             "extraction_correctness": max(0.0, min(1.0, correctness)),
             "extraction_correctness_label": label,
-            "reasoning": str(result.get("reasoning", "")),
+            "reasoning": str(result.get("reasoning") or ""),
         }
