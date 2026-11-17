@@ -12,7 +12,8 @@ that returns twenty lines. This applies to the orchestrator and to every subagen
 - About five or more tool calls of the same shape (read N files, check N labels, grep N
   patterns, run N commands).
 - Reading data larger than a screen: `.jsonl`/`.csv` files, label overlays, trace
-  mirrors (`data/langfuse_logs/`), experiment results, pytest or CI logs.
+  mirrors (`data/langfuse_logs/`, written by `sync_langfuse_logs.py`; read them, never
+  write under `data/`), experiment results, pytest or CI logs.
 - Comparing or validating sets: labels against the vocabulary in
   `src/config/taxonomy.yaml`, predictions against ground truth, one run against another.
 - Collecting gate results: run the gates in one script, print command, exit code and the
