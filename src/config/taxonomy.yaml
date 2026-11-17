@@ -337,7 +337,8 @@ reviewer:
 # state["decision_outcomes"][slot]. The base router still decides first; the hint can
 # only refine its proposal, and never overrides a park (human_review), a self-loop or a
 # proposed verification gate (retry_extract, judge_verify, arbiter, boss_escalation): a
-# hint can add scrutiny, never remove it. The runtime loader (load_config) rejects a
+# hint can add scrutiny to extraction, never remove it (classification routes stay open to
+# hints, as `allow` says). The runtime loader (load_config) rejects a
 # duplicated key anywhere in this file.
 # Example (not enabled):
 #   decision_points:

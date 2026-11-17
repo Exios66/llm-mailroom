@@ -29,8 +29,10 @@ How the pieces fit (``build_graph()`` calls :func:`prepare_slots`, :func:`wrap_n
   rule additionally never overrides the router's own ``human_review`` park, a
   self-loop of the node, or a proposed verification gate (:data:`GATE_PROPOSALS`:
   ``retry_extract``, ``judge_verify``, ``arbiter``, ``boss_escalation``): those carry the
-  pipeline's safety budgets and guarantees (see ``route_spec``'s rule semantics). A hint
-  can add scrutiny, never remove it.
+  pipeline's safety budgets and guarantees (see ``route_spec``'s rule semantics). On the
+  extraction side a hint can add scrutiny, never remove it; classification routing
+  (``retry_classify``, ``review_classify``, ``classification_arbiter``) stays open to hints
+  as the slot's ``allow`` says, and the extraction gates still run afterwards.
 * **Staleness.** The wrapper rewrites the slot's entry on every pass of its node, and
   drops it when the node asked for a transient retry (nothing is consulted: the node's
   result is not usable and will be redone, and the router will retry or park it). A person
@@ -139,7 +141,9 @@ PARK = "human_review"
 #: document must pass before it may be archived. ``retry_extract`` redoes a lost window, an
 #: invalid schema or a hollow extraction; ``judge_verify`` and ``arbiter`` verify an unsure
 #: or partial extraction; ``boss_escalation`` adjudicates a matter conflict. A hint may add
-#: scrutiny (a hint *to* one of these is allowed), never remove it.
+#: scrutiny (a hint *to* one of these is allowed), never remove it. Classification routes
+#: are deliberately not gated: a slot may skip a classification retry or review when its
+#: ``allow`` says so, since the extraction gates still run afterwards.
 GATE_PROPOSALS = frozenset({"retry_extract", "judge_verify", "arbiter", "boss_escalation"})
 RULE_PREFIX = "decision_point:"
 OUTCOMES_KEY = "decision_outcomes"
