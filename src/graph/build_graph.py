@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command, interrupt
 
@@ -19,23 +19,13 @@ from graph.state import DocumentState
 # field scoring / judge gating run on package defaults, not the calibrated map.
 import observability.scoring_wiring  # noqa: F401,E402
 from graph.routing import (
-    entry_route,
+    entry_route,  # noqa: F401  (re-export: callers import it from graph.build_graph)
     after_classify,
-    after_retry_classify,
-    after_review_classify,
     after_extraction,
-    after_extraction_gated,
     after_retry_extraction,
-    after_retry_extraction_gated,
-    after_judge,
-    after_arbiter,
-    after_classification_arbiter,
-    after_boss,
     conflict_fingerprint,
-    after_human_review,
     human_fields_applied,
     HUMAN_APPLIED,
-    after_report,
     judge_gate,
     judge_should_run,
     keep_best_attempt_enabled,

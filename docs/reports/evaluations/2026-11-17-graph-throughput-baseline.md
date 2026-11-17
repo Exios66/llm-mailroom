@@ -3,8 +3,9 @@
 - **Date**: 2026-11-17 (UTC)
 - **Kind**: evaluations (offline load benchmark; no real model, no hosted service)
 - **Status**: baseline recorded. **Measured at commit `df127446e0449a134e1de8c5cd9fdce18504ad7e`**
-  (`df12744`, branch `claude/project-thread-lwyq6k`), clean tree in all three runs (`tree_clean:
-  true` in each JSON). The commit that adds this report changes only the report, its three JSON
+  (`df12744`, branch `claude/project-thread-lwyq6k`), with `tree_clean: true` in each JSON. That flag was
+  sampled after each run finished, not before, so it does not prove the tree stayed clean during
+  the run (the script now checks before and after, and fails a run whose provenance moved). The commit that adds this report changes only the report, its three JSON
   files, `CHANGELOG.md` and the generated `docs/changelog/`; no pipeline code and no script differs
   from the measured commit. Nothing in the pipeline was changed.
 - **Revision note**: the first version of this report (commit `a29f69a`) was measured at
@@ -59,8 +60,12 @@ it is safe under concurrency) and counts around unmodified pipeline functions.
   sleeps when 429s are injected).
 
 **Machine**: Linux 6.18 x86_64 cloud VM, 4 vCPU, 15.7 GB RAM, Python 3.13.18, SQLite via
-aiosqlite, load average 1.81 at the start of the main run (0.56 to 1.71 for the other two); other
-sessions may have shared the host.
+aiosqlite, load average 1.81 (1-minute) sampled **after** the main run finished (0.56 to 1.71, also
+sampled after the run, for the other two); other sessions may have shared the host. The JSON files
+record that same end-of-run sample under `load_average_at_start`, as the benchmark script then
+collected machine notes, the commit and `tree_clean` only after the levels had run; the values are
+left as recorded and the label is wrong for these three files. The script now captures them before
+the first level and flags `provenance_changed` if HEAD or the tree moved during the run.
 
 **Commands** (from the repository root; each was run as shown, with `PYTHONPATH=src` and the
 repository's `.venv/bin/python`, which the JSON `command` field records as `python`; `.evidence/` is
