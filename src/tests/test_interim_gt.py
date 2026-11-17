@@ -210,3 +210,28 @@ def test_a_label_outside_the_closed_inventory_vocabulary_is_rejected(tmp_path):
     assert meta["interim_gt"]["rejected"] == [
         "record_type: 'board_resolution' is not in the closed record_type vocabulary"
     ]
+
+
+def test_live_manifest_rows_key_the_overlay_by_document_id():
+    from scripts.run_hf_pilot import parse_hf_row
+
+    base = {"filename": "bylaws_1.txt", "doc_text": CORP_TEXT * 5, "expected_doc_class": "corporate_record"}
+    assert parse_hf_row({**base, "document_id": "DOC-corp"})["hub_id"] == "DOC-corp"
+    assert parse_hf_row({**base, "id": "DOC-hub", "document_id": "DOC-corp"})["hub_id"] == "DOC-hub"
+
+
+def test_resume_refuses_a_different_overlay(monkeypatch, corp_overlay):
+    from scripts import run_hf_pilot
+
+    monkeypatch.delenv(interim_gt.ENV_DIR, raising=False)
+    monkeypatch.delenv(interim_gt.ENV_SHA256, raising=False)
+    run_hf_pilot.check_resume_gold({"samples": [], "interim_gt": None})
+    run_hf_pilot.check_resume_gold({"samples": []})  # a report from before the overlay: Hub-only
+    with_overlay = {"samples": [], "interim_gt": corp_overlay.provenance()}
+    with pytest.raises(SystemExit, match="differs"):
+        run_hf_pilot.check_resume_gold(with_overlay)
+    monkeypatch.setenv(interim_gt.ENV_DIR, corp_overlay.root)
+    monkeypatch.setenv(interim_gt.ENV_SHA256, corp_overlay.manifest_sha256)
+    run_hf_pilot.check_resume_gold(with_overlay)
+    with pytest.raises(SystemExit, match="differs"):
+        run_hf_pilot.check_resume_gold({"samples": [], "interim_gt": None})
