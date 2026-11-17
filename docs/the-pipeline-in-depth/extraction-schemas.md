@@ -321,7 +321,7 @@ This differs by class.
 
 | Class | Missing `confidence` | Missing keys filled | Extra step |
 |---|---|---|---|
-| `contract`, `merger_agreement` (vendored `_SpecialistBase.extract`) | If `confidence` is missing or `0.0`, it is set to the share of schema fields found (`_evidence_confidence`). `confidence`, `reasoning`, `cuad_family`, `merger_consideration`, `cuad_clauses` and `maud_clauses` are left out of that count, because an empty inventory is a valid answer. | `normalize_extraction`: arrays to `[]`, numbers to `0.0`, other types to `null`. | None. |
+| `contract`, `merger_agreement` (vendored `_SpecialistBase.extract`) | If `confidence` is missing (key absent or null in the raw model output), it is set to the share of schema fields found (`_evidence_confidence`). A stated `0.0` is kept (#279). `confidence`, `reasoning`, `cuad_family`, `merger_consideration`, `cuad_clauses` and `maud_clauses` are left out of that count, because an empty inventory is a valid answer. | `normalize_extraction`: arrays to `[]`, numbers to `0.0`, other types to `null`. | None. |
 | `correspondence` | Not filled. | `normalize_specialist_extraction`: `normalize_extraction`, then `sender`, `recipient`, `communication_type` and `urgency` are set to `""` when null. | None. |
 | `insurance_claim` | Not filled. | `normalize_specialist_extraction`: `normalize_extraction`. | Empty fields are filled from the source text by conservative regexes (`observability/posthoc_gt.py:extract_insurance_fields`, which reads the first 4000 characters for labels such as `Claim No.`, `Notice ID`, `Policy Number`, `Insurer`, `Insured`, `Adjuster`). A value from the model is never overwritten. |
 | `corporate_record` | Not filled. | Not filled. | None. |
