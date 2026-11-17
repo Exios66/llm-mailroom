@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 340" width="900" height="340" role="img" aria-labelledby="t d" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace">
   <title id="t">~/llm-mailroom — pipeline status</title>
-  <desc id="d">Dashboard: the pipeline in facts (14 graph nodes, MemorySaver checkpoints, SQLite catalog, hash-chained audit trail, FastAPI) and the routing notes for documents that are not sure.</desc>
+  <desc id="d">Dashboard: the pipeline in facts (22 graph nodes, MemorySaver checkpoints, SQLite catalog, hash-chained audit trail, FastAPI) and the routing notes for documents that are not sure.</desc>
   <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0d1117"/><stop offset="1" stop-color="#161b2e"/></linearGradient><linearGradient id="sheen" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".35"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
   <style>@media (prefers-reduced-motion: reduce){.motion{display:none}}</style>
   <rect x="1" y="1" width="898" height="338" rx="16" fill="url(#bg)" stroke="#30363d" stroke-width="2"/>
@@ -15,7 +15,7 @@
 <text x="482" y="70" font-size="12" fill="#8b9bb4" font-weight="700" letter-spacing="1.5">ROUTING</text>
 <text x="40" y="104" font-size="13" fill="#94a3b8">graph nodes</text>
 <circle cx="180" cy="100" r="5" fill="#38bdf8"/>
-<text x="194" y="104" font-size="13" fill="#e2e8f0" font-weight="700">14</text>
+<text x="194" y="104" font-size="13" fill="#e2e8f0" font-weight="700">22</text>
 <text x="40" y="138" font-size="13" fill="#94a3b8">checkpoints</text>
 <circle cx="180" cy="134" r="5" fill="#a78bfa"/>
 <text x="194" y="138" font-size="13" fill="#e2e8f0" font-weight="700">MemorySaver</text>

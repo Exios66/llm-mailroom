@@ -260,7 +260,11 @@ document's `audit_trace` and land on the row when it is written.
   - When there is no ground truth, the type node still runs and records adherence with
     `status: unscorable`.
 - New **`audit_failed`** node is the target of every stop edge (`human_review` -> `failed`,
-  judge stop, intake failure, rejected review) and writes the `failed` row.
+  judge stop, intake failure, rejected review) and writes the `failed` row. A rejection resolved
+  after a restart has no live checkpoint and so never reaches the graph: `_resolve_rejection`
+  writes the same `failed` row directly, from the manifest, with a `human_review` visit followed by
+  `audit_failed` in `nodes_visited` and `trace_incomplete: true` (the parked trace went with the
+  checkpoint), and marks the manifest.
 - Everything else in the graph is unchanged.
 
 ### 5.2 Collecting the trace
@@ -339,13 +343,28 @@ After 3 failed attempts to commit the row:
 3. `audit-reconcile` (mailroom script; also exposed by the sandbox CLI) reads all sinks,
    deduplicates by `doc_id` and `detail_sha256`, refuses anything whose hash does not match,
    and writes each as a normal row with `detail.recovered_from` =
-   `{sink, ref, captured_at, detail_sha256}`. It skips documents that already have a row,
-   with one exception: when that row has `recovered_from.complete = false` and a sink now
+   `{sink, ref, captured_at, detail_sha256}` and sets the manifest to `audit_written: true`
+   (`"pending_partial"`, with the kept refs, after a decisions-only row, until the complete copy
+   closes it). It does not write a second row for a document that already has one, with these
+   exceptions, a partial row first: when that row has `recovered_from.complete = false` and a sink now
    returns a complete copy whose SHA-256 equals the row's `recovered_from.full_detail_sha256`,
    reconcile leaves the row unchanged (rows are immutable, §4.1) and writes one
    `recovered_detail` addendum carrying the complete `detail` and sub-rows, chained like any
    addendum, and logs `audit_gap_closed`. A document that already has a `recovered_detail`
-   addendum is skipped.
+   addendum is not given another.
+   A copy that is a *later terminal write* of a document that already has a row (its digest and its
+   content, ignoring the sub-row references, are not in the row or its addenda) is written as a
+   `resumed` addendum with `recovered_from`, the shape the live writer gives a repeat write
+   (`audit_repeat_write_recovered`); a copy the document already holds is only dropped. When
+   several different copies of one document wait and it has no row, the earliest becomes the row
+   and each later one an addendum. A document that fails to reconcile is logged
+   (`audit_reconcile_doc_failed`), counted as `failed` (so the CLI exits 1) and the other documents
+   still run (`AuditMigrationPending` alone stops the run). A retryable failure (contention, a
+   dropped connection, an unrecognised error) leaves its copies pending for the next run. A
+   deterministic one (a duplicate primary key the writer does not retry, a malformed record) moves
+   them to the spool's `quarantined_rows` table (`quarantined`), where later runs do not read them:
+   they need a manual requeue after the cause is fixed. A spooled record that is not a JSON object
+   is counted as `malformed` (and `failed`).
    It always prefers a complete copy. When only a decisions-only copy exists, the full
    record cannot be rebuilt: reconcile writes the decisions-only record as the row, with
    `recovered_from.complete = false` and `recovered_from.full_detail_sha256`, and logs
@@ -390,19 +409,29 @@ Rollback: `python -m storage.audit_migrate --rollback` renames the new tables to
 `*_v2_<timestamp>` and restores `audit_log` from `audit_log_legacy`, so the previous release
 runs again; rows written since migration stay in the renamed tables.
 
-`verify_audit_chains.py` reports main chain, sub-rows, addenda, legacy and pending
-(manifests with `audit_written: pending` and sink pending records with no row). It exits
-non-zero on any failure.
+`verify_audit_chains.py` reports main chain, sub-rows, addenda, legacy and trace I/O, and exits
+non-zero on any failure. It does **not** collect pending records: manifests with
+`audit_written: pending` / `pending_partial` and the records the sinks hold are listed under
+`pending` as `collected: false`, because a parked record is a known gap rather than a stored row
+and the verifier claims no proof for it. `audit_reconcile.py` is what reports and closes those
+gaps. Recovered records are bound to their digests: a recovered row or addendum carries a non-empty
+`recovered_from.detail_sha256` that must match its detail, and a `recovered_detail` addendum's
+digest must be the partial row's `recovered_from.full_detail_sha256`.
 
 ## 7. Readers, warehouse, reports
 
-- **`GET /audit/{doc_id}`:** `{doc_id, chain_length, chain_valid, entries, legacy, pending,
-  warehouse}`. `entries` in order: row, its sub-rows, each addendum then its sub-rows; each
-  with `kind` (`row`, `attempt`, `addendum`) and `parent_id`. `warehouse` is
-  `{export_date, files}` from the warehouse manifest.
-- **`GET /audit`** and **`analyze_audit_db.py`:** rows by event and outcome, addenda by kind,
-  attempts per stage, retry and rescue rates, pending and recovered counts, legacy summary,
-  results of the five checks.
+- **`GET /audit/{doc_id}`:** `{doc_id, chain_length, chain_valid, entries, unified, pending,
+  warehouse}`. The existing keys are preserved: top-level `entries`, `chain_length` and
+  `chain_valid` stay the document's per-event (legacy) history and chain. The unified row is the
+  added `unified` key: `{migrated, chain_length, chain_valid, entries}`, where `entries` is in
+  order row, its sub-rows, each addendum then its sub-rows, each with `kind` (`row`, `attempt`,
+  `addendum`) and `parent_id`. There is no `legacy` key. `pending` is a parked record's manifest
+  refs (`unavailable` when the manifest cannot be read); `warehouse` is `{export_date, files}`
+  from the warehouse manifest.
+- **`GET /audit`** and **`analyze_audit_db.py`:** keep their legacy summary. The unified summary
+  (rows by event and outcome, addenda by kind, attempts per stage, retry and rescue rates,
+  pending and recovered counts, results of the section checks) is under `unified`: always in the
+  script, and in the API only with `unified=true` (default `false`).
 - **`audit_row_metrics(row, addenda, attempts) -> dict`:** one flat record per document:
   `outcome`, `pipeline_success`, `first_pass`, `doc_type`, `doc_subclass`, `class_correct`,
   `subclass_correct`, `overall_extraction_score` (`scoring.headline_score` when set, else

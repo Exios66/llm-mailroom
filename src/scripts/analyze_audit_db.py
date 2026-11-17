@@ -10,6 +10,13 @@ Usage:
     PYTHONPATH=src python src/scripts/analyze_audit_db.py --json
     PYTHONPATH=src python src/scripts/analyze_audit_db.py --no-verify --recent 50
     PYTHONPATH=src python src/scripts/analyze_audit_db.py --join-catalog
+
+``--no-verify`` skips every hash check: the per-document legacy chains and the
+unified-row verifier (``audit.verify``) behind ``unified.checks``.
+
+Exit status: 0 normally; 1 when a checked legacy chain is broken or the unified
+verifier reports a failure (``unified.checks.ok`` is false). With ``--no-verify``
+nothing is checked, so the status is 0.
 """
 
 from __future__ import annotations
@@ -32,11 +39,15 @@ setup_logging()
 
 
 async def _run(args: argparse.Namespace) -> dict:
+    """Collect legacy and unified audit summaries, optionally joining catalog counts."""
     from storage.audit_log import analyze_audit_db
     from storage.db import ensure_schema
 
     ensure_schema()
     report = await analyze_audit_db(verify_chains=not args.no_verify, event_limit=args.recent)
+    from audit.readers import unified_summary
+
+    report["unified"] = await unified_summary(verify=not args.no_verify)
     if args.join_catalog:
         from collections import Counter
 
@@ -77,6 +88,17 @@ def _print_human(report: dict) -> None:
         print(f"\nCatalog documents: {cat['documents']}")
         print("  by stage:", cat["by_stage"])
         print("  by type: ", cat["by_doc_type"])
+    unified = report.get("unified")
+    if unified:
+        print(f"\nUnified rows:      {unified['rows']}")
+        print("  by event:  ", unified["rows_by_event"])
+        print("  by outcome:", unified["rows_by_outcome"])
+        print("  addenda:   ", unified["addenda_by_kind"])
+        print("  attempts:  ", unified["attempts_by_stage"])
+        print(f"  retry rate: {unified['retry_rate']}  rescue rate: {unified['rescue_rate']}")
+        print(f"  pending: {unified['pending']}  recovered: {unified['recovered']}")
+        if unified.get("checks") is not None:
+            print(f"  checks ok: {unified['checks']['ok']}")
     recent = report.get("recent_events") or []
     if recent:
         print(f"\nRecent events (n={len(recent)}):")
@@ -92,24 +114,31 @@ def _print_human(report: dict) -> None:
             print(f"  {c['doc_id']}  entries={c['entries']}")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    """Print the audit summary; return 1 if any checked chain or unified check fails."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", action="store_true", help="machine-readable JSON")
-    ap.add_argument("--no-verify", action="store_true", help="skip hash-chain verification")
+    ap.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="skip all hash verification: the legacy per-document chains and the unified-row checks "
+        "(the exit status then cannot be 1)",
+    )
     ap.add_argument("--recent", type=int, default=20, help="recent events to include")
     ap.add_argument(
         "--join-catalog",
         action="store_true",
         help="also summarize documents/matters stage and type counts",
     )
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     report = asyncio.run(_run(args))
     if args.json:
         print(json.dumps(report, indent=2, default=str))
     else:
         _print_human(report)
     broken = report.get("chains_broken") or 0
-    return 1 if broken else 0
+    checks = (report.get("unified") or {}).get("checks")
+    return 1 if broken or (checks is not None and not checks["ok"]) else 0
 
 
 if __name__ == "__main__":

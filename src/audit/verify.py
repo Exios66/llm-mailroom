@@ -8,23 +8,27 @@ layer can actually observe and says so when it cannot:
 
 * **main** — the global terminal-row chain in ``audit_log`` (``seq`` order,
   ``prev_hash`` links, recomputed v2 hashes, unique ``doc_id``, and the
-  ``recovered_from.detail_sha256`` binding when a recovered row carries one).
+  ``recovered_from.detail_sha256`` binding: a recovered row must carry a digest and it must match).
 * **subrows** — every ``audit_attempts`` row recomputes, belongs to a known
   parent, and is listed by that parent's ``detail.attempts`` (missing, extra and
   edited rows all fail).
 * **addenda** — each document's ``audit_addenda`` chain starts at the row hash,
-  increments its per-document ``seq`` and links to the previous addendum.
+  increments its per-document ``seq`` and links to the previous addendum. A
+  ``recovered_detail`` addendum is bound twice: its carried detail must hash to
+  ``recovered_from.detail_sha256``, and that must be the partial row's
+  ``recovered_from.full_detail_sha256``; a recovered addendum without a digest fails.
 * **legacy** — the previous release's per-document chain. After an explicit
   migration this reads ``audit_log_legacy``; before one it reads the live
   per-event ``audit_log``, so the verifier is useful in both states.
 * **trace_io** — every stored ``audit_trace_io`` row matches ``io_sha256``.
 
 **Not collected, and reported as such:** manifests parked with
-``audit_written: pending`` and sink pending records belong to roadmap M9/M10 and
-do not exist in this foundation layer. The ``pending`` section is marked
-``collected=False``; it never claims proof of rows or I/O that were never
-captured. External trace sinks are likewise unverified unless a future layer
-implements them.
+``audit_written: pending`` / ``pending_partial`` and the records the trace sinks
+hold (M9/M10) are not scored by this verifier. They are real data, but a parked
+row is a known gap rather than a stored row to verify: the ``pending`` section
+stays ``collected=False`` so verification never claims proof of a row that only
+exists in a sink, and ``python src/scripts/audit_reconcile.py`` is what reports
+and closes those gaps. External sinks are likewise not queried here.
 
 Hashing is unchanged: rows and addenda use
 ``audit.writer.hash_entry`` / ``schemas.audit.compute_audit_hash`` (v2, with the
@@ -34,8 +38,6 @@ legacy v1 fallback inside ``schemas.audit.verify_chain``), attempt sub-rows use
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -43,6 +45,7 @@ from typing import Any
 import structlog
 from sqlalchemy import select
 
+from audit.digests import detail_sha256, io_sha256, io_sha256_ascii_escaped  # one shared implementation
 from audit.models import ADDENDUM_KINDS, EVENTS, STAGES, TRIGGERS
 from audit.writer import _take_migration_gate, attempt_hash, hash_entry
 from schemas.audit import AuditLogEntry, verify_chain
@@ -59,31 +62,6 @@ from storage.db import async_session, begin_read_snapshot, ensure_schema
 logger = structlog.get_logger(__name__)
 
 MIGRATION_KEY = "migration"
-
-
-def io_sha256(prompt: str | None, completion: str | None) -> str:
-    """Canonical SHA-256 of one trace-I/O payload (spec §4.4).
-
-    The future ``sql`` sink (roadmap M9) must use this helper, so the writer and
-    the verifier cannot drift. ``None`` is part of the payload (a missing
-    completion is distinct from an empty one).
-    """
-    payload = json.dumps(
-        {"prompt": prompt, "completion": completion}, sort_keys=True, ensure_ascii=False
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def detail_sha256(detail: dict[str, Any]) -> str:
-    """Canonical SHA-256 of a recovered row's ``detail`` (spec §5.6).
-
-    The hash covers the detail object *without* its ``recovered_from`` key, so
-    the recovery provenance can be added without changing the digest. The M10
-    reconcile path must hash through this helper.
-    """
-    base = {k: v for k, v in (detail or {}).items() if k != "recovered_from"}
-    payload = json.dumps(base, sort_keys=True, default=str)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -109,6 +87,10 @@ class CheckReport:
             "collected": self.collected,
             "note": self.note,
         }
+
+
+#: The report sections, in the order the CLI and the summary readers present them.
+SECTIONS: tuple[str, ...] = ("main", "subrows", "addenda", "legacy", "trace_io", "pending")
 
 
 @dataclass
@@ -143,11 +125,12 @@ class VerifyReport:
 
 def _pending_report(check_sinks: bool) -> CheckReport:
     note = (
-        "pending manifests and sink pending records are not collected in this "
-        "foundation layer (roadmap M9/M10); no proof is claimed"
+        "pending manifests and sink pending records (M9/M10) are not collected here: "
+        "a parked row is a gap rather than a stored row (run scripts/audit_reconcile.py); "
+        "no proof is claimed"
     )
     if check_sinks:
-        note += "; external sinks are not implemented yet either"
+        note += "; external sinks are not queried by the offline verifier"
     return CheckReport(collected=False, note=note)
 
 
@@ -225,21 +208,116 @@ def _hash_failure(report: CheckReport, exc: BaseException, **context: Any) -> No
     )
 
 
-async def _check_main(session, migrated: bool) -> CheckReport:
+def _recovered_digest(recovered: Any) -> str | None:
+    """``recovered_from.detail_sha256`` when it is a non-empty string, else ``None`` (missing, empty or malformed)."""
+    digest = recovered.get("detail_sha256") if isinstance(recovered, dict) else None
+    return digest if isinstance(digest, str) and digest else None
+
+
+def _check_recovered_attempts(report: CheckReport, record, detail: dict[str, Any], inner: dict[str, Any], row) -> None:
+    """The attempts a ``recovered_detail`` addendum carries are exactly the ones its detail lists, hash for hash.
+
+    ``detail["sub_rows"]`` are the recovered row's attempts (their ids are the partial row's, so they cannot
+    be stored as sub-rows). Each one must hash, under the row's matter and actor, to its own ``entry_hash``
+    and to the hash ``inner["attempts"]`` lists for it; an attempt listed but not carried, or carried but
+    not listed, is a failure.
+    """
+    doc_id, seq = record.doc_id, record.seq
+    subs, listed = detail.get("sub_rows") or [], inner.get("attempts") or []
+    if not isinstance(subs, list) or not isinstance(listed, list):
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="attempts_malformed")
+        return
+    want = {e.get("attempt_id"): e.get("entry_hash") for e in listed if isinstance(e, dict)}
+    got: dict[Any, Any] = {}
+    for sub in subs:
+        attempt_id = sub.get("attempt_id") if isinstance(sub, dict) else None
+        if not isinstance(sub, dict) or not isinstance(attempt_id, str) or attempt_id in got:
+            report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="attempt_malformed")
+            continue
+        try:
+            digest = attempt_hash(sub, matter_id=row.matter_id, actor=row.actor)
+        except Exception as exc:
+            _hash_failure(report, exc, doc_id=doc_id, seq=seq, attempt_id=attempt_id)
+            got[attempt_id] = None
+            continue
+        got[attempt_id] = digest
+        if digest != sub.get("entry_hash"):
+            report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, attempt_id=attempt_id,
+                        reason="attempt_hash")
+    for attempt_id in want.keys() - got.keys():
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, attempt_id=attempt_id,
+                    reason="missing_attempt")
+    for attempt_id in got.keys() - want.keys():
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, attempt_id=attempt_id,
+                    reason="extra_attempt")
+    for attempt_id in want.keys() & got.keys():
+        if got[attempt_id] is not None and got[attempt_id] != want[attempt_id]:
+            report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, attempt_id=attempt_id,
+                        reason="attempt_not_listed_hash")
+
+
+def _check_addendum_recovery(report: CheckReport, record, detail: dict[str, Any], row) -> None:
+    """Bind an addendum written by ``audit-reconcile`` to the digest it carries.
+
+    A ``recovered_detail`` addendum carries the complete detail in ``detail["detail"]``: its
+    recomputed digest must equal ``recovered_from.detail_sha256``, and that must be the
+    ``full_detail_sha256`` its partial row named, so a forged detail cannot pass by being rehashed
+    into the addendum. A ``resumed`` addendum recovered from a sink must carry a digest too (its
+    stored detail lists new attempt ids, so the digest is not recomputable from it).
+    """
+    doc_id, seq = record.doc_id, record.seq
+    recovered = detail.get("recovered_from")
+    digest = _recovered_digest(recovered)
+    if record.kind != "recovered_detail":
+        if "recovered_from" in detail and digest is None:
+            report.fail(kind="recovered_detail_unbound", doc_id=doc_id, seq=seq)
+        return
+    if digest is None:
+        report.fail(kind="recovered_detail_unbound", doc_id=doc_id, seq=seq)
+        return
+    inner = detail.get("detail")
+    if not isinstance(inner, dict):
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="no_detail")
+        return
+    try:
+        bound = detail_sha256(inner) == digest
+    except Exception as exc:
+        _hash_failure(report, exc, doc_id=doc_id, seq=seq)
+        return
+    if not bound:
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq)
+    _check_recovered_attempts(report, record, detail, inner, row)
+    row_recovered = (row.detail or {}).get("recovered_from") if isinstance(row.detail, dict) else None
+    full = row_recovered.get("full_detail_sha256") if isinstance(row_recovered, dict) else None
+    if not (isinstance(row_recovered, dict) and row_recovered.get("complete") is False and full):
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="row_not_partial")
+    elif full != digest:
+        report.fail(kind="recovered_detail_mismatch", doc_id=doc_id, seq=seq, reason="not_the_rows_full_record")
+
+
+async def _check_main(session, migrated: bool, doc_id: str | None = None) -> CheckReport:
+    """The main chain; with ``doc_id``, only that document's row (and its link to the row before it)."""
     if not migrated:
         return CheckReport(
             collected=False,
             note="migration marker absent: audit_log still holds the per-event rows (see legacy)",
         )
-    rows = (
-        (await session.execute(select(AuditLogRecord).order_by(AuditLogRecord.seq)))
-        .scalars()
-        .all()
-    )
+    query = select(AuditLogRecord).order_by(AuditLogRecord.seq)
+    if doc_id is not None:
+        query = query.where(AuditLogRecord.doc_id == doc_id)
+    rows = (await session.execute(query)).scalars().all()
     report = CheckReport(checked=len(rows))
     seen: set[str] = set()
     previous_hash = ""
     previous_seq = 0
+    if doc_id is not None and rows:
+        # Scoped: the row must be the genesis row (seq 1, no predecessor) or link to the row just before it,
+        # which must exist. Without one the chain starts at 0, so any other seq is reported as a gap.
+        before = (
+            await session.execute(select(AuditLogRecord).where(AuditLogRecord.seq == rows[0].seq - 1))
+        ).scalars().first() if rows[0].seq > 1 else None
+        if before is not None:
+            previous_seq, previous_hash = before.seq, before.entry_hash
     for record in rows:
         if record.doc_id in seen:
             report.fail(kind="duplicate_doc_id", doc_id=record.doc_id)
@@ -271,26 +349,43 @@ async def _check_main(session, migrated: bool) -> CheckReport:
         detail = _detail_object(
             record.detail, report=report, owner="doc_id", owner_id=record.doc_id
         )
-        recovered = detail.get("recovered_from") if detail is not None else None
-        if isinstance(recovered, dict) and recovered.get("detail_sha256"):
-            actual = detail_sha256(detail or {})
-            if actual != recovered["detail_sha256"]:
-                report.fail(
-                    kind="recovered_detail_mismatch", doc_id=record.doc_id, seq=record.seq
-                )
+        if detail is not None and "recovered_from" in detail:
+            digest = _recovered_digest(detail["recovered_from"])
+            if digest is None:
+                # A recovered row names the digest of what it recovered; without one nothing binds it.
+                report.fail(kind="recovered_detail_unbound", doc_id=record.doc_id, seq=record.seq)
+            else:
+                try:
+                    bound = detail_sha256(detail) == digest
+                except Exception as exc:
+                    _hash_failure(report, exc, doc_id=record.doc_id, seq=record.seq)
+                else:
+                    if not bound:
+                        report.fail(
+                            kind="recovered_detail_mismatch", doc_id=record.doc_id, seq=record.seq
+                        )
         previous_hash = record.entry_hash
         previous_seq = record.seq
     return report
 
 
-async def _check_subrows(session, migrated: bool) -> CheckReport:
+def _scoped(query, model, doc_id: str | None):
+    return query if doc_id is None else query.where(model.doc_id == doc_id)
+
+
+async def _check_subrows(session, migrated: bool, doc_id: str | None = None) -> CheckReport:
+    """Sub-rows against their parents; with ``doc_id``, one document's rows, addenda and attempts."""
     if not migrated:
         return CheckReport(
             collected=False, note="migration marker absent: no unified sub-rows exist yet"
         )
-    rows = (await session.execute(select(AuditLogRecord))).scalars().all()
-    addenda = (await session.execute(select(AuditAddendumRecord))).scalars().all()
-    attempts = (await session.execute(select(AuditAttemptRecord))).scalars().all()
+    rows = (await session.execute(_scoped(select(AuditLogRecord), AuditLogRecord, doc_id))).scalars().all()
+    addenda = (
+        await session.execute(_scoped(select(AuditAddendumRecord), AuditAddendumRecord, doc_id))
+    ).scalars().all()
+    attempts = (
+        await session.execute(_scoped(select(AuditAttemptRecord), AuditAttemptRecord, doc_id))
+    ).scalars().all()
     report = CheckReport(checked=len(attempts))
 
     parents: dict[str, tuple[Any, str, str, str]] = {}
@@ -448,20 +543,27 @@ async def _check_subrows(session, migrated: bool) -> CheckReport:
     return report
 
 
-async def _check_addenda(session, migrated: bool) -> CheckReport:
+async def _check_addenda(session, migrated: bool, doc_id: str | None = None) -> CheckReport:
+    """Addendum chains; with ``doc_id``, only that document's."""
     if not migrated:
         return CheckReport(
             collected=False, note="migration marker absent: no unified addenda exist yet"
         )
     rows = {
         record.doc_id: record
-        for record in (await session.execute(select(AuditLogRecord))).scalars().all()
+        for record in (
+            await session.execute(_scoped(select(AuditLogRecord), AuditLogRecord, doc_id))
+        ).scalars().all()
     }
     addenda = (
         (
             await session.execute(
-                select(AuditAddendumRecord).order_by(
-                    AuditAddendumRecord.doc_id, AuditAddendumRecord.seq
+                _scoped(
+                    select(AuditAddendumRecord).order_by(
+                        AuditAddendumRecord.doc_id, AuditAddendumRecord.seq
+                    ),
+                    AuditAddendumRecord,
+                    doc_id,
                 )
             )
         )
@@ -499,9 +601,11 @@ async def _check_addenda(session, migrated: bool) -> CheckReport:
                     seq=record.seq,
                     addendum_kind=record.kind,
                 )
-            _detail_object(
+            stored = _detail_object(
                 record.detail, report=report, owner="doc_id", owner_id=doc_id
             )
+            if stored is not None:
+                _check_addendum_recovery(report, record, stored, row)
             try:
                 expected = _addendum_hash(record, matter_id=row.matter_id)
             except Exception as exc:
@@ -594,7 +698,7 @@ async def _check_trace_io(session) -> CheckReport:
                 message=str(exc)[:300],
             )
             continue
-        if record.sha256 != expected:
+        if record.sha256 != expected and record.sha256 != io_sha256_ascii_escaped(record.prompt, record.completion):
             report.fail(kind="io_sha_mismatch", visit_id=record.visit_id, doc_id=record.doc_id)
     return report
 
@@ -712,3 +816,40 @@ async def verify_audit_db(*, check_sinks: bool = False) -> VerifyReport:
         trace_io_checked=trace_io.checked,
     )
     return report
+
+
+@dataclass
+class DocumentReport:
+    """One document's unified storage checks: the same rules as :func:`verify_audit_db`, scoped."""
+
+    main: CheckReport
+    subrows: CheckReport
+    addenda: CheckReport
+    migrated: bool
+
+    @property
+    def ok(self) -> bool:
+        return all(s.ok for s in (self.main, self.subrows, self.addenda) if s.collected)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"ok": self.ok, "migrated": self.migrated, **{
+            name: getattr(self, name).as_dict() for name in ("main", "subrows", "addenda")}}
+
+
+async def verify_document(doc_id: str) -> DocumentReport:
+    """Run the main, sub-row and addendum rules of :func:`verify_audit_db` on ONE document.
+
+    These are the verifier's own check functions with a ``doc_id`` scope, so a document
+    cannot pass here while the full verifier rejects its row, its link to the previous
+    row in the chain, an unknown event/stage/trigger/addendum kind, an addendum seq gap
+    or a recovered-detail digest binding. It runs in one read-only snapshot and does not
+    initialize or migrate the schema (callers that serve HTTP must not). Section errors
+    become failed sections; database errors before the snapshot propagate.
+    """
+    async with async_session() as session:
+        await _begin_read_snapshot(session)
+        migrated = await _is_migrated(session)
+        main = await _safe_check("main", lambda: _check_main(session, migrated, doc_id))
+        subrows = await _safe_check("subrows", lambda: _check_subrows(session, migrated, doc_id))
+        addenda = await _safe_check("addenda", lambda: _check_addenda(session, migrated, doc_id))
+    return DocumentReport(main=main, subrows=subrows, addenda=addenda, migrated=migrated)

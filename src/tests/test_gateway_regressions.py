@@ -383,3 +383,47 @@ async def test_health_probe_failure_retains_resolved_provider(gateway, mocker, f
         base_url="http://gateway.test:4000/v1", api_key="test-gateway-key", timeout=5.0, max_retries=0,
     )
     sdk.return_value.chat.completions.create.assert_not_called()
+
+
+@pytest.mark.parametrize("tier,images_sent", [("vision", True), ("fast", False)])
+def test_recorded_prompt_omits_page_image_data(gateway, monkeypatch, mocker, tier, images_sent):
+    """The request carries the page images; the prompt recorded for the audit visit does not (T14)."""
+    import json
+
+    from agents.base import BaseAgent
+    from pipeline.limits import reset_run_usage, run_calls
+
+    class Agent(BaseAgent):
+        agent_name = "sorter"
+
+        def system_prompt(self):
+            return "Return a json object."
+
+    monkeypatch.setenv("MAILROOM_GATEWAY_TIERS", f"sorter={tier}")
+    mocker.patch.object(client, "OpenAI")
+    mocker.patch.object(client, "instrument_client", side_effect=lambda obj: obj)
+    agent = Agent()
+    page = "data:image/png;base64," + "QUJD" * 64
+    completion = mocker.patch("agents.base.retry_chat_completion", return_value=SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=2),
+    ))
+    reset_run_usage()
+    assert agent._call_llm("Document text", pages=[page, page]) == "ok"
+    sent = completion.call_args.kwargs["messages"][1]["content"]
+    assert (sent == [
+        {"type": "text", "text": "Document text"},
+        {"type": "image_url", "image_url": {"url": page}},
+        {"type": "image_url", "image_url": {"url": page}},
+    ]) is images_sent  # the image bytes still go to the model
+    (call,) = run_calls()
+    assert "base64" not in call["prompt"] and "QUJD" not in call["prompt"]
+    recorded = json.loads(call["prompt"])[1]["content"]
+    if images_sent:
+        assert recorded == [
+            {"type": "text", "text": "Document text"},
+            {"type": "image_url", "omitted": True},
+            {"type": "image_url", "omitted": True},
+        ]
+    else:
+        assert recorded == "Document text"
