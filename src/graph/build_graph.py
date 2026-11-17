@@ -20,11 +20,9 @@ from graph.state import DocumentState
 import observability.scoring_wiring  # noqa: F401,E402
 from graph.routing import (
     entry_route,  # noqa: F401  (re-export: callers import it from graph.build_graph)
-    after_classify,
     after_extraction,
     after_retry_extraction,
     conflict_fingerprint,
-    human_fields_applied,
     HUMAN_APPLIED,
     judge_gate,
     judge_should_run,
