@@ -16,7 +16,7 @@ from typing import Any
 
 # Vendor and source checkouts can coexist with unrelated installed metadata.
 # Report the version of the code actually loaded; release tests pin pyproject parity.
-__version__ = "0.30.0"
+__version__ = "0.30.1"
 from ._layout import install_legacy_aliases
 
 install_legacy_aliases()
