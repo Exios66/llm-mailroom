@@ -833,6 +833,8 @@ def rule_for(policy: SlotPolicy) -> RouteRule:
         record = outcomes.get(policy.slot) if isinstance(outcomes, Mapping) else None
         if not isinstance(record, Mapping):
             return None
+        if record.get("shadowed"):
+            return None  # not charged when stored, so never applied: accounting and routing agree
         hint = vet_outcome(policy, record, state.get("doc_type"))
         if hint is None or hint == proposed:
             return None
@@ -1157,8 +1159,7 @@ def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy
         prior_counts = merged.get(OVERRIDES_KEY)
         counts = dict(prior_counts) if isinstance(prior_counts, Mapping) else {}
         changed = counts_changed = claimed = False
-        proposal: list = []  # asked once, only if some slot has a hint
-        preempted: list = []  # likewise: does a rule ahead of the slots take the route?
+        consulted: list = []  # (policy, stored), in config order
         for policy in mine:
             had = policy.slot in outcomes
             outcomes.pop(policy.slot, None)
@@ -1173,34 +1174,42 @@ def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy
                 else:
                     outcome = consult(policy, inp)
                 stored = _stored(outcome, policy, doc_type)
-                hint = stored["vetted_route"]
-                if hint is not None and not claimed:
-                    if not proposal:
-                        proposal.append(_proposal(node, merged))
-                        preempted.append(_earlier_rule_answers(node, merged, proposal[0]))
-                    if preempted[0]:
-                        stored["shadowed"] = True  # an earlier, non-slot rule takes the route
-                        outcomes[policy.slot] = stored
-                        changed = True
-                        continue
-                    answers = _rule_answers(node, proposal[0], hint)
-                    if answers and hint != PARK:
-                        used = counts.get(policy.slot, 0)
-                        used = used if isinstance(used, int) and not isinstance(used, bool) else 0
-                        if used >= policy.max_overrides:
-                            stored["capped"] = True
-                            stored["vetted_route"] = None
-                            answers = False
-                        else:
-                            counts[policy.slot] = used + 1
-                            counts_changed = True
-                    claimed = claimed or answers
-                elif hint is not None:  # an earlier slot on this node already took the route
-                    stored["shadowed"] = True
                 outcomes[policy.slot] = stored
+                consulted.append((policy, stored))
                 changed = True
             elif had:
                 changed = True
+        # Accounting runs on one snapshot: the state the router will see, with every slot of
+        # this node already answered. A rule ahead of the slots is asked against that same
+        # state, so whether it takes the route here is whether it takes it there.
+        proposal: list = []  # asked once, only if some slot has a hint
+        preempted: list = []
+        for policy, stored in consulted:
+            hint = stored["vetted_route"]
+            if hint is None:
+                continue
+            if claimed:  # an earlier slot on this node already took the route
+                stored["shadowed"] = True
+                continue
+            if not proposal:
+                snapshot = {**merged, OUTCOMES_KEY: outcomes}
+                proposal.append(_proposal(node, snapshot))
+                preempted.append(_earlier_rule_answers(node, snapshot, proposal[0]))
+            if preempted[0]:
+                stored["shadowed"] = True  # an earlier, non-slot rule takes the route
+                continue
+            answers = _rule_answers(node, proposal[0], hint)
+            if answers and hint != PARK:
+                used = counts.get(policy.slot, 0)
+                used = used if isinstance(used, int) and not isinstance(used, bool) else 0
+                if used >= policy.max_overrides:
+                    stored["capped"] = True
+                    stored["vetted_route"] = None
+                    answers = False
+                else:
+                    counts[policy.slot] = used + 1
+                    counts_changed = True
+            claimed = claimed or answers
         if not changed:
             return update
         out = {**update, OUTCOMES_KEY: outcomes}
