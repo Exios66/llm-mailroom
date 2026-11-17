@@ -23,22 +23,46 @@ class _UniqueKeyLoader(yaml.SafeLoader):
 
     def construct_mapping(self, node, deep=False):
         if isinstance(node, yaml.MappingNode):
-            seen: set = set()
-            for key_node, _ in node.value:
-                if key_node.tag == "tag:yaml.org,2002:merge":
-                    continue
-                key = self.construct_object(key_node, deep=True)
-                try:
-                    duplicate = key in seen
-                except TypeError:  # unhashable key: let SafeLoader report it
-                    continue
-                if duplicate:
+            self._check_unique_keys(node)
+        return super().construct_mapping(node, deep=deep)
+
+    def _check_unique_keys(self, node) -> None:
+        # Each mapping node is checked once, before SafeLoader flattens its merges into it
+        # (flattening prepends the merged pairs, so a later look would see an explicit key
+        # beside the one it overrides and call that a duplicate).
+        checked = self.__dict__.setdefault("_unique_checked", set())
+        if id(node) in checked:
+            return
+        checked.add(id(node))
+        seen: set = set()
+        merges = 0
+        for key_node, value_node in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                merges += 1
+                if merges > 1:  # ``<<`` written twice: SafeLoader would quietly combine both
                     raise yaml.constructor.ConstructorError(
                         "while constructing a mapping", node.start_mark,
-                        f"found duplicate key {key!r}", key_node.start_mark,
+                        "found duplicate key '<<'", key_node.start_mark,
                     )
-                seen.add(key)
-        return super().construct_mapping(node, deep=deep)
+                # The merge sources are mappings in their own right: an inline one is never
+                # constructed on its own, so its keys are checked here. An explicit key of
+                # ``node`` overriding a merged one stays legal.
+                sources = value_node.value if isinstance(value_node, yaml.SequenceNode) else [value_node]
+                for source in sources:
+                    if isinstance(source, yaml.MappingNode):
+                        self._check_unique_keys(source)
+                continue
+            key = self.construct_object(key_node, deep=True)
+            try:
+                duplicate = key in seen
+            except TypeError:  # unhashable key: let SafeLoader report it
+                continue
+            if duplicate:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping", node.start_mark,
+                    f"found duplicate key {key!r}", key_node.start_mark,
+                )
+            seen.add(key)
 
 
 @lru_cache(maxsize=1)
