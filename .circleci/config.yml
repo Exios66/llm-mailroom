@@ -4,10 +4,13 @@ version: 2.1
 # src/scripts/ci_tests.py, which prints the tier and the reason first) and one
 # weekly full/coverage backstop conserve free-tier credits. PR runs use a
 # `large` executor (4 vCPU, 4x the per-minute rate of `small`) with four
-# pytest-xdist workers, which finishes in about a quarter of the time for
-# roughly the same credits; the weekly coverage run stays on `small`, serial.
-# The virtualenv is cached on pyproject.toml (which carries the Dojo pin), so
-# an unchanged dependency set skips pip entirely. Keep ci/circleci: test as the required check. A scoped green cache
+# pytest-xdist workers: the full suite measured ~3.3x faster locally (313 s
+# serial, 94 s on 4 workers), so a full-tier run costs somewhat more credits
+# than on `small` in exchange for much shorter wall time (CircleCI credits not
+# yet measured). The weekly coverage run stays on `small`, serial, and always
+# builds a fresh virtualenv. PR runs reuse a virtualenv cached on the
+# interpreter and both pyproject files (the root one carries the Dojo pin), so
+# an unchanged dependency set skips pip. Keep ci/circleci: test as the required check. A scoped green cache
 # can never stand in for full. Coverage (branch + per-test contexts) is the
 # slowest part of a full run, so only the weekly backstop collects it.
 parameters:
@@ -44,6 +47,11 @@ jobs:
         # large 4); `-n auto` would read the host's CPU count, not the container's.
         type: integer
         default: 4
+      fresh_venv:
+        # Skip the virtualenv cache so unpinned transitive dependencies are
+        # re-resolved (the weekly backstop must still catch upstream drift).
+        type: boolean
+        default: false
     executor:
       name: py
       size: << parameters.size >>
@@ -102,11 +110,14 @@ jobs:
           command: |
             python -c 'import sys; print(sys.version); print(sys.base_prefix)' > /tmp/venv-interpreter
             echo 'export PATH="$HOME/venv/bin:$PATH"' >> "$BASH_ENV"
-      - restore_cache:
-          keys:
-            # Exact match only: pyproject.toml carries every pin, the Dojo git
-            # ref included, so any dependency change rebuilds from scratch.
-            - venv-v1-{{ checksum "/tmp/venv-interpreter" }}-{{ checksum "pyproject.toml" }}-{{ checksum "tools/pipeline-diagnostics/pyproject.toml" }}
+      - unless:
+          condition: << parameters.fresh_venv >>
+          steps:
+            - restore_cache:
+                keys:
+                  # Exact match only: pyproject.toml carries every pin, the Dojo git
+                  # ref included, so any dependency change rebuilds from scratch.
+                  - venv-v1-{{ checksum "/tmp/venv-interpreter" }}-{{ checksum "pyproject.toml" }}-{{ checksum "tools/pipeline-diagnostics/pyproject.toml" }}
       - run:
           name: Install dev dependencies (skipped on a virtualenv cache hit)
           # pip honors the pinned Dojo dependency; uv workspace sources do not.
@@ -179,3 +190,4 @@ workflows:
           # Serial on the cheapest executor, exactly as before this change.
           size: small
           workers: 1
+          fresh_venv: true
