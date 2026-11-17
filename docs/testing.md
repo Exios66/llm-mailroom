@@ -61,8 +61,13 @@ The lower-level `affected_tests.py --run` exits 5 on an empty selection; use
 
 ## CircleCI and free-tier usage
 
-`.circleci/config.yml` uses one `small` executor with no paid service, parallel
-job fan-out, or automatic rerun loop. PRs compare with `origin/main`; builds of
+`.circleci/config.yml` runs PR and branch builds on one `large` executor
+(4 vCPU) with four pytest-xdist workers: CircleCI sets `MAILROOM_TEST_WORKERS=4`,
+and `ci_tests.py` then adds `-n 4 --dist worksteal` to each pytest stage. The
+variable is unset locally, so local runs stay serial; a coverage run is always
+serial. The weekly backstop runs on `small` with one worker. There is no paid
+service, parallel job fan-out, or automatic rerun loop. Under xdist each worker
+gets its own default `MAILROOM_BASE_DIR` (`/tmp/mailroom-test-<worker>`). PRs compare with `origin/main`; builds of
 `main` compare with the last successfully validated revision restored from the
 branch baseline cache. This includes earlier commits in a multi-commit push
 and changes from failed builds. A missing/non-ancestor baseline forces full
@@ -70,7 +75,10 @@ validation to bootstrap a new safe baseline. Changes to the policy itself run fu
 
 Successful runs are cached by both source-tree hash and planned test scope.
 An affected-only pass cannot satisfy a full run, and a failed run never writes
-a green marker. Pip's dependency cache is retained. Wheel-cache warming runs
+a green marker. The virtualenv is cached, keyed on the interpreter version and
+both `pyproject.toml` files (the root one carries the Dojo pin), so an unchanged
+dependency set skips pip; the weekly backstop ignores that cache and builds a
+fresh virtualenv to catch upstream dependency drift. Wheel-cache warming runs
 only when the wheel tests or full suite are selected.
 
 A full backstop is scheduled once a week, Sunday at 08:17 UTC, and always
