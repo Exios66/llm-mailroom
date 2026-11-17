@@ -1315,6 +1315,11 @@ class Watcher:
         from llm.frozen_v1 import verify_specialist_pins
 
         verify_specialist_pins()
+        # Likewise a malformed taxonomy ``decision_points:`` section (or a backend import
+        # spec that does not import): build_graph() would raise it on every document.
+        from graph.decision_points import prepare_slots
+
+        prepare_slots()
 
         inbox = inbox_dir()
         ensure_dirs(inbox)
