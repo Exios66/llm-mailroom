@@ -182,6 +182,9 @@ def parse_hf_row(row: dict, labels: dict[str, dict] | None = None) -> dict | Non
     )
     sample = {
         "filename": filename,
+        # Hub row id: what the opt-in interim GT overlay (observability.interim_gt) keys on.
+        # Hub rows carry ``id``; live-manifest rows carry ``document_id`` (live_manifest.py).
+        "hub_id": str(row.get("id") or row.get("document_id") or ""),
         "text": str(text),
         "expected_hf_class": hf_class,
         "expected_subclass": str(subclass).strip() if subclass else "",
@@ -599,6 +602,35 @@ def expected_fields_meta(sample: dict) -> dict:
 
     _fields, meta = build_expected_fields(sample)
     return meta
+
+
+def interim_gt_provenance() -> dict | None:
+    """The opted-in interim GT overlay's identity (sha256, schema, documents), else ``None``."""
+    from observability.interim_gt import active_overlay
+
+    overlay = active_overlay()
+    return overlay.provenance() if overlay is not None else None
+
+
+def check_resume_gold(resume_report: dict) -> None:
+    """Refuse a ``--resume`` whose interim GT overlay differs from the one this process uses.
+
+    Resumed sample rows keep the gold they were scored against, so mixing Hub-only rows
+    with overlay rows (or two overlays) in one report would misstate its provenance.
+    A report written before the overlay existed has no ``interim_gt`` key: Hub-only.
+    """
+    if not resume_report:
+        return
+    before = resume_report.get("interim_gt") or None
+    now = interim_gt_provenance()
+    sha_before = (before or {}).get("overlay_sha256")
+    sha_now = (now or {}).get("overlay_sha256")
+    if sha_before != sha_now:
+        raise SystemExit(
+            "--resume: the run's interim GT overlay "
+            f"({sha_before or 'none, Hub-only'}) differs from this process's "
+            f"({sha_now or 'none, Hub-only'}); set MAILROOM_INTERIM_GT_* to match or start a new run"
+        )
 
 
 def labelled_fields(expected_fields: dict | None, sources: dict | None) -> dict:
@@ -1605,6 +1637,8 @@ def _run_one(sample: dict, *, mock_mode: bool, session_id: str, run_id: str, mat
         "extraction_gt_n_fields": gt_meta.get("n_fields"),
         "extraction_gt_n_posthoc": gt_meta.get("n_posthoc"),
         "extraction_gt_coverage": gt_meta.get("coverage"),
+        # Present only when the run opted into the interim GT overlay: its sha256 and what it applied.
+        **({"interim_gt": gt_meta["interim_gt"]} if gt_meta.get("interim_gt") else {}),
         "wall_time_s": round(wall, 3),
         "llm_calls": rp._LLM_METRICS["calls"],
         "llm_cost_usd": round(rp._LLM_METRICS["cost_usd"], 6),
@@ -1744,6 +1778,7 @@ def main() -> int:
     resume_report: dict = {}
     if args.resume:
         resume_report = _load_resume(Path(args.resume))
+        check_resume_gold(resume_report)
 
     stamp = (
         str(resume_report.get("run_id") or "")
@@ -1846,6 +1881,8 @@ def main() -> int:
             "split": args.split,
             "mode": "mock" if mock_mode else "real",
             "cost_abort_usd": abort,
+            # Gold provenance: null for Hub-only gold, else the opted-in overlay's identity.
+            "interim_gt": interim_gt_provenance(),
             "plan": plan,
             "samples": rows,
             "n": len(rows),

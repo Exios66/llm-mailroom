@@ -19,10 +19,16 @@ from langchain_agents.doc_inventories import (
     CORPORATE_GT_KEYS,
     CORRESPONDENCE_GT_KEYS,
     INSURANCE_GT_KEYS,
+    cms_source_table_for,
     coerce_gt_value,
     normalize_claim_line,
     normalize_communication_type,
     normalize_record_type,
+)
+from observability.interim_gt import (
+    active_overlay,
+    apply_interim_labels,
+    is_interim_source,
 )
 from observability.posthoc_gt import extract_posthoc_fields
 from observability.specialist_suites import (
@@ -166,6 +172,11 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
         token = normalize_claim_line(claim)  # product line: a CMS table row is health (#174 §2)
         if token or claim:
             expected_fields["claim_type"] = token or claim
+        # Dojo #93: the CMS table is its own label, derived from the Hub subclass the way
+        # the Dojo scorer derives it (a published cms_source_table column still wins).
+        table = cms_source_table_for(subclass, expected_fields.get("claim_type"))
+        if table and expected_fields.get("cms_source_table") in (None, ""):
+            expected_fields["cms_source_table"] = table
         for key in INSURANCE_GT_KEYS:
             if key == "claim_type":
                 continue
@@ -199,8 +210,9 @@ def labelled_expected_fields(ground_truth: dict[str, Any] | None) -> dict[str, A
     ``build_expected_fields`` adds post-hoc regex fills (source ``"posthoc"``)
     so routing can check field coverage. Those values are guesses from the
     document text, not labels, so field scoring and the grounded judge use
-    only fields whose source is ``"hub"``. Without an
-    ``expected_fields_sources`` map (an explicit manifest), every field counts.
+    only fields whose source is ``"hub"``, plus the staged interim labels
+    (``"interim:<status>"``, see ``observability.interim_gt``) that a run opted into.
+    Without an ``expected_fields_sources`` map (an explicit manifest), every field counts.
     """
     if not isinstance(ground_truth, dict):
         return {}
@@ -210,17 +222,35 @@ def labelled_expected_fields(ground_truth: dict[str, Any] | None) -> dict[str, A
     sources = ground_truth.get("expected_fields_sources")
     if not isinstance(sources, dict):
         return dict(fields)
-    return {key: value for key, value in fields.items() if sources.get(key, "hub") == "hub"}
+    return {
+        key: value
+        for key, value in fields.items()
+        if sources.get(key, "hub") == "hub" or is_interim_source(sources.get(key))
+    }
 
 
-def build_expected_fields(sample: dict) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Catalog labels + post-hoc fills. Hub / explicit values are never overwritten."""
+_ENV_OVERLAY = object()
+
+
+def build_expected_fields(sample: dict, *, overlay: Any = _ENV_OVERLAY) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Catalog labels, then the opt-in interim overlay, then post-hoc fills.
+
+    Hub / explicit values are never overwritten. ``overlay`` defaults to the env-configured
+    one (``interim_gt.active_overlay()``, ``None`` unless opted in); pass ``None`` to force
+    Hub-only gold. When an overlay is used, ``meta["interim_gt"]`` records its sha256 and
+    what it applied, so the score is never mistaken for a Hub-GT score.
+    """
     fields = catalog_expected_fields(sample)
     hub_keys = set(fields)
     hf_class = str(sample.get("expected_hf_class") or sample.get("expected") or "")
     text = sample.get("text") or sample.get("doc_text") or ""
-    posthoc = extract_posthoc_fields(hf_class, text)
     sources = {key: "hub" for key in fields}
+    if overlay is _ENV_OVERLAY:
+        overlay = active_overlay()
+    interim = None
+    if overlay is not None:
+        fields, sources, interim = apply_interim_labels(fields, sources, sample, overlay)
+    posthoc = extract_posthoc_fields(hf_class, text)
     n_posthoc = 0
     for key, value in posthoc.items():
         if fields.get(key) not in (None, "", [], {}):
@@ -240,6 +270,9 @@ def build_expected_fields(sample: dict) -> tuple[dict[str, Any], dict[str, Any]]
         "doc_class": hf_class,
         **coverage,
     }
+    if interim is not None:
+        meta["interim_gt"] = interim
+        meta["n_interim"] = len(interim["applied"])
     return fields, meta
 
 
