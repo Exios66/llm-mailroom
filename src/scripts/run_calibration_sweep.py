@@ -1339,7 +1339,9 @@ def main(argv: list[str] | None = None) -> int:
 
                 configure(field_scoring__embedding_enabled=False)
         if args.hf_split:
-            docs, ds = load_hf_docs(args.hf_split, args.per_class, args.seed, strict=args.strict_integrity)
+            docs, ds = load_hf_docs(
+                args.hf_split, args.per_class, args.seed, **({"strict": True} if args.strict_integrity else {})
+            )
         elif args.manifest:
             docs, ds = load_manifest_docs(args.manifest, args.samples_dir)
         else:

@@ -220,3 +220,20 @@ def test_pilot_manifest_rows_carry_the_flag_and_strict_is_forwarded(fake_loader,
     assert prov["integrity"]["mismatched"] == 1
     run_pilot.build_hf_manifest("train", 1, 0, base_dir=tmp_path, strict=True)
     assert fake_loader[-1] == {"split": "train", "strict": True}
+
+
+@pytest.mark.parametrize("flag, expected", [([], {}), (["--strict-integrity"], {"strict": True})])
+def test_sweep_main_forwards_strict_only_when_asked(monkeypatch, tmp_path, temp_base_dir, flag, expected):
+    from scripts import run_calibration_sweep as sw
+
+    seen = {}
+
+    def fake(split, per_class, seed, **kw):
+        seen.update(kw)
+        docs, ds = sw.load_fixture_docs()
+        return docs, {**ds, "dataset_id": "hf-like", "dataset_revision": "rev0", "split": split}
+
+    monkeypatch.setattr(sw, "load_hf_docs", fake)
+    argv = ["--hf-split", "train", "--mock", "--limit", "1", "--out", str(tmp_path / "r.jsonl"), *flag]
+    sw.main(argv)
+    assert seen == expected
