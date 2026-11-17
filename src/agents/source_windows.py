@@ -83,17 +83,23 @@ def valid_unit(value: object) -> float | None:
 
 # The cache is used only inside ``resume_cache()``, which the graph nodes open around one
 # node run. A direct caller (offline scoring, a script, a test) always gets a fresh verdict.
-_resume_active: contextvars.ContextVar[bool] = contextvars.ContextVar("window_resume_active", default=False)
+# The scope is the document run (its doc id), so two runs of identical text never share or
+# drop each other's entries: one finishing must not cost the other's retry its finished windows.
+_resume_scope: contextvars.ContextVar[str | None] = contextvars.ContextVar("window_resume_scope", default=None)
 
 
 @contextlib.contextmanager
-def resume_cache():
-    """Let the judge and arbiter reuse and keep window results inside this block."""
-    token = _resume_active.set(True)
+def resume_cache(scope: str = ""):
+    """Let the judge and arbiter reuse and keep window results inside this block.
+
+    ``scope`` names the document run (the graph nodes pass its doc id); entries are only
+    shared and dropped within one scope.
+    """
+    token = _resume_scope.set(str(scope))
     try:
         yield
     finally:
-        _resume_active.reset(token)
+        _resume_scope.reset(token)
 
 
 _CACHE_MAX_ENTRIES = 2048
@@ -109,8 +115,10 @@ def text_digest(value: object) -> str:
 
 def cached_window(key: tuple) -> dict | None:
     """A copy of the stored result for ``key``, or None (always None outside ``resume_cache()``)."""
-    if not _resume_active.get():
+    scope = _resume_scope.get()
+    if scope is None:
         return None
+    key = (scope, *key)
     with _cache_lock:
         hit = _cache.get(key)
         if hit is None:
@@ -120,8 +128,10 @@ def cached_window(key: tuple) -> dict | None:
 
 
 def store_window(key: tuple, result: dict) -> None:
-    if not _resume_active.get():
+    scope = _resume_scope.get()
+    if scope is None:
         return
+    key = (scope, *key)
     with _cache_lock:
         _cache[key] = copy.deepcopy(result)
         _cache.move_to_end(key)
@@ -129,11 +139,12 @@ def store_window(key: tuple, result: dict) -> None:
             _cache.popitem(last=False)
 
 
-def forget_document(doc_text: str) -> None:
-    """Drop every stored window result of this document (keys lead with the document digest)."""
+def forget_document(doc_text: str, scope: str = "") -> None:
+    """Drop this document run's stored window results (stored keys lead with scope, then digest)."""
     digest = text_digest(doc_text or "")
+    scope = str(scope)
     with _cache_lock:
-        for key in [k for k in _cache if k and k[0] == digest]:
+        for key in [k for k in _cache if len(k) > 1 and k[0] == scope and k[1] == digest]:
             del _cache[key]
 
 

@@ -489,3 +489,20 @@ def test_a_direct_caller_never_gets_a_cached_verdict(monkeypatch):
     second = judge.judge_completeness("contract", {"parties": ["A"]}, "same text")
     assert first["reasoning"] == "first" and second["reasoning"] == "second"
     assert not sw._cache
+
+
+def test_another_run_of_identical_text_keeps_this_runs_cached_windows(monkeypatch):
+    """One run finishing must not drop the finished windows of another run of the same text."""
+    import agents.source_windows as sw
+
+    fake = ScriptedJudge(monkeypatch, completeness=lambda i: transient_error() if i == 3 else CLEAN_COMPLETE)
+    text = long_text()
+    n = len(windows_for_budget(text, WINDOW_CHARS))
+    assert run_node(text, doc_id="run-a")["transient_error"] is True
+    kept = [k for k in sw._cache if k[0] == "run-a"]
+    assert kept
+    sw.forget_document(text, "run-b")  # the other run of the same text finishing
+    assert [k for k in sw._cache if k[0] == "run-a"] == kept
+    sw.forget_document(text, "run-a")
+    assert not [k for k in sw._cache if k[0] == "run-a"]
+    assert n > 3

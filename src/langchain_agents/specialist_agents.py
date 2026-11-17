@@ -1010,10 +1010,15 @@ class _SpecialistBase(BaseAgent):
         ``result`` is the raw model output, before ``normalize_extraction`` fills schema
         defaults, so an absent key or a null means "not emitted". A stated 0.0 is the
         model's answer and stays: replacing it with the evidence share would promote an
-        extraction the model called worthless, possibly above the judge band.
+        extraction the model called worthless, possibly above the judge band. A boolean is
+        not a confidence either way, so it is never promoted: ``False`` is read as a stated
+        0.0, and ``True`` as missing (the evidence share is the honest bound for it).
         """
         value = result.get("confidence")
-        return value is None or isinstance(value, bool)
+        if value is False:
+            result["confidence"] = 0.0
+            return False
+        return value is None or value is True
 
     def _evidence_confidence(self, result: dict) -> float:
         """Share of schema fields actually found in the extraction (0.0-1.0).

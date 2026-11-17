@@ -2295,10 +2295,11 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
     """
     from agents.source_windows import forget_document, resume_cache
 
-    with resume_cache():
+    scope = str(state.get("doc_id") or state.get("filename") or "")
+    with resume_cache(scope):
         update = _judge_verify(state)
     if not update.get("transient_error"):
-        forget_document(str(state.get("doc_text") or ""))
+        forget_document(str(state.get("doc_text") or ""), scope)
     return update
 
 
@@ -2445,10 +2446,11 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
     """Lane B arbitration; see ``_arbiter``. Drops the retry resume cache once the node is done."""
     from agents.source_windows import forget_document, resume_cache
 
-    with resume_cache():
+    scope = str(state.get("doc_id") or state.get("filename") or "")
+    with resume_cache(scope):
         update = _arbiter(state)
     if not update.get("transient_error"):
-        forget_document(str(state.get("doc_text") or ""))
+        forget_document(str(state.get("doc_text") or ""), scope)
     return update
 
 

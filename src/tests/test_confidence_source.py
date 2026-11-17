@@ -92,3 +92,10 @@ def test_pipeline_agents_keep_the_model_confidence(mock_openai_client, agent_pat
     for stated in (0.0, 0.42):
         agent._call_structured = lambda *a, _s=stated, **k: {"confidence": _s}
         assert agent.extract(_DOC)["confidence"] == stated
+
+
+@pytest.mark.parametrize("cls_name", ["contracts", "merger"])
+def test_a_false_confidence_is_read_as_zero_not_promoted(mock_openai_client, cls_name):
+    """``confidence: false`` from structured output must not be replaced by the evidence share."""
+    agent = _stub(_agent(mock_openai_client, cls_name), [{**_FILLED, "confidence": False}])
+    assert agent.extract(_DOC)["confidence"] == 0.0
