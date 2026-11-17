@@ -2706,6 +2706,13 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
     logger.info("human_review_required", doc_id=doc_id, reason=esc_reason)
 
     causes = collect_review_causes(state)
+    # #217: trace-driven views read why a document went to review from the trace metadata.
+    try:
+        from observability import tracing
+
+        tracing.set_trace_metadata({"review_causes": list(causes)})
+    except Exception:
+        logger.warning("review_causes_trace_metadata_failed", doc_id=doc_id, exc_info=True)
     cause_line = format_causes(causes)
     if cause_line:
         if esc_reason and cause_line not in str(esc_reason):

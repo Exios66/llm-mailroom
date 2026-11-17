@@ -331,6 +331,22 @@ def install_on_dropped() -> None:
         logger.warning("on_dropped_install_failed")
 
 
+def set_trace_metadata(metadata: dict) -> None:
+    """Add key/value metadata to the active trace (Langfuse only; a no-op elsewhere).
+
+    Called from inside a node, so it lands on that node's observation and the trace it
+    belongs to. Never raises: tracing must not change what a document run does.
+    """
+    if resolve_provider_name() != "langfuse":
+        return
+    try:
+        from .langfuse_setup import set_current_trace_metadata
+
+        set_current_trace_metadata(metadata)
+    except Exception:
+        logger.warning("trace_metadata_failed", exc_info=True)
+
+
 def get_trace_id():
     """Current trace id for the active backend, or None (disabled/unavailable)."""
     if resolve_provider_name() != "langfuse":
