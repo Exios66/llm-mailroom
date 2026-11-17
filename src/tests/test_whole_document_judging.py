@@ -64,9 +64,9 @@ def _judge_on(monkeypatch):
     import agents.source_windows as sw
 
     monkeypatch.setenv("MAILROOM_JUDGE_VERIFY", "on")
-    sw._cache.clear()
+    sw.clear_cache()
     yield
-    sw._cache.clear()
+    sw.clear_cache()
 
 
 def transient_error():

@@ -114,3 +114,9 @@ def forget_document(doc_text: str) -> None:
     with _cache_lock:
         for key in [k for k in _cache if k and k[0] == digest]:
             del _cache[key]
+
+
+def clear_cache() -> None:
+    """Drop every stored window result (tests, and a clean start)."""
+    with _cache_lock:
+        _cache.clear()
