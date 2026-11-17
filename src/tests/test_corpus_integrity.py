@@ -237,3 +237,21 @@ def test_sweep_main_forwards_strict_only_when_asked(monkeypatch, tmp_path, temp_
     argv = ["--hf-split", "train", "--mock", "--limit", "1", "--out", str(tmp_path / "r.jsonl"), *flag]
     sw.main(argv)
     assert seen == expected
+
+
+def test_sync_dataset_keeps_content_verified_out_of_labels(monkeypatch):
+    """``content_verified`` is integrity bookkeeping (#258); it never becomes a dataset label."""
+    import pandas as pd
+
+    from pipeline import hf_corpus_loader
+    from scripts import sync_dataset
+
+    frame = pd.DataFrame(
+        [{"filename": "a.txt", "expected": "contract", "doc_text": "x", "content_verified": True}]
+    )
+    monkeypatch.setattr(hf_corpus_loader, "load_corpus", lambda **_: (frame, {}))
+    seen: list[list[dict]] = []
+    monkeypatch.setattr(sync_dataset, "hf_manifest_rows", lambda raw, prov: seen.append(raw) or [])
+    sync_dataset._load_hf_rows(live=True)
+    assert seen and "content_verified" not in seen[0][0]["labels"]
+    assert seen[0][0]["labels"]["expected"] == "contract"
