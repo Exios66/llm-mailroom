@@ -42,6 +42,27 @@ def test_metrics_markdown_uses_current_dojo_honesty_heading(mocker, include_hone
         load_honesty.assert_called_once_with()
 
 
+def test_metrics_markdown_shows_the_saved_interim_gt_identity(monkeypatch, tmp_path):
+    """The Markdown names the gold from the saved report, not from this process's env."""
+    from scripts.run_hf_pilot import render_metrics_markdown, write_report_files
+
+    sha = "ab" * 32
+    # The env says nothing; the saved report value is the truth.
+    monkeypatch.delenv("MAILROOM_INTERIM_GT_DIR", raising=False)
+    monkeypatch.delenv("MAILROOM_INTERIM_GT_SHA256", raising=False)
+    overlay = {"schema": "interim-gt/v1", "overlay_sha256": sha, "documents": 7}
+    with_overlay = render_metrics_markdown({"samples": [], "interim_gt": overlay})
+    assert "Hub + interim GT overlay" in with_overlay
+    assert sha in with_overlay and "documents = 7" in with_overlay
+    assert "Hub-only" not in with_overlay
+
+    for report in ({"samples": []}, {"samples": [], "interim_gt": None}):
+        assert "gold = **Hub-only**" in render_metrics_markdown(report)
+
+    path = write_report_files(tmp_path / "report.json", {"samples": [], "interim_gt": overlay})
+    assert sha in path.with_suffix(".md").read_text(encoding="utf-8")
+
+
 def test_pipeline_class_keeps_merger_agreement_distinct():
     assert pipeline_class("merger_agreement") == "merger_agreement"
     assert pipeline_class("insurance_claim") == "insurance_claim"
