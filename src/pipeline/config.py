@@ -197,6 +197,7 @@ DECISION_POINT_ON_FAILURE = ("fail_open", "fail_safe")
 _DP_SLOT_NAME = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$")
 _DP_SLOT_KEYS = frozenset({
     "node", "backend", "enabled", "timeout_seconds", "on_failure", "allow", "min_confidence", "by_class",
+    "max_overrides",
 })
 _DP_CLASS_KEYS = frozenset({"enabled", "allow", "min_confidence"})
 
@@ -223,13 +224,14 @@ def get_decision_points_config() -> dict[str, dict]:
     """Pluggable decision points from taxonomy.yaml ``decision_points:``, normalised.
 
     Returns ``{slot: {node, backend, enabled, timeout_seconds, on_failure, allow,
-    min_confidence, by_class}}`` in file order. A missing, empty or ``null`` section
+    min_confidence, max_overrides, by_class}}`` in file order. A missing, empty or ``null`` section
     is ``{}``: no decision point, no wrapper, no rule, the pipeline runs as before.
     Defaults: ``enabled`` true (declaring a slot turns it on), ``timeout_seconds``
     ``None`` (``run_limits.llm_call_timeout_seconds`` at call time), ``on_failure``
     ``fail_open``, ``allow`` empty (the outcome is recorded and never routes),
-    ``min_confidence`` ``None``, ``by_class`` ``{}`` holding only the keys a class
-    sets. Every structural problem is reported at once in one
+    ``min_confidence`` ``None``, ``max_overrides`` 1 (how often the slot may redirect a
+    document to a non-park destination), ``by_class`` ``{}`` holding only the keys a
+    class sets. Every structural problem is reported at once in one
     :class:`DecisionPointConfigError`. Whether a slot's node and destinations exist is
     checked against the graph by ``graph.decision_points.validate_slot_policies``.
     The taxonomy is ``lru_cache``d: edits need a watcher/API restart.
@@ -256,6 +258,7 @@ def get_decision_points_config() -> dict[str, dict]:
         entry: dict = {
             "node": None, "backend": None, "enabled": True, "timeout_seconds": None,
             "on_failure": "fail_open", "allow": [], "min_confidence": None, "by_class": {},
+            "max_overrides": 1,
         }
         for key in ("node", "backend"):
             value = raw.get(key)
@@ -288,6 +291,12 @@ def get_decision_points_config() -> dict[str, dict]:
                 problems.append(f"{where}: min_confidence must be a number from 0 to 1")
             else:
                 entry["min_confidence"] = float(raw["min_confidence"])
+        if "max_overrides" in raw:
+            m = raw["max_overrides"]
+            if not isinstance(m, int) or isinstance(m, bool) or m < 0:
+                problems.append(f"{where}: max_overrides must be an integer of 0 or more")
+            else:
+                entry["max_overrides"] = m
         by_class = raw.get("by_class")
         if by_class is not None and not isinstance(by_class, dict):
             problems.append(f"{where}: by_class must be a mapping of class to overrides")

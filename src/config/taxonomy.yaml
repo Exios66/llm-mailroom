@@ -341,7 +341,8 @@ reviewer:
 #     extract.post:                # slot name: <node>.post
 #       node: extract              # a conditional-route node of graph/route_spec.py
 #                                  # (not human_review: a person's decision is final)
-#       backend: my_fee_checker    # registered backend name
+#       backend: my_fee_checker    # registered name, or an import spec `module.path:callable`
+#                                  # (imported at graph build; an import error stops startup)
 #       enabled: true              # default true; false keeps the slot declared but off
 #       timeout_seconds: 30        # default run_limits.llm_call_timeout_seconds; always
 #                                  # capped by the time left on the run deadline
@@ -353,6 +354,8 @@ reviewer:
 #                                  # record the outcome, never route on it. fail_safe parks
 #                                  # whatever `allow` says.
 #       min_confidence: 0.8        # optional: a hint below it (or with no confidence) is ignored
+#       max_overrides: 1           # default 1: redirects to a non-park destination per document
+#                                  # (a park is exempt); totals over active slots must be <= 8
 #       by_class:                  # optional per-class overrides of enabled / allow / min_confidence
 #         insurance_claim: {min_confidence: 0.9}
 #         correspondence: {enabled: false}

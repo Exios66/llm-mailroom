@@ -33,10 +33,12 @@ def _clean_registries():
     dp.clear_decision_point_backends()
     clear_route_rules()
     dp._abandoned_threads.clear()
+    limits.reset_run_usage()  # compiled-graph runs here bypass run_pipeline, which resets it
     yield
     dp.clear_decision_point_backends()
     clear_route_rules()
     dp._abandoned_threads.clear()
+    limits.reset_run_usage()
 
 
 @pytest.fixture(autouse=True)
@@ -598,6 +600,7 @@ class TestConfig:
             "classify.post": {
                 "node": "classify", "backend": "b", "enabled": True, "timeout_seconds": None,
                 "on_failure": "fail_open", "allow": [], "min_confidence": None, "by_class": {},
+                "max_overrides": 1,
             }
         }
 
@@ -634,6 +637,9 @@ class TestConfig:
             ({"extract.post": {"node": "extract", "backend": "b", "allow": ["a", "a"]}}, "twice"),
             ({"extract.post": {"node": "extract", "backend": "b", "min_confidence": 1.5}}, "min_confidence"),
             ({"extract.post": {"node": "extract", "backend": "b", "min_confidence": float("nan")}}, "min_confidence"),
+            ({"extract.post": {"node": "extract", "backend": "b", "max_overrides": -1}}, "max_overrides must be"),
+            ({"extract.post": {"node": "extract", "backend": "b", "max_overrides": True}}, "max_overrides must be"),
+            ({"extract.post": {"node": "extract", "backend": "b", "max_overrides": 1.5}}, "max_overrides must be"),
             ({"extract.post": {"node": "extract", "backend": "b", "by_class": {"nonsense": {}}}}, "unknown class"),
             ({"extract.post": {"node": "extract", "backend": "b", "by_class": {"contract": {"x": 1}}}},
              "unknown key(s) ['x']"),
@@ -995,6 +1001,375 @@ class TestCompiledGraph:
 
         summary = _result_summary({"decision_outcomes": {"s": {"evidence": {"k": "v"}}}, "stage": "x"})
         assert "decision_outcomes" not in summary
+
+
+# ---------------------------------------------------------------------------
+# Override budget (max_overrides)
+# ---------------------------------------------------------------------------
+
+PROPOSES_COMPILE = {
+    "doc_type": "contract", "doc_text": DOC_TEXT, "extracted_data": {"parties": ["A"]},
+    "extraction_confidence": 0.99, "extraction_attempts": 1,
+}
+
+
+def hint_to(dest, **extra):
+    return {"route_hint": dest, "confidence": 0.9, **extra}
+
+
+def redirecting(**overrides):
+    return policy(allow=("judge_verify", "human_review"), **overrides)
+
+
+class TestOverrideBudget:
+    def test_default_budget_is_one_and_validated_in_total(self, decision_points):
+        decision_points({"extract.post": {"node": "extract", "backend": "b"}})
+        assert dp.load_slot_policies()[0].max_overrides == 1
+        decision_points({
+            f"s{i}.post": {"node": n, "backend": "b", "max_overrides": 3}
+            for i, n in enumerate(["classify", "extract", "judge_verify"])
+        })
+        with pytest.raises(DecisionPointConfigError, match=r"add up to 9; at most 8"):
+            dp.prepare_slots()
+
+    def test_inactive_slots_do_not_count_toward_the_total(self, decision_points):
+        decision_points({
+            "a.post": {"node": "classify", "backend": "b", "max_overrides": 8},
+            "b.post": {"node": "extract", "backend": "b", "max_overrides": 8, "enabled": False},
+        })
+        assert len(dp.prepare_slots()) == 1
+
+    def test_a_redirect_spends_the_budget_and_the_next_one_is_capped(self):
+        dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
+        wrapped = dp.wrap_node("extract", node_returning({}), [redirecting(max_overrides=1)])
+        first = wrapped(dict(PROPOSES_COMPILE))
+        assert first["decision_override_counts"] == {"extract.post": 1}
+        assert first["decision_outcomes"]["extract.post"]["vetted_route"] == "judge_verify"
+        assert "capped" not in first["decision_outcomes"]["extract.post"]
+        second = wrapped({**PROPOSES_COMPILE, **first})
+        stored = second["decision_outcomes"]["extract.post"]
+        assert stored["capped"] is True and stored["vetted_route"] is None
+        assert "decision_override_counts" not in second  # nothing spent
+
+    def test_the_rule_returns_none_and_logs_when_capped(self, monkeypatch):
+        events = []
+
+        class Recorder:
+            def __getattr__(self, level):
+                return lambda event, **kw: events.append((level, event, kw))
+
+        monkeypatch.setattr(dp, "logger", Recorder())
+        dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
+        p = redirecting(max_overrides=0)
+        state = {**PROPOSES_COMPILE, **dp.wrap_node("extract", node_returning({}), [p])(dict(PROPOSES_COMPILE))}
+        assert state["decision_outcomes"]["extract.post"]["capped"] is True
+        assert dp.rule_for(p).decide(state, "compile_report") is None
+        capped = [e for e in events if e[1] == "decision_point_override_capped"]
+        assert capped and capped[0][0] == "warning" and capped[0][2]["slot"] == "extract.post"
+        assert capped[0][2]["max_overrides"] == 0
+
+    def test_a_hint_equal_to_the_proposal_spends_nothing(self):
+        dp.register_decision_point_backend("fake", lambda i: hint_to("compile_report"))
+        p = policy(allow=("compile_report",))
+        out = dp.wrap_node("extract", node_returning({}), [p])(dict(PROPOSES_COMPILE))
+        assert "decision_override_counts" not in out
+        assert out["decision_outcomes"]["extract.post"]["vetted_route"] == "compile_report"
+
+    def test_parks_are_exempt_from_the_budget(self):
+        dp.register_decision_point_backend("fake", lambda i: PARK)
+        p = redirecting(max_overrides=0)
+        out = dp.wrap_node("extract", node_returning({}), [p])(dict(PROPOSES_COMPILE))
+        stored = out["decision_outcomes"]["extract.post"]
+        assert stored["vetted_route"] == "human_review" and "capped" not in stored
+        assert "decision_override_counts" not in out
+
+    def test_fail_safe_keeps_parking_with_a_spent_budget(self):
+        p = redirecting(max_overrides=0, on_failure="fail_safe")
+        out = dp.wrap_node("extract", node_returning({}), [p])(dict(PROPOSES_COMPILE))  # no backend
+        assert out["decision_outcomes"]["extract.post"]["vetted_route"] == "human_review"
+
+    def test_each_slot_has_its_own_budget(self):
+        dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
+        a, b = redirecting(slot="extract.a"), redirecting(slot="extract.b")
+        wrapped = dp.wrap_node("extract", node_returning({}), [a, b])
+        out = wrapped(dict(PROPOSES_COMPILE))
+        assert out["decision_override_counts"] == {"extract.a": 1, "extract.b": 1}
+
+    def test_a_router_that_raises_counts_as_an_override(self, monkeypatch):
+        dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
+        monkeypatch.setitem(dp._SPEC_BY_NODE, "extract", ROUTE_SPECS[0].__class__(
+            "extract", lambda s: 1 / 0, {"judge_verify": "judge_verify", "human_review": "human_review"}))
+        out = dp.wrap_node("extract", node_returning({}), [redirecting()])(dict(PROPOSES_COMPILE))
+        assert out["decision_override_counts"] == {"extract.post": 1}
+
+    def test_garbage_counts_in_state_are_treated_as_zero(self):
+        dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
+        out = dp.wrap_node("extract", node_returning({}), [redirecting()])(
+            {**PROPOSES_COMPILE, "decision_override_counts": {"extract.post": "lots"}})
+        assert out["decision_override_counts"] == {"extract.post": 1}
+
+
+# Cycle across slots: extract -> judge_verify -> arbiter -> retry_extract -> judge_verify ...
+CYCLE = {
+    "extract.post": {"node": "extract", "backend": "to_judge", "allow": ["judge_verify"]},
+    "judge_verify.post": {"node": "judge_verify", "backend": "to_arbiter", "allow": ["arbiter"]},
+    "arbiter.post": {"node": "arbiter", "backend": "to_retry", "allow": ["retry_extract"]},
+    "retry_extract.post": {"node": "retry_extract", "backend": "to_judge", "allow": ["judge_verify"]},
+}
+
+
+def register_cycle_backends():
+    for name, dest in (("to_judge", "judge_verify"), ("to_arbiter", "arbiter"), ("to_retry", "retry_extract")):
+        dp.register_decision_point_backend(name, lambda i, d=dest: hint_to(d))
+
+
+def arbiter_accepts(mock_openai_client):
+    """The scripted arbiter (legacy OpenAI-style client) always accepts with caveats, so
+    its router proposes compile_report instead of parking and the cycle can run."""
+    mock_openai_client.chat.completions.create.return_value.choices[0].message.content = json.dumps({
+        "decision": "accept_with_caveats", "fields_to_fix": [], "reasoning": "sound",
+        "handoff_summary": "ok",
+    })
+
+
+def stream_doc(temp_base_dir, mock_langchain_llm, name="doc.txt", thread="dp-stream"):
+    """Run one document through a compiled graph; returns (visited nodes in order, final state).
+
+    A park is an ``interrupt()`` inside ``human_review``, which streams no node update, so
+    ``human_review`` is appended to the visited list when the interrupt event arrives.
+    """
+    mock_langchain_llm.classification = {
+        "doc_type": "contract", "contract_subtype": "other", "confidence": 0.99, "reasoning": "contract",
+    }
+    for sub in ("inbox", "processing", "classified", "review", "failed"):
+        (temp_base_dir / "pipeline" / sub).mkdir(parents=True, exist_ok=True)
+    path = temp_base_dir / "pipeline" / "inbox" / name
+    path.write_text("MASTER SERVICES AGREEMENT between Acme Corp. and Beta LLC.")
+    state = {
+        "doc_id": "", "matter_id": "TEST-MATTER", "original_filename": name, "stage": "inbox",
+        "doc_type": None, "classification_confidence": None, "classification_attempts": 0,
+        "extracted_data": None, "extraction_confidence": None, "extraction_attempts": 0,
+        "trace_id": None, "escalation_reason": None, "review_decision": None, "retry_count": 0,
+        "conflict_detected": False, "file_path": str(path), "doc_text": "", "error_message": None,
+        "messages": [],
+    }
+    graph = bg.build_graph()
+    visited: list[str] = []
+    for event in graph.stream(state, {"configurable": {"thread_id": thread}}, stream_mode="updates"):
+        visited.extend("human_review" if k == "__interrupt__" else k for k in event)
+    return visited, graph.get_state({"configurable": {"thread_id": thread}}).values
+
+
+class TestCompiledRedirects:
+    """A slot hints an allowed destination other than human_review and the document takes it."""
+
+    def test_default_path_for_comparison(self, temp_base_dir, mock_openai_client, mock_langchain_llm):
+        visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
+        assert visited == ["intake", "classify", "extract", "compile_report", "catalog_write", "archive"]
+        assert final["stage"] == "archived"
+
+    def test_classify_slot_redirects_to_retry_classify(
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        decision_points({"classify.post": {"node": "classify", "backend": "fake", "allow": ["retry_classify"]}})
+        dp.register_decision_point_backend("fake", lambda i: hint_to("retry_classify", label="recheck"))
+        visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
+        assert visited[:4] == ["intake", "classify", "retry_classify", "extract"]
+        assert final["stage"] == "archived"
+        assert final["decision_outcomes"]["classify.post"]["label"] == "recheck"
+        assert final["decision_override_counts"] == {"classify.post": 1}
+
+    def test_extract_slot_redirects_to_judge_verify(
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        decision_points({"extract.post": {"node": "extract", "backend": "fake", "allow": ["judge_verify"]}})
+        dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
+        visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
+        assert visited[:5] == ["intake", "classify", "extract", "judge_verify", "compile_report"]
+        assert final["decision_override_counts"] == {"extract.post": 1}
+
+    def test_a_hint_outside_allow_changes_nothing(
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        decision_points({"classify.post": {"node": "classify", "backend": "fake", "allow": ["extract"]}})
+        dp.register_decision_point_backend("fake", lambda i: hint_to("retry_classify"))
+        visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
+        assert "retry_classify" not in visited and final["stage"] == "archived"
+        assert "decision_override_counts" not in final
+
+    def test_cyclic_allow_config_terminates_and_the_document_finishes(
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        arbiter_accepts(mock_openai_client)
+        decision_points(CYCLE)
+        register_cycle_backends()
+        visited, final = stream_doc(temp_base_dir, mock_langchain_llm)  # no GraphRecursionError
+        assert {"judge_verify", "arbiter", "retry_extract"} <= set(visited)  # the cycle really ran
+        assert final["decision_override_counts"] == {
+            "extract.post": 1, "judge_verify.post": 1, "arbiter.post": 1, "retry_extract.post": 1}
+        assert final["stage"] == "archived"
+        assert any(o.get("capped") for o in final["decision_outcomes"].values())
+
+    def test_a_larger_budget_still_terminates_within_the_limit(
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        arbiter_accepts(mock_openai_client)
+        decision_points({k: {**v, "max_overrides": 2} for k, v in CYCLE.items()})  # 8, the total cap
+        register_cycle_backends()
+        visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
+        counts = final["decision_override_counts"]
+        assert max(counts.values()) == 2 and sum(counts.values()) <= 8
+        assert final["stage"] == "archived"
+
+    def test_without_a_budget_the_same_cycle_never_finishes(
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch
+    ):
+        """Control: the budget is what ends the cycle (the real cap is lifted for this test).
+
+        Unbounded, the loop only stops when the run's output-token budget aborts it (or
+        LangGraph's recursion limit, 10007 steps by default, whichever comes first).
+        """
+        from langgraph.errors import GraphRecursionError
+
+        arbiter_accepts(mock_openai_client)
+        monkeypatch.setattr(dp, "MAX_TOTAL_OVERRIDES", 1_000_000)
+        monkeypatch.setattr(limits, "get_max_total_output_tokens", lambda: 2000)  # end the loop sooner
+        decision_points({k: {**v, "max_overrides": 10_000} for k, v in CYCLE.items()})
+        register_cycle_backends()
+        with pytest.raises((GraphRecursionError, limits.RunBudgetExceeded)):
+            stream_doc(temp_base_dir, mock_langchain_llm)
+
+    def test_zero_budget_never_redirects(
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        decision_points({"classify.post": {"node": "classify", "backend": "fake", "allow": ["retry_classify"],
+                                           "max_overrides": 0}})
+        dp.register_decision_point_backend("fake", lambda i: hint_to("retry_classify"))
+        visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
+        assert "retry_classify" not in visited and final["stage"] == "archived"
+        assert final["decision_outcomes"]["classify.post"]["capped"] is True
+
+    def test_parks_still_work_with_a_zero_budget(
+        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        decision_points({"extract.post": {**SLOT["extract.post"], "max_overrides": 0}})
+        dp.register_decision_point_backend("fake", lambda i: {**PARK})
+        visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
+        assert visited[-1] == "human_review"
+
+
+# ---------------------------------------------------------------------------
+# Backend resolution at build time
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def backend_module(tmp_path, monkeypatch):
+    """A throwaway importable module ``dp_backend_mod`` with a working and a broken attribute."""
+    import sys
+
+    (tmp_path / "dp_backend_mod.py").write_text(
+        "def decide(inp):\n"
+        "    return {'route_hint': 'human_review', 'causes': ['from_import'], 'confidence': 0.9}\n"
+        "class Holder:\n"
+        "    @staticmethod\n"
+        "    def nested(inp):\n"
+        "        return {'label': 'nested'}\n"
+        "NOT_CALLABLE = 3\n"
+    )
+    (tmp_path / "dp_broken_mod.py").write_text("raise RuntimeError('boom at import')\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    yield
+    for name in ("dp_backend_mod", "dp_broken_mod"):
+        sys.modules.pop(name, None)
+
+
+class _Recorder:
+    def __init__(self):
+        self.events = []
+
+    def __getattr__(self, level):
+        return lambda event, **kw: self.events.append((level, event, kw))
+
+
+class TestBackendResolution:
+    def slot(self, backend, **extra):
+        return {"extract.post": {"node": "extract", "backend": backend, "allow": ["human_review"], **extra}}
+
+    def test_import_spec_is_resolved_registered_and_consulted(self, decision_points, backend_module):
+        decision_points(self.slot("dp_backend_mod:decide"))
+        (p,) = dp.prepare_slots()
+        assert dp.get_decision_point_backend("dp_backend_mod:decide") is not None
+        got = dp.consult(p, inp())
+        assert got.status == "ok" and got.causes == ("from_import",)
+
+    def test_dotted_attribute_path(self, decision_points, backend_module):
+        decision_points(self.slot("dp_backend_mod:Holder.nested"))
+        (p,) = dp.prepare_slots()
+        assert dp.consult(p, inp()).label == "nested"
+
+    @pytest.mark.parametrize(
+        "spec, needle",
+        [
+            ("no_such_module_dp:fn", "ModuleNotFoundError"),
+            ("dp_backend_mod:missing", "AttributeError"),
+            ("dp_broken_mod:fn", "RuntimeError: boom at import"),
+            ("dp_backend_mod:NOT_CALLABLE", "is not callable"),
+            ("dp_backend_mod:a:b", "not a registered name or an import spec"),
+            ("bad module:fn", "not a registered name or an import spec"),
+            (":fn", "not a registered name or an import spec"),
+        ],
+    )
+    def test_bad_import_specs_are_config_errors(self, decision_points, backend_module, spec, needle):
+        decision_points(self.slot(spec))
+        with pytest.raises(DecisionPointConfigError) as err:
+            dp.prepare_slots()
+        assert needle in str(err.value) and "decision_points.extract.post" in str(err.value)
+
+    def test_build_graph_fails_on_a_bad_import_spec(self, decision_points, backend_module):
+        decision_points(self.slot("dp_backend_mod:missing"))
+        with pytest.raises(DecisionPointConfigError, match="cannot import backend"):
+            bg.build_graph()
+
+    def test_a_disabled_slot_is_not_imported(self, decision_points, backend_module):
+        decision_points(self.slot("no_such_module_dp:fn", enabled=False))
+        assert dp.prepare_slots() == ()
+
+    def test_unregistered_bare_name_warns_once_per_slot_naming_on_failure(self, decision_points, monkeypatch):
+        rec = _Recorder()
+        monkeypatch.setattr(dp, "logger", rec)
+        decision_points({
+            **self.slot("not_yet", on_failure="fail_safe"),
+            "classify.post": {"node": "classify", "backend": "also_not_yet"},
+            "judge_verify.post": {"node": "judge_verify", "backend": "not_yet", "enabled": False},
+        })
+        dp.prepare_slots()
+        warned = [e for e in rec.events if e[1] == "decision_point_backend_unregistered"]
+        assert [(w[0], w[2]["slot"], w[2]["on_failure"]) for w in warned] == [
+            ("warning", "extract.post", "fail_safe"), ("warning", "classify.post", "fail_open")]
+
+    def test_registered_bare_name_does_not_warn(self, decision_points, monkeypatch):
+        rec = _Recorder()
+        monkeypatch.setattr(dp, "logger", rec)
+        dp.register_decision_point_backend("known", lambda i: ok())
+        decision_points(self.slot("known"))
+        dp.prepare_slots()
+        assert not [e for e in rec.events if e[1] == "decision_point_backend_unregistered"]
+
+    def test_lazy_registration_after_the_build_still_works(self, decision_points, monkeypatch):
+        decision_points(self.slot("late"))
+        (p,) = dp.prepare_slots()  # warns, does not raise
+        assert dp.consult(p, inp()).evidence["reason"] == "backend_not_registered"
+        dp.register_decision_point_backend("late", lambda i: ok(label="here"))
+        assert dp.consult(p, inp()).label == "here"
+
+    def test_import_spec_backend_through_a_compiled_graph(
+        self, decision_points, backend_module, temp_base_dir, mock_openai_client, mock_langchain_llm
+    ):
+        decision_points(self.slot("dp_backend_mod:decide"))
+        visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
+        assert visited[-1] == "human_review"
+        assert final["decision_outcomes"]["extract.post"]["backend"] == "dp_backend_mod:decide"
 
 
 def test_state_declares_the_key():
