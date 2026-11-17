@@ -181,7 +181,12 @@ jobs:
 workflows:
   ci:
     jobs:
-      - no-session-links
+      - no-session-links:
+          filters:
+            branches:
+              ignore: gh-pages
+            tags:
+              ignore: /.*/
       - test:
           force_full: << pipeline.parameters.full_suite >>
           filters:

@@ -8,13 +8,13 @@
 #   pull request's description when CircleCI reports one.
 set -euo pipefail
 
-PATTERN='claude\.(ai|com)/code|^[[:space:]]*Claude-Session:|Generated (with|by) \[?Claude Code'
+PATTERN='claude\.(ai|com)/(code|project|chat|artifact|share)|^[[:space:]]*Claude-Session:|Generated (with|by) \[?Claude Code'
 status=0
 
 if [ "${CIRCLE_BRANCH:-}" = "main" ]; then
   range="HEAD -1"
 else
-  git fetch -q origin main
+  git fetch -q origin main:refs/remotes/origin/main
   range="origin/main..HEAD"
 fi
 
@@ -30,7 +30,7 @@ if [ ${#bad[@]} -gt 0 ]; then
   # Name the commits only: printing the matched text would leak it into public CI logs.
   echo "error: ${#bad[@]} commit message(s) in $range carry a claude.ai link, session trailer or Claude Code footer:" >&2
   printf '  %s\n' "${bad[@]}" >&2
-  echo "Reword those commits (see .gitmessage) before merging." >&2
+  echo "Reword them before they are pushed (see .gitmessage); for pushed commits, ask the owner." >&2
   status=1
 else
   echo "ok: no session links or footers in commits ($range)"
