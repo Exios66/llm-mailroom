@@ -15,6 +15,26 @@ pages. Regenerate with `PYTHONPATH=src python src/scripts/sync_gitbook_changelog
 
 Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md).
 
+## Added
+
+- **Staged interim ground truth: an opt-in, pinned overlay for labels the Hub does not publish yet (`observability/interim_gt.py`).** This ports the local-mailroom-sandbox interim label overlay (schema `mailroom-interim-labels/v1`) into the pipeline's GT layer.
+  - **Loading.** The labels stay where the sandbox builds them, and a run pins the sha256 of their `MANIFEST.json` (`MAILROOM_INTERIM_GT_DIR` plus `MAILROOM_INTERIM_GT_SHA256`; set both or neither). Each class file is verified against the manifest. A mismatch raises `InterimOverlayError`.
+  - **Merge.** `build_expected_fields` applies the truth labels (`gap_fill`, `derived`, `correction`) after the Hub catalog and before the post-hoc regex fill.
+    - A label the Hub publishes supersedes the overlay.
+    - A `correction` applies only while the Hub value equals the `hub_value` it corrected.
+    - `disputed` labels are never applied.
+    - Labels bind to the labelled document text.
+    - A closed inventory field must hold a vocabulary value.
+  - **Recording.** Applied fields carry source `interim:<status>`, which `labelled_expected_fields` scores as gold. The GT meta and HF pilot rows record `interim_gt` (overlay sha256 and per-field outcome). The HF pilot report header records the overlay identity, or `null`.
+  - **Overlay rules fixed in the port.**
+    - The sandbox overlay treated the CMS `claim_type` of `health` as a defect. Since #280 it is the correct gold, so a label that would change a CMS row's `claim_type` is rejected.
+    - The sandbox derives `record_type` from the raw subclass, so 109 corporate labels (`charter_amendment`, `officer_certificate`, `board_resolution`, `indenture`, `subsidiary_list`) were outside the 5-token vocabulary. These are rejected.
+  - **Checked offline** against the sandbox overlay and the cached Hub rows of revision `bc9eab2`, with a one-off script that is not committed:
+    - all 1,111 overlay documents bind to their Hub text;
+    - 1,539 labels apply: 484 corporate and 386 correspondence gap fills, 88 merger gap fills, 45 contract corrections and 536 insurance `cms_source_table`;
+    - 109 are rejected, and the Hub supersedes the rest.
+  - Off by default: no score moves unless a run opts in. Tests: `test_interim_gt.py`.
+
 ## Fixed
 
 - **Insurance `claim_type` is the product line, never a CMS table token (#174 §2).** `CLAIM_TYPE_DESCRIPTION` and the extract-node insurance handoff (`specialist_handoff`) told the specialist to put `pde` / `inpatient` / `outpatient` / `carrier` in `claim_type`. The Dojo has scored those 0 since llm-dojo-scoring#93, because every CMS row's line is `health`. Both now teach the closed `INSURANCE_PRODUCT_LINES` only. `enrich_extraction` maps a CMS table token, whether from the model or backfilled from the sorter subclass, to `health` through the new `normalize_claim_line`. The post-hoc extraction GT does the same. The sorter subclass keeps the CMS table tokens. A guard test pins `INSURANCE_PRODUCT_LINES` to the Dojo's. On the sandbox's production slice 100 r2, this cause alone accounts for 12 of the 22 insurance wrong archives.
