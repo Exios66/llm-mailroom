@@ -3978,6 +3978,14 @@ def _finalize_aborted(
         _write_catalog_record(state, manifest)
     except Exception:
         logger.exception("abort_catalog_write_error", doc_id=manifest.doc_id)
+    # An unmigrated audit database cannot take the unified failed row below, so the abort also
+    # keeps the per-event ``run_aborted`` entry it always had (no-op once migrated).
+    from audit.legacy_events import emit_stage_event
+
+    emit_stage_event(
+        {**state, "doc_id": manifest.doc_id}, "run_aborted", actor="pipeline",
+        detail={"reason": reason, "failure_class": failure_class or "unexpected"},
+    )
     # Unified audit row (spec §5.3): the failed row, from the last checkpoint
     # (its trace and decisions) overlaid with the abort outcome.
     state["audit_metrics"] = _terminal_audit_row(

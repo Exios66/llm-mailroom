@@ -282,9 +282,24 @@ def _build_sub_rows(
     return records, listed
 
 
+#: Unique constraints that two concurrent writers can both hit (the chain position or the one row
+#: per document, the addendum position per document): re-reading the tail under a fresh lock cures
+#: them. SQLite names the columns, Postgres the index.
+_RACE_CONSTRAINTS = (
+    "audit_log.seq", "audit_log.doc_id", "audit_addenda.doc_id", "audit_addenda.seq",
+    "ux_audit_log_seq", "ux_audit_log_doc_id", "ix_audit_addenda_doc_seq",
+)
+
+
 def _is_retryable(exc: IntegrityError) -> bool:
+    """True only for a chain-position race; any other integrity error is deterministic.
+
+    A duplicate sub-row or entry primary key (``attempt_id``, ``entry_id``, ``addendum_id``) fails the
+    same way on every attempt, so it is raised at once instead of retried (and, from
+    ``audit-reconcile``, quarantined instead of failing every run).
+    """
     msg = str(exc.orig).lower() if exc.orig is not None else str(exc).lower()
-    return "unique" in msg or "duplicate" in msg
+    return ("unique" in msg or "duplicate" in msg) and any(c in msg for c in _RACE_CONSTRAINTS)
 
 
 # ---------------------------------------------------------------- writers
@@ -802,8 +817,10 @@ def decisions_only_record(row: TerminalRow, full: dict[str, Any]) -> dict[str, A
 async def commit_or_park(row: TerminalRow) -> CommitOutcome:
     """Commit the row or park it in trace sinks after bounded failures (§5.6).
 
-    ``AuditMigrationPending`` counts as a failure, so the record waits for
-    ``audit-reconcile`` after the migration. Return ``written`` on success,
+    ``AuditMigrationPending`` is parked at once (no retry, no sleep: the marker will not
+    appear within the retry window), so the record waits for ``audit-reconcile`` after
+    the migration; a deterministic ``IntegrityError`` (``_is_retryable`` false) is parked
+    at once as well. Return ``written`` on success,
     ``pending`` if a sink that ``audit-reconcile`` can read back (``recoverable``)
     holds a full copy, ``pending_partial`` if only reduced copies survive or only
     write-only sinks hold the record (nothing can recover it, but the refs on the
@@ -827,6 +844,10 @@ async def commit_or_park(row: TerminalRow) -> CommitOutcome:
             error = exc
             logger.warning("audit_row_commit_failed", doc_id=row.doc_id, attempt=attempt,
                            error=f"{type(exc).__name__}: {exc}")
+            if isinstance(exc, AuditMigrationPending) or (
+                isinstance(exc, IntegrityError) and not _is_retryable(exc)
+            ):
+                break  # deterministic: the same call fails the same way, so waiting only costs time
             if attempt < COMMIT_ATTEMPTS:
                 await asyncio.sleep(RETRY_DELAYS_S[min(attempt - 1, len(RETRY_DELAYS_S) - 1)])
     commit_error = f"{type(error).__name__}: {error}" if error else None

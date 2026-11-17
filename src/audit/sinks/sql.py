@@ -1,7 +1,8 @@
 """The ``sql`` trace sink (spec §5.5): always on.
 
-Full I/O goes to ``audit_trace_io`` in the mailroom database. Pending rows (a row
-that could not be committed, §5.6) go to a separate SQLite file,
+Full I/O goes to ``audit_trace_io`` in the mailroom database, only with ``audit.full_trace``
+on (``audit.sinks.record_io`` gates it). Pending rows (a row that could not be committed,
+§5.6) go to a separate SQLite file,
 ``MAILROOM_AUDIT_SPOOL_PATH`` (default ``<db dir>/audit_spool.db``), so they
 survive the database being the thing that failed.
 """
@@ -26,6 +27,13 @@ logger = structlog.get_logger(__name__)
 _SPOOL_SCHEMA = (
     "CREATE TABLE IF NOT EXISTS pending_rows ("
     " ref TEXT PRIMARY KEY, doc_id TEXT, record TEXT NOT NULL, created_at TEXT NOT NULL)"
+)
+# Pending rows ``audit-reconcile`` could not write for a reason that will not change: kept for an
+# operator (never deleted), no longer read as pending.
+_QUARANTINE_SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS quarantined_rows ("
+    " ref TEXT PRIMARY KEY, doc_id TEXT, record TEXT NOT NULL, created_at TEXT NOT NULL,"
+    " error TEXT, quarantined_at TEXT NOT NULL)"
 )
 
 
@@ -75,6 +83,7 @@ def _spool():
     conn = sqlite3.connect(path, timeout=10)
     try:
         conn.execute(_SPOOL_SCHEMA)
+        conn.execute(_QUARANTINE_SCHEMA)
         with conn:
             yield conn
     finally:
@@ -163,6 +172,31 @@ class SqlSink:
                 continue
             out.append({**parsed, "ref": ref})  # the spool key wins over any ``ref`` inside the record
         return out
+
+    def missing_store(self) -> str | None:
+        """The spool path when it does not exist (nothing was ever parked there, or its volume is gone)."""
+        path = spool_path()
+        return None if path.exists() else str(path)
+
+    def quarantine_pending(self, ref: str, error: str) -> bool:
+        """Move a pending row to ``quarantined_rows`` (kept with its error); return whether it moved."""
+        if not spool_path().exists():
+            return False
+        with _spool() as conn:
+            moved = conn.execute(
+                "INSERT OR REPLACE INTO quarantined_rows (ref, doc_id, record, created_at, error, quarantined_at) "
+                "SELECT ref, doc_id, record, created_at, ?, ? FROM pending_rows WHERE ref = ?",
+                (error[:2000], datetime.now(timezone.utc).isoformat(), ref),
+            ).rowcount
+            conn.execute("DELETE FROM pending_rows WHERE ref = ?", (ref,))
+        return bool(moved)
+
+    def quarantined_count(self) -> int:
+        """How many pending rows are held in quarantine."""
+        if not spool_path().exists():
+            return 0
+        with _spool() as conn:
+            return int(conn.execute("SELECT COUNT(*) FROM quarantined_rows").fetchone()[0])
 
     def drop_pending(self, ref: str) -> None:
         """Forget a pending row once it is committed (``audit-reconcile``)."""

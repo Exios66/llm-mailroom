@@ -1,11 +1,16 @@
 """Trace sinks (spec §5.5): where a visit's prompt and completion, and pending rows, are kept.
 
-The ``sql`` sink is always on and always first. ``phoenix`` joins automatically
-when its packages import, ``PHOENIX_TRACING`` is not disabled, the hosted-container
-rule allows it and a 1-second probe of ``PHOENIX_ENDPOINT`` answers. ``langfuse``,
+The ``sql`` sink is always on and always first. ``phoenix``, ``langfuse``,
 ``braintrust`` and ``otlp`` are opt-in through ``MAILROOM_TRACE_SINKS`` (for
-example ``sql,phoenix,langfuse``). Any other sink is installed through the
+example ``sql,phoenix,langfuse``); a named ``phoenix`` still needs its packages,
+``PHOENIX_TRACING`` not disabled, the hosted-container rule and a 1-second probe
+of ``PHOENIX_ENDPOINT`` to answer. Any other sink is installed through the
 ``mailroom.trace_sinks`` entry-point group and is active once installed.
+
+No sink receives prompt or completion text unless ``audit.full_trace`` is on
+(taxonomy, ``MAILROOM_AUDIT_FULL_TRACE`` wins): document text and personal data
+must not leave the process, or land in ``audit_trace_io``, without that opt-in.
+With it off, ``record_io`` hands nothing to any sink and only returns the digest.
 
 Sinks are additive and independent of the one active tracing provider. A sink
 that fails is skipped: it never fails the node. The visit records the first
@@ -14,6 +19,7 @@ sink that accepted the I/O as ``trace_sink`` and the others in ``also_in``.
 
 from __future__ import annotations
 
+import functools
 import os
 from typing import Any, Protocol, runtime_checkable
 
@@ -24,7 +30,7 @@ from audit.digests import io_sha256
 logger = structlog.get_logger(__name__)
 
 BUILTIN = ("sql", "phoenix", "langfuse", "braintrust", "otlp")
-OPT_IN = ("langfuse", "braintrust", "otlp")
+OPT_IN = ("phoenix", "langfuse", "braintrust", "otlp")
 ENTRY_POINT_GROUP = "mailroom.trace_sinks"
 
 
@@ -53,10 +59,21 @@ def _requested() -> list[str]:
     return [p.strip().lower() for p in raw.split(",") if p.strip()]
 
 
-def _entry_points():
+@functools.lru_cache(maxsize=1)
+def _scan_entry_points() -> tuple:
     from importlib.metadata import entry_points
 
-    return entry_points(group=ENTRY_POINT_GROUP)
+    return tuple(entry_points(group=ENTRY_POINT_GROUP))
+
+
+def _entry_points():
+    """Installed ``mailroom.trace_sinks`` entry points.
+
+    Scanned once per process (the scan costs milliseconds and runs on every node
+    visit otherwise); like the other cached config, installing a sink needs a
+    restart. ``_scan_entry_points.cache_clear()`` forces a rescan.
+    """
+    return _scan_entry_points()
 
 
 def _builtin(name: str) -> TraceSink | None:
@@ -91,7 +108,7 @@ def active_sinks() -> list[TraceSink]:
     """
     requested = _requested()
     sinks: list[TraceSink] = []
-    for name in ("sql", "phoenix", *[n for n in OPT_IN if n in requested]):
+    for name in ("sql", *[n for n in OPT_IN if n in requested]):
         try:
             sink = _builtin(name)
         except Exception:
@@ -126,9 +143,14 @@ def record_io(
 
     Sink failures are logged and skipped. Return the first accepting sink, the
     I/O digest, and the other accepting sinks; the digest is returned even if
-    no sink accepts the payload.
+    no sink accepts the payload. Unless ``audit.full_trace`` is on, no sink is
+    called (the text stays out of every store) and only the digest is returned.
     """
+    from audit.trace import full_trace_enabled
+
     accepted: list[str] = []
+    if not full_trace_enabled():
+        return None, io_sha256(prompt, completion), []
     for sink in active_sinks():
         try:
             if sink.record_io(visit_id, doc_id, prompt, completion) is not None:

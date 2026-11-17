@@ -313,6 +313,13 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
                     keep_unapplied(node, state, started, calls_before, event, unapplied_status)
             if not isinstance(result, dict):
                 return result, None
+            if event:
+                # While the audit migration is pending the unified row cannot be written, so the
+                # stage event also goes to the per-event log (no-op once migrated).
+                from audit.legacy_events import emit_stage_event
+
+                emit_stage_event({**state, **result}, event.get("event"), actor=event.get("actor") or "pipeline",
+                                 detail=event.get("detail"))
             try:
                 visit = trace.visit(
                     node, state, result, started_at=started, ended_at=datetime.now(timezone.utc),

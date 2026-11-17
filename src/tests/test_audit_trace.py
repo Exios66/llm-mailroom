@@ -96,11 +96,13 @@ def test_visit_reads_the_llm_calls_of_its_node(temp_base_dir, monkeypatch):
     assert tuple(v) == VISIT_KEYS
     assert (v["node"], v["model"], v["prompt_version"]) == ("classify", "served", 4)
     assert (v["prompt_tokens"], v["completion_tokens"]) == (120, 30)
-    # The always-on sql sink keeps the I/O (M9); no other sink is active here.
-    assert v["io_sha256"] == io_sha256("p1", "c1") and v["trace_sink"] == "sql" and v["also_in"] == []
+    # Full trace off: the digest is kept, but no sink stores the text (#239 review).
+    assert v["io_sha256"] == io_sha256("p1", "c1") and v["trace_sink"] is None and v["also_in"] == []
     monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "1")
     (v,) = classify_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})["audit_trace"]
     assert (v["prompt"], v["completion"]) == ("p1", "c1")
+    # Full trace on: the always-on sql sink keeps the I/O (M9); no other sink is active here.
+    assert v["trace_sink"] == "sql" and v["also_in"] == []
 
 
 def test_decisions_match_sandbox_schema(run_graph):
@@ -239,7 +241,7 @@ def test_old_checkpoint_without_trace_resumes():
     assert final["doc_type"] == "contract"
 
 
-def test_no_stage_rows_written_during_run(run_graph):
+def test_no_stage_rows_written_once_migrated(run_graph, migrated_audit_db):
     from storage.audit_log import get_audit_chain
 
     _, final = run_graph()
@@ -249,6 +251,47 @@ def test_no_stage_rows_written_during_run(run_graph):
     assert not hasattr(bg, "_emit_stage_audit")
     noted = [v["decision"].get("audit_event", {}).get("event") for v in final["audit_trace"]]
     assert [e for e in noted if e] == ["ingested", "classified", "extracted"]
+
+
+def test_unmigrated_database_keeps_its_stage_by_stage_trail(run_graph):
+    """#239 review: until the opt-in migration runs the unified row is parked, so the per-event
+    entries the pipeline always wrote must not vanish (no worse than before the unified audit)."""
+    from schemas.audit import verify_legacy_chain
+    from storage.audit_log import get_audit_chain
+
+    _, final = run_graph()
+    chain = asyncio.run(get_audit_chain(final["doc_id"]))
+    assert [e["event"] for e in chain] == ["ingested", "classified", "extracted", "archived"]
+    ingested = chain[0]["detail"]
+    assert ingested["file_sha256"] and ingested["size_bytes"]  # the A-7 substitution check survives
+    assert chain[1]["detail"]["doc_type"] == "contract"
+    assert chain[1]["actor"] == "sorter"
+    # The visit notes are still on the trace, the same as after migration.
+    noted = [v["decision"].get("audit_event", {}).get("event") for v in final["audit_trace"]]
+    assert [e for e in noted if e] == ["ingested", "classified", "extracted"]
+
+
+def test_legacy_stage_event_is_a_noop_once_migrated(temp_base_dir, migrated_audit_db):
+    from audit.legacy_events import emit_stage_event
+
+    assert emit_stage_event({"doc_id": "d-1", "matter_id": "M"}, "classified") is False
+
+
+def test_legacy_stage_event_needs_a_doc_and_a_known_event(temp_base_dir):
+    from audit.legacy_events import emit_stage_event
+
+    assert emit_stage_event({"matter_id": "M"}, "classified") is False
+    assert emit_stage_event({"doc_id": "d-1"}, "not_a_stage_event") is False
+
+
+def test_aborted_run_keeps_run_aborted_entry_while_unmigrated(temp_base_dir):
+    from storage.audit_log import get_audit_chain
+
+    out = bg._finalize_aborted({"doc_id": "d-abort", "matter_id": "M", "original_filename": "x.txt"}, "boom",
+                               failure_class="timeout")
+    assert out["run_aborted"] is True
+    events = [(e["event"], e["detail"].get("failure_class")) for e in asyncio.run(get_audit_chain("d-abort"))]
+    assert ("run_aborted", "timeout") in events
 
 
 def test_record_visit_outside_a_node_is_dropped():

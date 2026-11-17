@@ -435,14 +435,21 @@ async def test_complete_copy_in_a_readable_sink_stays_pending(sinks, db_down):
     assert (await commit_or_park(_row())).status == "pending"
 
 
-async def test_migration_pending_takes_fallback(sinks, db_down):
+async def test_migration_pending_takes_fallback(sinks, db_down, monkeypatch):
     from audit.models import AuditMigrationPending
     from audit.reconcile import reconcile
     from audit.writer import commit_or_park, get_row
 
+    import time
+
+    from audit import writer
+    # A migration that has not run is deterministic: one attempt, no backoff (#239 review).
+    monkeypatch.setattr(writer, "RETRY_DELAYS_S", (5.0, 5.0))
     db_down[0] = AuditMigrationPending("audit migration has not run")
+    started = time.monotonic()
     out = await commit_or_park(_row())
-    assert out.status == "pending" and db_down[1]["n"] == 3
+    assert out.status == "pending" and db_down[1]["n"] == 1
+    assert time.monotonic() - started < 2.0
     db_down[0] = None  # the migration ran
     assert (await reconcile()).recovered == 1
     assert (await get_row("d-1"))["detail"]["recovered_from"]["sink"] == "sql"
@@ -1219,3 +1226,227 @@ async def test_later_live_write_preserves_the_original_partial_gap(sinks, db_dow
     late.pending.update(held)
     assert (await reconcile()).gap_closed == 1
     assert _manifest().audit_written is True and _manifest().audit_pending_refs == []
+
+
+# ---------------------------------------------------------------- #239 review: write-path hardening
+
+
+def _load_cli():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "audit_reconcile_cli", Path(__file__).resolve().parents[1] / "scripts" / "audit_reconcile.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class _UnreadableSink(FakeSink):
+    recoverable = True
+
+    def fetch_pending(self):
+        raise OSError("disk I/O error")
+
+
+def _duplicate_attempt_row():
+    """A row whose two attempts share one ``attempt_id``: a deterministic primary-key clash."""
+    from audit.models import AttemptRow
+
+    row = _row()
+    row.attempts = [
+        AttemptRow(attempt_id="dup", stage="classification", attempt_no=1, trigger="initial", started_at=T0,
+                   ended_at=T0),
+        AttemptRow(attempt_id="dup", stage="extraction", attempt_no=1, trigger="initial", started_at=T0,
+                   ended_at=T0),
+    ]
+    return row
+
+
+async def test_a_duplicate_primary_key_is_not_retried(sinks, monkeypatch):
+    """#239 review: a duplicate sub-row key matched "unique", so it was retried 5 times and then failed anyway."""
+    from sqlalchemy.exc import IntegrityError
+
+    from audit import writer
+
+    builds = []
+    real = writer._build_sub_rows
+    monkeypatch.setattr(writer, "_build_sub_rows", lambda *a, **k: builds.append(1) or real(*a, **k))
+    with pytest.raises(IntegrityError):
+        await writer.write_terminal_row(_duplicate_attempt_row())
+    assert len(builds) == 1  # one attempt, not MAX_ATTEMPTS
+
+
+@pytest.mark.parametrize("message, retry", [
+    ("UNIQUE constraint failed: audit_log.seq", True),
+    ("UNIQUE constraint failed: audit_log.doc_id", True),
+    ("UNIQUE constraint failed: audit_addenda.doc_id, audit_addenda.seq", True),
+    ('duplicate key value violates unique constraint "ux_audit_log_seq"', True),
+    ('duplicate key value violates unique constraint "ix_audit_addenda_doc_seq"', True),
+    ("UNIQUE constraint failed: audit_attempts.attempt_id", False),
+    ("UNIQUE constraint failed: audit_log.entry_id", False),
+    ('duplicate key value violates unique constraint "audit_attempts_pkey"', False),
+    ("NOT NULL constraint failed: audit_log.event", False),
+])
+def test_only_chain_position_races_are_retryable(message, retry):
+    from sqlalchemy.exc import IntegrityError
+
+    from audit.writer import _is_retryable
+
+    assert _is_retryable(IntegrityError("INSERT", {}, Exception(message))) is retry
+
+
+async def test_a_deterministic_integrity_error_is_parked_without_retries(sinks, monkeypatch):
+    from audit import writer
+    from audit.writer import commit_or_park
+
+    monkeypatch.setattr(writer, "RETRY_DELAYS_S", (5.0, 5.0))
+    calls = []
+    real = writer.write_terminal_row
+    monkeypatch.setattr(writer, "write_terminal_row", lambda *a, **k: calls.append(1) or real(*a, **k))
+    import time
+
+    started = time.monotonic()
+    out = await commit_or_park(_duplicate_attempt_row())
+    assert out.status == "pending" and len(calls) == 1 and time.monotonic() - started < 2.0
+
+
+async def test_reconcile_quarantines_a_record_that_can_never_be_written(sinks, db_down, logs):
+    """#239 review: a deterministic failure used to fail every reconcile run forever."""
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park, get_row
+
+    await commit_or_park(_row("a-doc"))
+    await commit_or_park(_duplicate_attempt_row())  # d-1: parked after the first failed attempt
+    db_down[0] = None
+    first = await reconcile()
+    assert (first.recovered, first.failed, first.quarantined) == (1, 1, 1)
+    assert first.quarantine_held == 1
+    assert [d["action"] for d in first.docs if d["doc_id"] == "d-1"] == ["quarantined"]
+    assert await get_row("a-doc") is not None and await get_row("d-1") is None
+    assert "audit_reconcile_quarantined" in logs
+    # Kept, not deleted: the record and its error are in the spool's quarantine table.
+    import sqlite3
+
+    from audit.sinks.sql import spool_path
+
+    with sqlite3.connect(spool_path()) as conn:
+        [(doc_id, error)] = conn.execute("SELECT doc_id, error FROM quarantined_rows").fetchall()
+        assert conn.execute("SELECT COUNT(*) FROM pending_rows").fetchone()[0] == 0
+    assert doc_id == "d-1" and "IntegrityError" in error
+    # The next run is clean: it does not fail on the quarantined copy again, and still reports it.
+    again = await reconcile()
+    assert (again.failed, again.quarantined, again.quarantine_held) == (0, 0, 1)
+
+
+async def test_reconcile_keeps_a_transiently_failing_record_pending(sinks, db_down, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    from audit import writer
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park
+
+    await commit_or_park(_row())
+    db_down[0] = None
+
+    async def locked(row, **kw):
+        raise OperationalError("BEGIN IMMEDIATE", {}, Exception("database is locked"))
+
+    monkeypatch.setattr(writer, "write_terminal_row", locked)
+    report = await reconcile()
+    assert (report.failed, report.quarantined) == (1, 0)
+    assert len(sinks[0].fetch_pending()) == 1 and sinks[0].quarantined_count() == 0
+
+
+async def test_reconcile_reports_a_sink_it_could_not_read(sinks, db_down):
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park
+
+    await commit_or_park(_row())
+    db_down[0] = None
+    sinks.append(_UnreadableSink("flaky"))
+    report = await reconcile()
+    assert report.recovered == 1  # the readable sink is still reconciled
+    assert (report.sink_read_failed, report.sink_read_failed_names) == (1, ["flaky"])
+    assert report.as_dict()["sink_read_failed_names"] == ["flaky"]
+
+
+def test_cli_exits_nonzero_when_a_sink_cannot_be_read(sinks, db_down, capsys):
+    import json
+
+    sinks[:] = [_UnreadableSink("flaky")]
+    db_down[0] = None
+    mod = _load_cli()
+    capsys.readouterr()
+    assert mod.main(["--json"]) == 1  # was 0 with an all-zero report
+    printed = capsys.readouterr().out
+    out = json.loads(printed[printed.index('{\n  "recovered"'):])  # log lines may precede the report in-process
+    assert out["sink_read_failed"] == 1 and out["recovered"] == 0
+    assert mod.main([]) == 1
+    assert "could not read 1 sink" in capsys.readouterr().err
+
+
+def test_a_missing_spool_is_reported_but_is_not_an_error(sinks, db_down, capsys, tmp_path, monkeypatch):
+    import json
+
+    missing = tmp_path / "never-created" / "spool.db"
+    monkeypatch.setenv("MAILROOM_AUDIT_SPOOL_PATH", str(missing))
+    db_down[0] = None
+    mod = _load_cli()
+    capsys.readouterr()
+    assert mod.main(["--json"]) == 0  # nothing was ever parked: a clean run
+    out = json.loads(capsys.readouterr().out)
+    assert out["spool_missing"] == [str(missing)] and out["sink_read_failed"] == 0
+    assert not missing.exists()  # reading never creates it
+
+
+def test_cli_json_error_when_the_audit_migration_has_not_run(sinks, db_down, capsys, monkeypatch):
+    import json
+
+    from audit import reconcile as rec
+    from audit.models import AuditMigrationPending
+
+    async def pending(*, dry_run=False):
+        raise AuditMigrationPending("audit_meta has no migration record")
+
+    monkeypatch.setattr(rec, "reconcile", pending)
+    mod = _load_cli()
+    capsys.readouterr()
+    assert mod.main(["--json"]) == 1
+    out = json.loads(capsys.readouterr().out)  # stdout is JSON, not an empty string and a traceback
+    assert out["error"] == "audit_migration_pending" and "migration" in out["message"]
+    assert mod.main([]) == 1
+    assert "audit migration has not run" in capsys.readouterr().err
+
+
+async def test_resumed_counts_only_copies_actually_written(sinks, db_down, monkeypatch):
+    """#239 review: ``resumed`` was counted before the write, which dedupes a copy a racing run recorded."""
+    from audit import reconcile as rec
+    from audit.reconcile import reconcile
+    from audit.writer import commit_or_park, get_row, write_terminal_row
+
+    db_down[0] = None
+    await write_terminal_row(_row())  # d-1 already has its row
+    second = _row()
+    second.detail["trace"][0]["visit_id"] = "v-second"
+    db_down[0] = RuntimeError("database is locked")
+    await commit_or_park(second)  # a later terminal write that parked
+    db_down[0] = None
+    [parked] = sinks[0].fetch_pending()
+    record = {**parked, "_sink": "sql"}
+
+    # ``write_addendum`` returns the existing addendum for a copy it already recorded.
+    assert await rec._write_repeat("d-1", record, known=set()) is True
+    known = {a["addendum_id"] for a in (await get_row("d-1"))["addenda"]}
+    assert await rec._write_repeat("d-1", record, known=known) is False
+
+    # In a run: a racing reconcile wrote the copy between the row read and our write.
+    real = rec._write_repeat
+
+    async def late(doc_id, rec_, known=None):
+        return await real(doc_id, rec_, {a["addendum_id"] for a in (await get_row(doc_id))["addenda"]})
+
+    monkeypatch.setattr(rec, "_write_repeat", late)
+    monkeypatch.setattr(rec, "_fresh", lambda unique, present: list(unique))  # the stale view still shows it fresh
+    report = await reconcile()
+    assert report.resumed == 0 and report.skipped_existing == 1
+    assert len((await get_row("d-1"))["addenda"]) == 1

@@ -5,6 +5,7 @@ Spans are exported only if a ``TracerProvider`` is installed in the process (the
 setup in ``observability.phoenix_setup`` installs the shared one). Setting
 ``OTEL_EXPORTER_OTLP_ENDPOINT`` alone configures nothing: without a provider the tracer is a
 no-op, its spans do not record, and this sink returns ``None`` instead of a reference.
+Prompt and completion text reaches it only with ``audit.full_trace`` on.
 """
 
 from __future__ import annotations
