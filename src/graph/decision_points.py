@@ -432,9 +432,29 @@ def normalize_outcome(raw: Any) -> DecisionOutcome:
         return _failure("invalid", "malformed_answer", detail=_safe_detail(exc))
 
 
+#: Every message ``DecisionOutcome`` validation raises (pinned by a test). A backend can
+#: import and raise ``OutcomeValidationError`` itself, so the class alone is not proof the
+#: text is ours: only these exact messages are echoed.
+_VALIDATION_MESSAGES = frozenset({
+    "causes must be a sequence of tokens",
+    "causes must be at most 8 tokens of [A-Za-z0-9_.:-], 1 to 64 characters",
+    "confidence must be a finite number from 0 to 1 or None",
+    "evidence is larger than 8 KB",
+    "evidence must be JSON-serialisable",
+    "evidence must be a mapping with string keys",
+    "label must be a string of at most 200 characters or None",
+    "model must be a string of at most 200 characters",
+    "route_hint must be a destination name or None",
+    "status must be ok, unavailable or invalid",
+})
+
+
 def _safe_detail(exc: BaseException) -> str:
     """Our own validation message, or the exception class: never a backend-supplied value."""
-    return str(exc)[:120] if type(exc) is OutcomeValidationError else type(exc).__name__
+    args = exc.args if type(exc) is OutcomeValidationError else ()
+    if len(args) == 1 and type(args[0]) is str and args[0] in _VALIDATION_MESSAGES:
+        return args[0]
+    return type(exc).__name__
 
 
 # ---------------------------------------------------------------------------

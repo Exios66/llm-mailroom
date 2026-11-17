@@ -179,6 +179,22 @@ class TestOutcome:
         with pytest.raises(ValueError):  # still a ValueError for existing callers
             dp.DecisionOutcome(confidence=7)
 
+    def test_a_backend_raising_our_validation_error_is_still_recorded_by_class_only(self):
+        class Lazy(dict):
+            def __getitem__(self, key):
+                raise dp.OutcomeValidationError("Acme owes Beta 1,000,000")
+
+        got = dp.normalize_outcome(Lazy(label="x"))
+        assert got.evidence["detail"] == "OutcomeValidationError"
+        assert "Acme" not in json.dumps(got.to_dict())
+
+    def test_every_validation_message_is_known(self):
+        import inspect
+        import re
+
+        raised = set(re.findall(r'raise OutcomeValidationError\("([^"]*)"\)', inspect.getsource(dp)))
+        assert raised and raised == set(dp._VALIDATION_MESSAGES)
+
     def test_invalid_detail_never_echoes_backend_values(self):
         got = dp.normalize_outcome({"label": "SECRET-" + "x" * 300})
         assert "SECRET" not in json.dumps(got.to_dict())
