@@ -20,7 +20,7 @@ from langchain_agents.doc_inventories import (
     CORRESPONDENCE_GT_KEYS,
     INSURANCE_GT_KEYS,
     coerce_gt_value,
-    normalize_claim_type,
+    normalize_claim_line,
     normalize_communication_type,
     normalize_record_type,
 )
@@ -163,7 +163,7 @@ def catalog_expected_fields(sample: dict) -> dict[str, Any]:
                 _put(expected_fields, key, val)
     if hf_class == "insurance_claim":
         claim = sample.get("claim_type") or subclass
-        token = normalize_claim_type(claim)
+        token = normalize_claim_line(claim)  # product line: a CMS table row is health (#174 §2)
         if token or claim:
             expected_fields["claim_type"] = token or claim
         for key in INSURANCE_GT_KEYS:
