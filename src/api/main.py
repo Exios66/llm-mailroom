@@ -173,19 +173,20 @@ def _upload_provider_problem() -> str | None:
     Only active when ``MAILROOM_UPLOAD_REQUIRE_PROVIDER`` is truthy. It resolves the
     sorter's provider and model the same way the pipeline does (no network call, no
     tokens), so a missing or placeholder API key is caught before a document is queued.
+    The free-only spend guardrail (``MAILROOM_LLM_FREE_ONLY``) is checked too, since a
+    model it blocks would park the document the same way. Only ``/upload`` (and its
+    ``/v1`` alias) is gated: Gmail intake and files dropped into the inbox are not.
     The answer is the exception's type name only: the exception text can carry
     configuration detail and is logged, never returned to the client.
     """
-    import os
-
     flag = os.environ.get("MAILROOM_UPLOAD_REQUIRE_PROVIDER", "").strip().lower()
     if flag not in ("1", "true", "yes", "on"):
         return None
     try:
-        from llm.client import resolve_agent_model
+        from llm.client import check_spend_guardrail, resolve_agent_model
 
-        resolve_agent_model("sorter")
-    except Exception as exc:  # noqa: BLE001 - any resolution failure means no usable model
+        check_spend_guardrail("sorter", resolve_agent_model("sorter"))
+    except Exception as exc:  # any resolution failure means no usable model
         logger.warning("upload_refused_no_provider", error_type=type(exc).__name__)
         return type(exc).__name__
     return None
