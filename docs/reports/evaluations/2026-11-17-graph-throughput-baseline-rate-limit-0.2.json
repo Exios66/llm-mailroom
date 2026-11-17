@@ -1,0 +1,174 @@
+{
+  "schema_version": 1,
+  "kind": "graph-throughput-benchmark",
+  "mock_llm": true,
+  "generated_at_utc": "2026-11-17T06:45:02Z",
+  "command": "PYTHONPATH=src python src/scripts/bench_throughput.py --levels 4 --docs 48 --rate-limit-rate 0.2 --json-out docs/reports/evaluations/2026-11-17-graph-throughput-baseline-rate-limit-0.2.json --md-out /tmp/claude-0/-home-user/48bcee69-80ad-5e44-98da-6040244d9a8c/scratchpad/rl.md",
+  "commit": "e00ac25f84ffaf27ea6d3c867b39cf82709069f3",
+  "tree_clean": false,
+  "machine": {
+    "platform": "Linux-6.18.44-fc-v553-x86_64-with-glibc2.39",
+    "python": "3.13.18",
+    "cpu_count": 4,
+    "memory_gb": 15.7,
+    "load_average_at_start": [
+      2.49,
+      1.86,
+      1.17
+    ]
+  },
+  "config": {
+    "docs": 48,
+    "latency_ms": 200.0,
+    "rate_limit_rate": 0.2,
+    "retry_base_delay_ms": 50.0,
+    "seed": 7,
+    "clean": false,
+    "long_docs": null,
+    "warmup_docs": 1,
+    "levels": [
+      4
+    ]
+  },
+  "levels": [
+    {
+      "concurrency": 4,
+      "effective_concurrency": 4,
+      "docs": 48,
+      "completed": 48,
+      "failed": 0,
+      "stages": {
+        "archived": 43,
+        "review": 5
+      },
+      "wall_s": 13.42500767599995,
+      "docs_per_min": 214.52501700603204,
+      "latency_s": {
+        "n": 48,
+        "mean": 1.0828394374166426,
+        "p50": 0.9045613494998861,
+        "p95": 1.3582179977999658,
+        "max": 6.198076923000144
+      },
+      "overhead_s": {
+        "n": 48,
+        "mean": 0.5828394374166426,
+        "p50": 0.5045613494998861,
+        "p95": 0.9582179977999657,
+        "max": 1.0303057719998834
+      },
+      "nodes": {
+        "archive": {
+          "invocations": 43,
+          "p50_s": 0.1163185739999335,
+          "p95_s": 0.2536231768001471,
+          "mean_s": 0.13560150267442114,
+          "mean_llm_s": 0.0,
+          "mean_heartbeat_s": 0.018094132441853806,
+          "mean_overhead_s": 0.13560150267442114,
+          "llm_calls": 0
+        },
+        "catalog_write": {
+          "invocations": 43,
+          "p50_s": 0.07066211500000463,
+          "p95_s": 0.11691308579988799,
+          "mean_s": 0.07042037493025144,
+          "mean_llm_s": 0.0,
+          "mean_heartbeat_s": 0.018221438046503165,
+          "mean_overhead_s": 0.07042037493025144,
+          "llm_calls": 0
+        },
+        "classify": {
+          "invocations": 48,
+          "p50_s": 0.27837780400000156,
+          "p95_s": 0.4328926695000973,
+          "mean_s": 0.3802970978541727,
+          "mean_llm_s": 0.2916666666666667,
+          "mean_heartbeat_s": 0.020953627416659515,
+          "mean_overhead_s": 0.08863043118750602,
+          "llm_calls": 80
+        },
+        "compile_report": {
+          "invocations": 43,
+          "p50_s": 0.015134460999888688,
+          "p95_s": 0.03947538089998942,
+          "mean_s": 0.018491085953486575,
+          "mean_llm_s": 0.0,
+          "mean_heartbeat_s": 0.01813925369767043,
+          "mean_overhead_s": 0.018491085953486575,
+          "llm_calls": 0
+        },
+        "extract": {
+          "invocations": 43,
+          "p50_s": 0.292937811999991,
+          "p95_s": 0.38277069249995743,
+          "mean_s": 0.3058824098139656,
+          "mean_llm_s": 0.20930232558139536,
+          "mean_heartbeat_s": 0.016617329139535286,
+          "mean_overhead_s": 0.09658008423257024,
+          "llm_calls": 56
+        },
+        "human_review": {
+          "invocations": 5,
+          "p50_s": 0.09456502700004421,
+          "p95_s": 0.12475496159991052,
+          "mean_s": 0.08916433579993281,
+          "mean_llm_s": 0.0,
+          "mean_heartbeat_s": 0.017108111000015924,
+          "mean_overhead_s": 0.08916433579993281,
+          "llm_calls": 0
+        },
+        "intake": {
+          "invocations": 48,
+          "p50_s": 0.14399586649994944,
+          "p95_s": 0.24161953975000186,
+          "mean_s": 0.14581116531248028,
+          "mean_llm_s": 0.0,
+          "mean_heartbeat_s": 0.000275720833305589,
+          "mean_overhead_s": 0.14581116531248028,
+          "llm_calls": 0
+        },
+        "retry_classify": {
+          "invocations": 5,
+          "p50_s": 0.2282336750001832,
+          "p95_s": 0.4134783544000583,
+          "mean_s": 0.2699400056000286,
+          "mean_llm_s": 0.2,
+          "mean_heartbeat_s": 0.01902591180005402,
+          "mean_overhead_s": 0.06994000560002858,
+          "llm_calls": 7
+        }
+      },
+      "counters": {
+        "llm_calls": 143,
+        "rate_limited": 23,
+        "openai_client_constructions": 26,
+        "langchain_client_constructions": 70,
+        "heartbeat_calls": 278,
+        "run_coro_calls": 930,
+        "asyncio_run_calls": 973,
+        "db_engines_created": 973,
+        "db_connections_opened": 1491
+      },
+      "seconds": {
+        "heartbeat_total_s": 4.25578142299787,
+        "openai_client_construct_total_s": 0.3089106039997205,
+        "langchain_client_construct_total_s": 0.02607607799905054,
+        "llm_latency_total_s": 23.999999999999947
+      },
+      "per_doc": {
+        "llm_calls_mean": 2.9791666666666665,
+        "client_constructions_mean": 2.0,
+        "heartbeats_mean": 5.791666666666667,
+        "db_connections_mean": 31.0625
+      },
+      "errors": {},
+      "long_docs": 1,
+      "cpu": {
+        "user_s": 8.431356000000001,
+        "system_s": 3.8649430000000002,
+        "cores_busy": 0.9159249139188386
+      }
+    }
+  ]
+}
