@@ -19,7 +19,7 @@ flowchart TD
         ML["mailroom-ml<br/>ModernBERT fast-path classifier"]
     end
 
-    PIPE["llm-mailroom<br/>13-node LangGraph pipeline + FastAPI"]
+    PIPE["llm-mailroom<br/>14-node LangGraph pipeline + FastAPI"]
     LF[("Langfuse<br/>traces, prompts, scores")]
 
     subgraph SURF["Surfaces"]

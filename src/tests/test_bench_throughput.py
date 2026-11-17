@@ -135,6 +135,131 @@ def test_parser_defaults_and_validation():
             bench.build_parser().parse_args(bad)
 
 
+@pytest.mark.parametrize("flag", ["--latency-ms", "--retry-base-delay-ms"])
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf", "-1", "-0.5", "x"])
+def test_parser_rejects_non_finite_or_negative_delays(flag, bad, capsys):
+    with pytest.raises(SystemExit) as exc:
+        bench.build_parser().parse_args([flag, bad])
+    assert exc.value.code == 2
+    assert flag in capsys.readouterr().err
+
+
+def test_parser_accepts_zero_and_fractional_delays():
+    args = bench.build_parser().parse_args(["--latency-ms", "0", "--retry-base-delay-ms", "0.5"])
+    assert args.latency_ms == 0.0 and args.retry_base_delay_ms == 0.5
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "0", "-1", "x"])
+def test_parser_requires_finite_positive_timeout(bad, capsys):
+    with pytest.raises(SystemExit) as exc:
+        bench.build_parser().parse_args(["--timeout", bad])
+    assert exc.value.code == 2
+    assert "--timeout" in capsys.readouterr().err
+    assert bench.build_parser().parse_args(["--timeout", "0.5"]).timeout == 0.5
+
+
+def test_main_rejects_bad_latency_before_starting_any_worker(monkeypatch):
+    started = []
+    monkeypatch.setattr(bench, "run_level", lambda cfg, args: started.append(cfg))
+    with pytest.raises(SystemExit) as exc:
+        bench.main(["--latency-ms", "nan", "--docs", "1"])
+    assert exc.value.code == 2 and started == []
+
+
+# -- documents that fail without raising ----------------------------------------
+
+
+class _FakeBins:
+    def __init__(self, tmp):
+        self._inbox = tmp
+
+    def inbox_dir(self):
+        return self._inbox
+
+    def claim_file(self, path, worker):
+        return path
+
+
+def test_run_documents_records_error_text_of_returned_failures(tmp_path):
+    def fake_run_pipeline(path, matter):
+        if path.name == "a.txt":
+            return {"stage": "failed", "error_message": "run aborted [timeout]: " + "x" * 500}
+        if path.name == "b.txt":
+            return {"stage": "failed"}  # no message: nothing to record
+        if path.name == "c.txt":
+            raise RuntimeError("boom")
+        return {"stage": "archived", "error_message": "ignored on success"}
+
+    corpus = [(n, "text", {}) for n in ("a.txt", "b.txt", "c.txt", "d.txt")]
+    records, _wall = bench._run_documents(_FakeBins(tmp_path), corpus, 1, fake_run_pipeline, bench.Recorder())
+    by_id = {r["id"]: r for r in records}
+    assert by_id["a.txt"]["stage"] == "failed"
+    assert by_id["a.txt"]["error"].startswith("run aborted [timeout]: ")
+    assert len(by_id["a.txt"]["error"]) <= 130  # truncated, not the whole message
+    assert by_id["b.txt"]["error"] is None
+    assert by_id["c.txt"]["error"] == "RuntimeError: boom"
+    assert by_id["d.txt"]["error"] is None
+    rep = bench.build_level_report(1, records, 1.0, {})
+    assert rep["failed"] == 3 and len(rep["errors"]) == 2  # a, b, c fail; only a and c carry text
+
+
+# -- provenance ------------------------------------------------------------------
+
+
+def test_provenance_changed_compares_commit_and_cleanliness():
+    before = {"commit": "abc", "tree_clean": True}
+    assert bench.provenance_changed(before, {"commit": "abc", "tree_clean": True}) is False
+    assert bench.provenance_changed(before, {"commit": "def", "tree_clean": True}) is True
+    assert bench.provenance_changed(before, {"commit": "abc", "tree_clean": False}) is True
+
+
+def _fake_main_env(monkeypatch, snapshots):
+    """Make main() run no workers; ``snapshots`` feeds successive git observations."""
+    calls = []
+    monkeypatch.setattr(bench, "run_level", lambda cfg, args: calls.append("level") or {
+        **bench.build_level_report(cfg["concurrency"], [_doc("archived", 1.0)], 1.0, {}), "long_docs": 0, "cpu": None,
+    })
+    seq = iter(snapshots)
+
+    def fake_git_state():
+        calls.append("git")
+        return next(seq)
+
+    monkeypatch.setattr(bench, "git_state", fake_git_state)
+    monkeypatch.setattr(bench, "machine_notes", lambda: calls.append("machine") or {"load_average_at_start": [0.1, 0.1, 0.1]})
+    return calls
+
+
+def test_main_captures_provenance_before_levels_and_flags_a_change(monkeypatch, tmp_path):
+    calls = _fake_main_env(
+        monkeypatch,
+        [{"commit": "aaa", "tree_clean": True}, {"commit": "bbb", "tree_clean": False}],
+    )
+    out = tmp_path / "r.json"
+    assert bench.main(["--levels", "1,2", "--docs", "1", "--json-out", str(out)]) == 0
+    assert calls == ["git", "machine", "level", "level", "git"]  # provenance first, re-check last
+    report = json.loads(out.read_text())
+    assert report["commit"] == "aaa" and report["tree_clean"] is True  # as measured at the start
+    assert report["provenance_changed"] is True
+    assert report["provenance_after"] == {"commit": "bbb", "tree_clean": False}
+
+
+def test_main_marks_unchanged_provenance(monkeypatch, tmp_path, capsys):
+    snap = {"commit": "aaa", "tree_clean": True}
+    _fake_main_env(monkeypatch, [snap, dict(snap)])
+    out = tmp_path / "r.json"
+    assert bench.main(["--levels", "1", "--docs", "1", "--json-out", str(out)]) == 0
+    report = json.loads(out.read_text())
+    assert report["provenance_changed"] is False and "provenance_after" not in report
+    assert "provenance changed" not in capsys.readouterr().out.lower()
+
+
+def test_markdown_warns_when_provenance_changed(monkeypatch, tmp_path, capsys):
+    _fake_main_env(monkeypatch, [{"commit": "a", "tree_clean": True}, {"commit": "b", "tree_clean": True}])
+    bench.main(["--levels", "1", "--docs", "1"])
+    assert "provenance changed" in capsys.readouterr().out.lower()
+
+
 # -- fake-LLM layer -----------------------------------------------------------
 
 
