@@ -266,7 +266,7 @@ Pluggable decision points (`graph/decision_points.py`). Empty by default (`decis
 | `max_overrides` | `1` | Redirects to a non-park destination per document for this slot. Parks are exempt. The active slots that can redirect may total at most 8. |
 | `by_class` | `{}` | Per-class overrides of `enabled`, `allow` and `min_confidence`. |
 
-A hint to `human_review` is followed only when the outcome names at least one cause, and those causes reach the reviewer as `decision_point:<slot>:<cause>`. A malformed section, or an import spec that does not import, stops the watcher and the API at startup (`DecisionPointConfigError`). Edits need a watcher or API restart, because the configuration is cached. See the commented example in `taxonomy.yaml`.
+A hint to `human_review` is followed only when the outcome names at least one cause, and those causes reach the reviewer as `decision_point:<slot>:<cause>`. A malformed section, or an import spec that does not import on an active slot (one that is enabled slot-wide or for some class), stops the watcher and the API at startup (`DecisionPointConfigError`). Edits need a watcher or API restart, because the configuration is cached. See the commented example in `taxonomy.yaml`.
 
 ### `chunking.merge`
 
