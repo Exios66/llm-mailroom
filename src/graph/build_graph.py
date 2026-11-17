@@ -134,8 +134,10 @@ def reset_compiled_graph():
     global _compiled_graph
     with _compiled_graph_lock:
         _compiled_graph = None
-    # Decision-point routing rules belong to the graph that installed them.
-    decision_points.clear_rules()
+        # Decision-point routing rules belong to the graph that installed them; cleared under
+        # the same lock, so a concurrent get_compiled_graph() cannot install a new graph's
+        # rules between the drop and the clear and lose them.
+        decision_points.clear_rules()
 
 
 def _ensure_dirs():

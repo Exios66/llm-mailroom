@@ -342,7 +342,7 @@ reviewer:
 #       node: extract              # a conditional-route node of graph/route_spec.py
 #                                  # (not human_review: a person's decision is final)
 #       backend: my_fee_checker    # registered name, or an import spec `module.path:callable`
-#                                  # (imported at graph build; an import error stops startup)
+#                                  # (imported at startup; an import error stops the process)
 #       enabled: true              # default true; false keeps the slot declared but off
 #       timeout_seconds: 30        # default run_limits.llm_call_timeout_seconds; always
 #                                  # capped by the time left on the run deadline
@@ -361,7 +361,8 @@ reviewer:
 #         correspondence: {enabled: false}
 # A hint to human_review is only followed when the outcome names at least one cause; the
 # causes reach the reviewer as `decision_point:<slot>:<cause>`. Edits need a watcher/API
-# restart (config is cached); a malformed section fails at graph build.
+# restart (config is cached); a malformed section (or an import spec that does not import)
+# stops the watcher and the API at startup, and build_graph() checks it again.
 decision_points: {}
 
 review_queue:

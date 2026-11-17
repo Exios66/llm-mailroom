@@ -36,8 +36,9 @@ Rule semantics (the contract a decision model plugs into):
 * A rule refines the router's proposal, it does not own the route. The router's
   self-loops (transient retry of ``classify`` / ``extract`` and the like) and its
   parks (``human_review``) carry the pipeline's safety budgets; a rule that
-  overrides one of them is responsible for not bypassing those budgets (Phase 2
-  adds per-slot policy for what a rule may override).
+  overrides one of them is responsible for not bypassing those budgets
+  (``graph.decision_points`` is the per-slot policy that does: its rules never override
+  a park or a self-loop and spend a per-document ``max_overrides`` budget).
 * A rule never gets to break routing. An answer that is not a key of the spec's
   ``destinations`` is not followed (logged as ``route_rule_unknown_destination``),
   and a rule that raises is ignored (logged as ``route_rule_failed``); in both
@@ -342,6 +343,35 @@ def add_route_rule(node: str, rule: RouteRule, *, position: "int | Literal['firs
         else:
             raise ValueError(f"position must be 'first', 'last' or an int, got {position!r}")
         _RULES = MappingProxyType({**_RULES, node: tuple(current)})
+
+
+def replace_route_rules(name_prefix: str, rules: Iterable[tuple[str, RouteRule]]) -> None:
+    """Atomically swap every rule whose name starts with ``name_prefix`` for ``rules``.
+
+    ``rules`` are ``(node, rule)`` pairs, appended after the rules that stay. One lock
+    acquisition and one registry swap: a concurrent route decision sees either the old
+    set or the new one, never a half-installed one. Used by ``graph.decision_points`` to
+    (re)install its ``decision_point:*`` rules. Validates like :func:`add_route_rule`
+    (known node, synchronous rule, unique name per node) before changing anything.
+    """
+    global _RULES
+    new = list(rules)
+    for node, rule in new:
+        _check_node(node)
+        if inspect.iscoroutinefunction(rule.decide) or inspect.iscoroutinefunction(
+            getattr(rule.decide, "__call__", None)
+        ):
+            raise TypeError(f"route rule {rule.name!r} must be synchronous; async rules are not supported")
+    with _LOCK:
+        updated: dict[str, list[RouteRule]] = {
+            node: [r for r in current if not r.name.startswith(name_prefix)] for node, current in _RULES.items()
+        }
+        for node, rule in new:
+            bucket = updated.setdefault(node, [])
+            if any(r.name == rule.name for r in bucket):
+                raise ValueError(f"a rule named {rule.name!r} is already registered for {node!r}")
+            bucket.append(rule)
+        _RULES = MappingProxyType({node: tuple(rs) for node, rs in updated.items() if rs})
 
 
 def remove_route_rule(node: str, name: str) -> bool:
