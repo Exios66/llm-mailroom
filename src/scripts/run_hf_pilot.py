@@ -803,8 +803,10 @@ def enrich_sample_row(row: dict) -> dict:
 
 def _interim_gt_line(interim: object) -> str:
     """The gold's identity for the Markdown report, from the saved report value (not the env)."""
-    if not isinstance(interim, dict) or not interim:
+    if not interim:
         return "- gold = **Hub-only** (no interim GT overlay)"
+    if not isinstance(interim, dict):
+        return f"- gold = **unknown**: the saved `interim_gt` record is malformed ({type(interim).__name__})"
     sha = interim.get("overlay_sha256") or "unknown"
     docs = interim.get("documents")
     detail = f"  documents = {docs}" if docs is not None else ""
