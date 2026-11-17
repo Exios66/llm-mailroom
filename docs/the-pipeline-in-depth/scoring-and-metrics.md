@@ -379,6 +379,8 @@ From `emit_pipeline_scores` and `compute_run_metrics` in [`observability/scores.
 | Offline judges | `classification_quality`, `classification_correct`, `extraction_correctness`, `extraction_correctness_label` |
 | LegalBench | `legalbench_accuracy`, `legalbench_macro_f1`, `legalbench_calibration_error`, `legalbench_n_questions`, `legalbench_task` |
 
+One LegalBench score name can be filled by different metrics, so the score carries which one (#257). `legalbench_macro_f1` is `macro_f1` for multi-class tasks, `macro_category_accuracy` for category tasks and `yes_f1` for binary tasks (first present wins); the score's `comment` is `metric=<name>` and its metadata `{"metric": "<name>"}`. Do not average the score across tasks without grouping by that metadata. `legalbench_n_questions` likewise records `count=n_questions` or `count=n_documents`.
+
 At import, every name in `SCORE_CONFIGS` is checked against the llm-dojo-scoring metric registry; an unregistered name stops the import.
 
 ### Where to view them

@@ -360,6 +360,61 @@ class TestLangfuseTracingAttach:
         assert ("legalbench_macro_f1", 0.0) in emitted
 
     @staticmethod
+    def _emit(monkeypatch, scores):
+        from legalbench import langfuse_tracing as lt
+
+        emitted = []
+        monkeypatch.setattr(lt.tracing, "is_enabled", lambda: True)
+        monkeypatch.setattr(
+            lt, "score_trace", lambda name, value, **kw: emitted.append((name, value, kw))
+        )
+        lt.attach_run_scores(scores, "task")
+        return {name: (value, kw) for name, value, kw in emitted}
+
+    @pytest.mark.parametrize(
+        "scores, metric, value",
+        [
+            ({"macro_f1": 0.8, "yes_f1": 0.1}, "macro_f1", 0.8),
+            ({"macro_category_accuracy": 0.6, "yes_f1": 0.1}, "macro_category_accuracy", 0.6),
+            ({"yes_f1": 0.0}, "yes_f1", 0.0),
+        ],
+        ids=["multiclass", "category", "binary"],
+    )
+    def test_macro_score_says_which_metric_filled_it(self, monkeypatch, scores, metric, value):
+        """#257: one score name, but the metric behind it travels with the score."""
+        got, kw = self._emit(monkeypatch, scores)["legalbench_macro_f1"]
+        assert got == value
+        assert kw["metadata"] == {"metric": metric}
+        assert kw["comment"] == f"metric={metric}"
+
+    @pytest.mark.parametrize(
+        "scores, source",
+        [({"n_questions": 40}, "n_questions"), ({"n_documents": 12}, "n_documents")],
+    )
+    def test_count_score_says_questions_or_documents(self, monkeypatch, scores, source):
+        got, kw = self._emit(monkeypatch, scores)["legalbench_n_questions"]
+        assert got == float(next(iter(scores.values())))
+        assert kw["metadata"] == {"count": source}
+
+    def test_no_macro_metric_emits_no_macro_score(self, monkeypatch):
+        assert "legalbench_macro_f1" not in self._emit(monkeypatch, {"accuracy": 0.5})
+
+    def test_score_trace_passes_metadata_only_when_given(self, monkeypatch):
+        from observability import scores as sc
+
+        calls = []
+
+        class Client:
+            def score_current_trace(self, **kw):
+                calls.append(kw)
+
+        monkeypatch.setattr(sc, "_client", lambda: Client())
+        sc.score_trace("legalbench_macro_f1", 0.5, metadata={"metric": "yes_f1"})
+        sc.score_trace("legalbench_macro_f1", 0.5)
+        assert calls[0]["metadata"] == {"metric": "yes_f1"}
+        assert "metadata" not in calls[1]
+
+    @staticmethod
     def _run_with_agent(monkeypatch, agent):
         """Row 1 reaches the agent (111 tokens); row 2 has no ``question`` and
         raises before any agent call."""

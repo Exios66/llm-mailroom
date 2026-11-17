@@ -26,6 +26,14 @@ SCORE_NAMES = (
 )
 
 
+#: The metrics that can fill ``legalbench_macro_f1``, in precedence order (#257): ``macro_f1``
+#: (multi-class tasks), ``macro_category_accuracy`` (category tasks), ``yes_f1`` (binary tasks).
+#: The score keeps one name; its comment and metadata say which metric filled it.
+MACRO_SOURCES = ("macro_f1", "macro_category_accuracy", "yes_f1")
+#: ``legalbench_n_questions`` counts questions, or documents for document-level tasks.
+COUNT_SOURCES = ("n_questions", "n_documents")
+
+
 def _environment() -> str:
     return os.environ.get("OBSERVABILITY_ENVIRONMENT", "misc")
 
@@ -95,13 +103,30 @@ def attach_run_scores(scores: dict[str, Any], task_id: str) -> None:
     value = scores.get("accuracy")
     if isinstance(value, (int, float)):
         score_trace("legalbench_accuracy", float(value), data_type="NUMERIC")
-    # A legit 0.0 must not fall through the fallback chain (#197).
-    value = scores.get("macro_f1", scores.get("macro_category_accuracy", scores.get("yes_f1")))
-    if isinstance(value, (int, float)):
-        score_trace("legalbench_macro_f1", float(value), data_type="NUMERIC")
+    # ``legalbench_macro_f1`` is filled by whichever metric the task shape reports (#257), so
+    # the score says which one. A legit 0.0 must not fall through the chain (#197).
+    for source in MACRO_SOURCES:
+        value = scores.get(source)
+        if isinstance(value, (int, float)):
+            score_trace(
+                "legalbench_macro_f1",
+                float(value),
+                data_type="NUMERIC",
+                comment=f"metric={source}",
+                metadata={"metric": source},
+            )
+            break
     value = scores.get("calibration_error")
     if isinstance(value, (int, float)):
         score_trace("legalbench_calibration_error", float(value), data_type="NUMERIC")
-    value = scores.get("n_questions", scores.get("n_documents"))
-    if isinstance(value, (int, float)):
-        score_trace("legalbench_n_questions", float(value), data_type="NUMERIC")
+    for source in COUNT_SOURCES:
+        value = scores.get(source)
+        if isinstance(value, (int, float)):
+            score_trace(
+                "legalbench_n_questions",
+                float(value),
+                data_type="NUMERIC",
+                comment=f"count={source}",
+                metadata={"count": source},
+            )
+            break

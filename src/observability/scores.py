@@ -327,13 +327,16 @@ def score_trace(
     comment: str | None = None,
     config_id: str | None = None,
     score_id: str | None = None,
+    metadata: dict | None = None,
 ) -> None:
     """Attach a score to the currently active trace (inside a pipeline_trace
-    block). No-ops when tracing is disabled."""
+    block). No-ops when tracing is disabled. ``metadata`` rides on the score
+    (Langfuse score metadata); omitted when None, so older SDKs are unaffected."""
     client = _client()
     if client is None:
         return
     try:
+        extra = {"metadata": metadata} if metadata else {}
         client.score_current_trace(
             name=name,
             value=value,
@@ -341,6 +344,7 @@ def score_trace(
             comment=comment,
             config_id=config_id or _config_ids.get(langfuse_score_name(name)),
             score_id=score_id,
+            **extra,
         )
         logger.debug("score_attached", name=name, value=value)
     except Exception:
