@@ -40,14 +40,17 @@ How the pieces fit (``build_graph()`` calls :func:`prepare_slots`, :func:`wrap_n
   Past the budget the outcome is stored ``capped`` and the rule keeps the router's
   proposal (logged as ``decision_point_override_capped``), so a cycle of hints across slots
   (``arbiter`` to ``retry_extract`` to ``judge_verify`` to ``arbiter``) ends whatever the
-  topology. The budgets of all active slots may add up to ``MAX_TOTAL_OVERRIDES`` (8), which
-  is the global cap on redirects per document; config validation enforces it. Parks are
+  topology. The budgets of the active slots that can redirect (``SlotPolicy.can_redirect``) may add
+  up to ``MAX_TOTAL_OVERRIDES`` (8), the global cap on redirects per document; config
+  validation enforces it. With several slots on one node the rules run in config order and
+  the first answer wins, so only the slot that actually answers is charged. Parks are
   exempt (they need a person and ``fail_safe`` must keep parking).
 * **Backends.** ``backend:`` is a registered name or an import spec ``module.path:callable``.
-  ``build_graph()`` (``prepare_slots``) imports a spec once per build and registers it under
-  that string; an import or attribute error is a ``DecisionPointConfigError``. A bare name
-  that is not registered yet only logs ``decision_point_backend_unregistered`` (slot, backend,
-  ``on_failure``): registering lazily, after the build, stays allowed.
+  ``prepare_slots`` (called at startup by ``Watcher.start()`` and the API lifespan, and by
+  ``build_graph()``) imports a spec and registers it under that string; an import or
+  attribute error, or an async callable, is a ``DecisionPointConfigError``. A bare name that
+  is not registered yet only logs ``decision_point_backend_unregistered`` (slot, backend,
+  ``on_failure``; once per slot per process): registering lazily stays allowed.
 * **Limits of this phase.** The abandoned-thread cap (``_MAX_ABANDONED_DECISION_POINT_THREADS``)
   is one list shared by every slot, so a stalled backend can make other slots' calls refuse
   (``unavailable``). A consultation runs inside the node's ``_bounded`` wrapper, after the
@@ -71,7 +74,9 @@ exception class name.
 from __future__ import annotations
 
 import contextvars
+import copy
 import functools
+import inspect
 import json
 import math
 import re
@@ -88,9 +93,7 @@ from graph.route_spec import (
     ROUTE_SPECS,
     RouteRule,
     RouteSpec,
-    add_route_rule,
-    remove_route_rule,
-    route_rules,
+    replace_route_rules,
 )
 from observability.tracing import observation
 from pipeline.config import (
@@ -231,15 +234,26 @@ def _unit_float(value: Any) -> bool:
     return 0.0 <= value <= 1.0 and math.isfinite(value)  # bounds first: isfinite raises on huge ints
 
 
+def _isolated(mapping: Mapping[str, Any]) -> dict[str, Any]:
+    """A deep copy of ``mapping``, key by key; a value that cannot be copied is dropped."""
+    out: dict[str, Any] = {}
+    for key, value in mapping.items():
+        try:
+            out[key] = copy.deepcopy(value)
+        except Exception:
+            logger.debug("decision_point_input_value_not_copied", key=str(key)[:60])
+    return out
+
+
 @dataclass(frozen=True)
 class DecisionInput:
     """What a backend sees for one consultation (read-only).
 
     ``doc_text`` is the document's full text, never truncated: a backend that has a
     context limit windows it itself. ``handoff`` is a small dict of the node's key
-    outputs; ``state`` is a read-only view of the state after the node ran (top-level
-    keys cannot be changed; treat nested values as read-only too). ``repr`` shows no
-    document content.
+    outputs; ``state`` is a read-only view of the state after the node ran. Both are deep
+    copies, so a backend cannot change the graph's state through them (a value that cannot
+    be copied is left out). ``repr`` shows no document content.
     """
 
     slot: str
@@ -252,8 +266,11 @@ class DecisionInput:
     state: Mapping[str, Any] = field(repr=False, default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "handoff", MappingProxyType(dict(self.handoff)))
-        object.__setattr__(self, "state", MappingProxyType(dict(self.state)))
+        # Deep copies: a backend runs on its own thread (and may outlive its timeout), so it
+        # must never hold a live object of the graph's state. A value that cannot be copied
+        # is left out of the view rather than shared.
+        object.__setattr__(self, "handoff", MappingProxyType(_isolated(self.handoff)))
+        object.__setattr__(self, "state", MappingProxyType(_isolated(self.state)))
 
 
 @dataclass(frozen=True)
@@ -363,6 +380,11 @@ _BACKEND_LOCK = threading.Lock()
 _BACKENDS: Mapping[str, DecisionPointBackend] = MappingProxyType({})
 
 
+def _is_async(fn: Any) -> bool:
+    """A coroutine function, or an object whose ``__call__`` is one (as ``add_route_rule`` checks)."""
+    return inspect.iscoroutinefunction(fn) or inspect.iscoroutinefunction(getattr(fn, "__call__", None))
+
+
 def register_decision_point_backend(name: str, backend: DecisionPointBackend) -> None:
     """Install ``backend`` under ``name`` process-wide; a second registration replaces it."""
     global _BACKENDS
@@ -370,6 +392,8 @@ def register_decision_point_backend(name: str, backend: DecisionPointBackend) ->
         raise ValueError("a decision point backend needs a non-empty name")
     if not callable(backend):
         raise TypeError(f"decision point backend {name!r} must be callable")
+    if _is_async(backend):
+        raise TypeError(f"decision point backend {name!r} must be synchronous; async backends are not supported")
     with _BACKEND_LOCK:
         _BACKENDS = MappingProxyType({**_BACKENDS, name: backend})
 
@@ -443,6 +467,16 @@ class SlotPolicy:
             frozenset(self.allow if override.allow is None else override.allow),
             self.min_confidence if override.min_confidence is None else override.min_confidence,
         )
+
+    @property
+    def can_redirect(self) -> bool:
+        """Whether some class can be sent to a destination other than ``human_review``.
+
+        False for a record-only slot (empty ``allow`` for every class) and for one that may
+        only park: ``max_overrides`` never matters to it.
+        """
+        lists = [self.allow] + [o.allow for o in self.by_class.values() if o.allow is not None]
+        return any(dest != PARK for dests in lists for dest in dests)
 
     @property
     def active(self) -> bool:
@@ -525,14 +559,30 @@ def validate_slot_policies(
                     )
         if policy.on_failure == "fail_safe" and PARK not in spec.destinations:
             problems.append(f"{where}: on_failure fail_safe needs {PARK!r} among {policy.node!r}'s destinations")
-    total = sum(p.max_overrides for p in policies if p.active)
+    total = sum(p.max_overrides for p in policies if p.active and p.can_redirect)
     if total > MAX_TOTAL_OVERRIDES:
         problems.append(
-            f"decision_points: the active slots' max_overrides add up to {total}; at most "
-            f"{MAX_TOTAL_OVERRIDES} redirects per document are allowed in total (each is an extra graph step)"
+            f"decision_points: the max_overrides of the active slots that can redirect add up to {total}; "
+            f"at most {MAX_TOTAL_OVERRIDES} redirects per document are allowed in total (each is an extra "
+            f"graph step). Lower them, or set `max_overrides: 0` on a slot that should only record or park"
         )
     if problems:
         raise DecisionPointConfigError("invalid decision_points config:\n  - " + "\n  - ".join(problems))
+
+
+# Warnings that would otherwise repeat on every build or every document: once per process.
+_warned_unregistered: set = set()
+_warned_missing: set = set()
+_warn_lock = threading.Lock()
+
+
+def _first_time(seen: set, key: Any) -> bool:
+    """True the first time ``key`` is offered (thread-safe)."""
+    with _warn_lock:
+        if key in seen:
+            return False
+        seen.add(key)
+        return True
 
 
 _IMPORT_SPEC = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_.]*$")
@@ -544,8 +594,9 @@ def _resolve_backend(policy: SlotPolicy) -> None:
     ``module.path:callable`` is imported now (once per build) and registered under that
     exact string; an import or attribute error, a malformed spec or a non-callable raises
     :class:`DecisionPointConfigError`. A bare name is looked up in the registry: one that
-    is not registered yet only logs ``decision_point_backend_unregistered`` (registering
-    lazily, after the build, stays allowed; until then the slot's ``on_failure`` applies).
+    is not registered yet only logs ``decision_point_backend_unregistered`` (once per slot
+    per process; registering lazily, after the build, stays allowed; until then the slot's
+    ``on_failure`` applies).
     The module's own import-time code runs here, so the spec is as trusted as the taxonomy.
     """
     import importlib
@@ -553,7 +604,9 @@ def _resolve_backend(policy: SlotPolicy) -> None:
     spec = policy.backend
     where = f"decision_points.{policy.slot}"
     if ":" not in spec:
-        if get_decision_point_backend(spec) is None:
+        if get_decision_point_backend(spec) is None and _first_time(
+            _warned_unregistered, (policy.slot, spec, policy.on_failure)
+        ):
             logger.warning(
                 "decision_point_backend_unregistered",
                 slot=policy.slot, backend=spec, node=policy.node, on_failure=policy.on_failure,
@@ -578,14 +631,21 @@ def _resolve_backend(policy: SlotPolicy) -> None:
         raise DecisionPointConfigError(
             f"invalid decision_points config:\n  - {where}: backend {spec!r} is not callable"
         )
+    if _is_async(target):
+        raise DecisionPointConfigError(
+            f"invalid decision_points config:\n  - {where}: backend {spec!r} is async; backends run "
+            f"synchronously on a worker thread, so a coroutine function would never execute"
+        )
     register_decision_point_backend(spec, target)
 
 
 def prepare_slots(specs: Iterable[RouteSpec] = ROUTE_SPECS) -> tuple[SlotPolicy, ...]:
     """Load, validate and return the slots that are on for some class (``()`` by default).
 
-    Raises :class:`DecisionPointConfigError`; ``build_graph()`` calls this first so a bad
-    section stops the process at startup, not on the first document. Each active slot's
+    Raises :class:`DecisionPointConfigError`. Called by ``Watcher.start()`` and the API
+    lifespan (next to ``verify_specialist_pins``), so a bad section stops the process at
+    startup, and again by ``build_graph()`` (the graph is built lazily, on the first
+    document, and tests build it directly). Each active slot's
     backend is resolved here (:func:`_resolve_backend`): import specs are imported and
     registered, unregistered bare names are warned about.
     """
@@ -673,23 +733,20 @@ def rule_for(policy: SlotPolicy) -> RouteRule:
 
 
 def clear_rules() -> None:
-    """Remove every ``decision_point:*`` rule from every node (idempotent)."""
-    for spec in ROUTE_SPECS:
-        for rule in route_rules(spec.node):
-            if rule.name.startswith(RULE_PREFIX):
-                remove_route_rule(spec.node, rule.name)
+    """Remove every ``decision_point:*`` rule from every node (idempotent, atomic)."""
+    replace_route_rules(RULE_PREFIX, ())
 
 
 def install_rules(policies: Iterable[SlotPolicy]) -> None:
     """Make the registered ``decision_point:*`` rules exactly those of ``policies``.
 
-    Idempotent: stale rules (an earlier build, another config) are removed first. Rules
-    are process-wide, like every route rule, so the latest ``build_graph()`` wins; one
-    process runs one configuration.
+    One atomic swap (``route_spec.replace_route_rules``): a route decision running on
+    another thread sees the old set or the new one, never none in between. Idempotent:
+    stale rules (an earlier build, another config) are replaced. Rules are process-wide,
+    like every route rule, so the latest ``build_graph()`` wins; one process runs one
+    configuration.
     """
-    clear_rules()
-    for policy in policies:
-        add_route_rule(policy.node, rule_for(policy))
+    replace_route_rules(RULE_PREFIX, [(p.node, rule_for(p)) for p in policies])
 
 
 # ---------------------------------------------------------------------------
@@ -785,10 +842,14 @@ def consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
         outcome = _consult(policy, inp)
         latency_ms = round((time.monotonic() - started) * 1000.0, 2)
         log = logger.info if outcome.status == "ok" else logger.warning
+        if outcome.evidence.get("reason") == "backend_not_registered" and policy.on_failure == "fail_open":
+            log = logger.debug  # the missing-backend warning above is already once per slot
+        # The label is backend-supplied free text (it could quote the document): only its length is logged.
         log(
             "decision_point_consulted",
             slot=policy.slot, node=policy.node, backend=policy.backend, doc_id=inp.doc_id,
-            status=outcome.status, route_hint=outcome.route_hint, label=outcome.label,
+            status=outcome.status, route_hint=outcome.route_hint,
+            label_length=len(outcome.label) if outcome.label is not None else None,
             confidence=outcome.confidence, causes=list(outcome.causes), latency_ms=latency_ms,
             reason=outcome.evidence.get("reason") if outcome.status != "ok" else None,
         )
@@ -815,7 +876,11 @@ def _consult(policy: SlotPolicy, inp: DecisionInput) -> DecisionOutcome:
 
     backend = get_decision_point_backend(policy.backend)
     if backend is None:
-        logger.warning("decision_point_backend_missing", slot=policy.slot, backend=policy.backend)
+        # fail_open: the build-time warning already said so, so once per slot per process.
+        # fail_safe parks every document for it, which stays loud.
+        if policy.on_failure == "fail_safe" or _first_time(_warned_missing, policy.slot):
+            logger.warning("decision_point_backend_missing", slot=policy.slot, backend=policy.backend,
+                           on_failure=policy.on_failure)
         return _failed_outcome(policy, "unavailable", "backend_not_registered")
     try:
         raw = run_bounded(
@@ -867,21 +932,29 @@ def _stored(outcome: DecisionOutcome, policy: SlotPolicy, doc_type: Any) -> dict
 _SPEC_BY_NODE = {spec.node: spec for spec in ROUTE_SPECS}
 
 
-def _would_override(node: str, state: Mapping[str, Any], hint: str) -> bool:
-    """Whether ``hint`` would replace the router's proposal for ``node`` on ``state``.
+def _proposal(node: str, state: Mapping[str, Any]) -> "str | None":
+    """The router's proposal for ``node`` on ``state``, or ``None`` when it cannot be asked.
 
-    Asks the node's base router once. It is only called for a vetted non-park hint, so the
-    routers' own log lines repeat on that rare path only. A router that raises counts as an
-    override (the budget errs on the side of spending).
+    Asks the node's base router once. It is only called when a slot has a vetted hint, so
+    the routers' own info logs repeat on that rare path only.
     """
     spec = _SPEC_BY_NODE.get(node)
     if spec is None:
-        return True
+        return None
     try:
-        proposed = spec.router(dict(state))  # type: ignore[arg-type]
+        return spec.router(dict(state))  # type: ignore[arg-type]
     except Exception:
-        return True
-    return proposed != hint and proposed != PARK and proposed != node
+        return None
+
+
+def _rule_answers(node: str, proposed: "str | None", hint: str) -> bool:
+    """Whether the slot's rule would return ``hint`` against the router's ``proposed``.
+
+    Mirrors :func:`rule_for`: nothing for a proposed park or self-loop, nothing when the
+    hint equals the proposal. An unknown proposal counts as an answer (the budget errs on
+    the side of spending).
+    """
+    return proposed is None or (proposed != PARK and proposed != node and proposed != hint)
 
 
 def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy]) -> Callable[[Any], Any]:
@@ -896,12 +969,15 @@ def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy
     outcome was stored or removed, so a pass that consults nothing leaves state as it was.
 
     **Override budget.** A vetted hint to a destination other than ``human_review`` that
-    would replace the router's proposal spends one of the slot's ``max_overrides`` for this
-    document (``decision_override_counts``, never reset within a run). Past the budget the
-    outcome is stored with ``capped: true`` and no vetted route, and the rule leaves the
-    router's proposal alone, so hint cycles across slots end whatever the topology. Parks
-    are exempt: they need a person, cannot loop on their own, and ``fail_safe`` must keep
-    parking.
+    the slot's rule will actually apply spends one of the slot's ``max_overrides`` for this
+    document (``decision_override_counts``, never reset within a run). Rules run in config
+    order and the first answer wins, so a slot is charged only when no earlier slot of the
+    node already answers (an earlier slot that is capped, agrees with the router or has no
+    hint does not shield it). Past the budget the outcome is stored with ``capped: true``
+    and no vetted route, and the rule leaves the router's proposal alone, so hint cycles
+    across slots end whatever the topology. Parks are exempt: they need a person, cannot
+    loop on their own, and ``fail_safe`` must keep parking; an answering park still
+    shields later slots.
     """
     mine = tuple(p for p in policies if p.node == node)
     if not mine:
@@ -917,7 +993,8 @@ def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy
         outcomes = dict(previous) if isinstance(previous, Mapping) else {}
         prior_counts = merged.get(OVERRIDES_KEY)
         counts = dict(prior_counts) if isinstance(prior_counts, Mapping) else {}
-        changed = counts_changed = False
+        changed = counts_changed = claimed = False
+        proposal: list = []  # asked once, only if some slot has a hint
         for policy in mine:
             had = policy.slot in outcomes
             outcomes.pop(policy.slot, None)
@@ -926,15 +1003,21 @@ def wrap_node(node: str, fn: Callable[[Any], Any], policies: Sequence[SlotPolicy
                 outcome = consult(policy, _build_input(policy, merged))
                 stored = _stored(outcome, policy, doc_type)
                 hint = stored["vetted_route"]
-                if hint is not None and hint != PARK and _would_override(node, merged, hint):
-                    used = counts.get(policy.slot, 0)
-                    used = used if isinstance(used, int) and not isinstance(used, bool) else 0
-                    if used >= policy.max_overrides:
-                        stored["capped"] = True
-                        stored["vetted_route"] = None
-                    else:
-                        counts[policy.slot] = used + 1
-                        counts_changed = True
+                if hint is not None and not claimed:
+                    if not proposal:
+                        proposal.append(_proposal(node, merged))
+                    answers = _rule_answers(node, proposal[0], hint)
+                    if answers and hint != PARK:
+                        used = counts.get(policy.slot, 0)
+                        used = used if isinstance(used, int) and not isinstance(used, bool) else 0
+                        if used >= policy.max_overrides:
+                            stored["capped"] = True
+                            stored["vetted_route"] = None
+                            answers = False
+                        else:
+                            counts[policy.slot] = used + 1
+                            counts_changed = True
+                    claimed = claimed or answers
                 outcomes[policy.slot] = stored
                 changed = True
             elif had:

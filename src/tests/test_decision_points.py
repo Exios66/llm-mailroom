@@ -33,6 +33,8 @@ def _clean_registries():
     dp.clear_decision_point_backends()
     clear_route_rules()
     dp._abandoned_threads.clear()
+    dp._warned_unregistered.clear()
+    dp._warned_missing.clear()
     limits.reset_run_usage()  # compiled-graph runs here bypass run_pipeline, which resets it
     yield
     dp.clear_decision_point_backends()
@@ -73,6 +75,14 @@ def decision_points(monkeypatch):
         monkeypatch.setattr(config, "load_config", lambda: cfg)
 
     return apply
+
+
+class _Recorder:
+    def __init__(self):
+        self.events = []
+
+    def __getattr__(self, level):
+        return lambda event, **kw: self.events.append((level, event, kw))
 
 
 def policy(**overrides) -> dp.SlotPolicy:
@@ -173,6 +183,34 @@ class TestInput:
         assert i.handoff["extraction_confidence"] == 0.9
         assert i.handoff["extraction"]["fields"] == {"parties": ["Acme"]}  # underscore keys dropped
 
+    def test_backends_cannot_mutate_the_live_state(self):
+        live = {"parties": ["Acme"], "nested": {"k": [1]}}
+        state = {"doc_id": "d-1", "doc_text": DOC_TEXT, "doc_type": "contract", "extracted_data": live,
+                 "decision_outcomes": {"other.slot": {"causes": ["x"]}}}
+        i = dp._build_input(policy(), state)
+        i.state["extracted_data"]["parties"].append("EVIL")
+        i.state["extracted_data"]["nested"]["k"].append(2)
+        i.state["decision_outcomes"]["other.slot"]["causes"].append("EVIL")
+        i.handoff["extraction"]["fields"]["parties"].append("EVIL")
+        assert live == {"parties": ["Acme"], "nested": {"k": [1]}}
+        assert state["decision_outcomes"] == {"other.slot": {"causes": ["x"]}}
+
+    def test_a_backend_mutating_its_input_does_not_touch_the_node_update(self):
+        def meddle(i):
+            i.state["extracted_data"]["parties"].append("EVIL")
+            return ok()
+
+        dp.register_decision_point_backend("fake", meddle)
+        data = {"parties": ["Acme"]}
+        out = dp.wrap_node("extract", node_returning({"extracted_data": data}), [policy()])({"doc_type": "contract"})
+        assert out["extracted_data"] == {"parties": ["Acme"]}
+
+    def test_a_value_that_cannot_be_copied_is_left_out_not_shared(self):
+        import threading as th
+
+        i = dp._build_input(policy(), {"doc_text": "x", "lock": th.Lock(), "doc_type": "contract"})
+        assert "lock" not in i.state and i.state["doc_type"] == "contract"
+
     def test_long_text_is_not_truncated(self):
         text = "x" * 500_000
         assert inp(doc_text=text).doc_text == text
@@ -220,6 +258,19 @@ class TestRegistry:
         for t in threads:
             t.join()
         assert all(dp.get_decision_point_backend(n) for n in names)
+
+    def test_async_backends_are_refused(self):
+        async def coro(inp):
+            return ok()
+
+        class AsyncCallable:
+            async def __call__(self, inp):
+                return ok()
+
+        for backend in (coro, AsyncCallable()):
+            with pytest.raises(TypeError, match="synchronous"):
+                dp.register_decision_point_backend("a", backend)
+        assert dp.get_decision_point_backend("a") is None
 
     def test_registry_is_separate_from_the_older_one_slot_registries(self):
         from agents.decision_backend import get_decision_backend
@@ -416,6 +467,32 @@ class TestConsult:
         assert update["metadata"]["status"] == "ok" and update["output"]["route_hint"] == "human_review"
         assert "CONFIDENTIAL" not in json.dumps(events, default=str)
 
+    def test_the_backend_label_is_never_logged(self, monkeypatch):
+        rec = _Recorder()
+        monkeypatch.setattr(dp, "logger", rec)
+        dp.register_decision_point_backend("fake", lambda i: ok(label="Acme owes Beta 1,000,000 USD"))
+        dp.consult(policy(), inp())
+        (event,) = [e for e in rec.events if e[1] == "decision_point_consulted"]
+        assert "label" not in event[2] and event[2]["label_length"] == len("Acme owes Beta 1,000,000 USD")
+        assert "Acme" not in json.dumps(rec.events, default=str)
+
+    def test_missing_backend_warns_once_per_slot_under_fail_open(self, monkeypatch):
+        rec = _Recorder()
+        monkeypatch.setattr(dp, "logger", rec)
+        for _ in range(3):
+            dp.consult(policy(), inp())
+        dp.consult(policy(slot="other.slot"), inp())
+        warned = [e[2]["slot"] for e in rec.events if e[1] == "decision_point_backend_missing"]
+        assert warned == ["extract.post", "other.slot"]
+        assert not [e for e in rec.events if e[0] == "warning" and e[1] == "decision_point_consulted"]
+
+    def test_missing_backend_stays_loud_under_fail_safe(self, monkeypatch):
+        rec = _Recorder()
+        monkeypatch.setattr(dp, "logger", rec)
+        for _ in range(3):
+            dp.consult(policy(on_failure="fail_safe"), inp())
+        assert len([e for e in rec.events if e[1] == "decision_point_backend_missing"]) == 3
+
     def test_a_failing_span_never_fails_the_consultation(self, monkeypatch):
         class Span:
             def update(self, **kw):
@@ -562,6 +639,47 @@ class TestRuleInstallation:
         dp.install_rules([policy()])
         dp.clear_rules()
         assert [r.name for r in route_rules("extract")] == ["mine"]
+
+    def test_install_never_exposes_an_empty_rule_set_to_a_concurrent_reader(self):
+        dp.install_rules([policy()])
+        stop = threading.Event()
+        errors = []
+
+        def reinstall():
+            while not stop.is_set():
+                dp.install_rules([policy()])
+
+        writer = threading.Thread(target=reinstall, daemon=True)
+        writer.start()
+        try:
+            for _ in range(20000):
+                names = [r.name for r in route_rules("extract")]
+                if names != ["decision_point:extract.post"]:
+                    errors.append(names)
+                    break
+        finally:
+            stop.set()
+            writer.join(5)
+        assert errors == []
+
+    def test_replace_validates_before_changing_anything(self):
+        from graph.route_spec import RouteRule, replace_route_rules
+
+        dp.install_rules([policy()])
+        with pytest.raises(ValueError):
+            replace_route_rules(dp.RULE_PREFIX, [("nope", RouteRule("decision_point:x", lambda s, p: None))])
+        with pytest.raises(ValueError):
+            replace_route_rules(dp.RULE_PREFIX, [("extract", RouteRule("decision_point:x", lambda s, p: None)),
+                                                 ("extract", RouteRule("decision_point:x", lambda s, p: None))])
+        assert [r.name for r in route_rules("extract")] == ["decision_point:extract.post"]
+
+    def test_reset_compiled_graph_clears_the_rules_under_the_graph_lock(self, monkeypatch):
+        held = []
+        real = dp.clear_rules
+        monkeypatch.setattr(dp, "clear_rules", lambda: (held.append(bg._compiled_graph_lock.locked()), real()))
+        dp.install_rules([policy()])
+        bg.reset_compiled_graph()
+        assert held == [True] and route_rules("extract") == ()
 
     def test_reset_compiled_graph_clears_the_rules(self):
         dp.install_rules([policy()])
@@ -1026,10 +1144,31 @@ class TestOverrideBudget:
         decision_points({"extract.post": {"node": "extract", "backend": "b"}})
         assert dp.load_slot_policies()[0].max_overrides == 1
         decision_points({
-            f"s{i}.post": {"node": n, "backend": "b", "max_overrides": 3}
-            for i, n in enumerate(["classify", "extract", "judge_verify"])
+            f"s{i}.post": {"node": n, "backend": "b", "max_overrides": 3, "allow": ["compile_report"]}
+            for i, n in enumerate(["extract", "judge_verify", "retry_extract"])
         })
-        with pytest.raises(DecisionPointConfigError, match=r"add up to 9; at most 8"):
+        with pytest.raises(DecisionPointConfigError, match=r"add up to 9; at most 8") as err:
+            dp.prepare_slots()
+        assert "max_overrides: 0" in str(err.value)
+
+    def test_record_only_and_park_only_slots_do_not_count_toward_the_total(self, decision_points):
+        big = {"backend": "b", "max_overrides": 8}
+        decision_points({
+            "a.post": {"node": "classify", "allow": ["extract"], **big},           # redirects: counts
+            "b.post": {"node": "extract", **big},                                   # record-only
+            "c.post": {"node": "judge_verify", "allow": ["human_review"], **big},   # park-only
+            "d.post": {"node": "retry_extract", "allow": ["compile_report"], "backend": "b",
+                       "max_overrides": 8, "enabled": False},                       # inactive
+        })
+        assert [p.slot for p in dp.prepare_slots()] == ["a.post", "b.post", "c.post"]
+        assert [p.can_redirect for p in dp.load_slot_policies()] == [True, False, False, True]
+
+    def test_a_class_override_can_make_a_slot_redirect(self, decision_points):
+        decision_points({"a.post": {"node": "extract", "backend": "b", "max_overrides": 8,
+                                    "by_class": {"contract": {"allow": ["compile_report"]}}},
+                         "b.post": {"node": "classify", "backend": "b", "max_overrides": 1,
+                                    "allow": ["extract"]}})
+        with pytest.raises(DecisionPointConfigError, match="add up to 9"):
             dp.prepare_slots()
 
     def test_inactive_slots_do_not_count_toward_the_total(self, decision_points):
@@ -1088,12 +1227,48 @@ class TestOverrideBudget:
         out = dp.wrap_node("extract", node_returning({}), [p])(dict(PROPOSES_COMPILE))  # no backend
         assert out["decision_outcomes"]["extract.post"]["vetted_route"] == "human_review"
 
-    def test_each_slot_has_its_own_budget(self):
-        dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
-        a, b = redirecting(slot="extract.a"), redirecting(slot="extract.b")
-        wrapped = dp.wrap_node("extract", node_returning({}), [a, b])
-        out = wrapped(dict(PROPOSES_COMPILE))
-        assert out["decision_override_counts"] == {"extract.a": 1, "extract.b": 1}
+    def two_slots(self, first, second, *, first_hint="judge_verify", second_hint="boss_escalation"):
+        extra = {"causes": ["fee_mismatch"]} if first_hint == "human_review" else {}  # a park needs causes
+        dp.register_decision_point_backend("first", lambda i: hint_to(first_hint, **extra))
+        dp.register_decision_point_backend("second", lambda i: hint_to(second_hint))
+        a = policy(slot="extract.a", backend="first", allow=("judge_verify", "human_review"), **first)
+        b = policy(slot="extract.b", backend="second", allow=("boss_escalation", "judge_verify"), **second)
+        return dp.wrap_node("extract", node_returning({}), [a, b])(dict(PROPOSES_COMPILE))
+
+    def test_only_the_slot_whose_rule_answers_is_charged(self):
+        out = self.two_slots({}, {})
+        assert out["decision_override_counts"] == {"extract.a": 1}  # a wins; b's rule never runs
+        assert out["decision_outcomes"]["extract.b"]["vetted_route"] == "boss_escalation"
+        assert "capped" not in out["decision_outcomes"]["extract.b"]
+
+    def test_a_capped_first_slot_does_not_shield_the_second(self):
+        out = self.two_slots({"max_overrides": 0}, {})
+        assert out["decision_override_counts"] == {"extract.b": 1}
+        assert out["decision_outcomes"]["extract.a"]["capped"] is True
+
+    def test_a_first_slot_that_agrees_with_the_router_does_not_shield_the_second(self):
+        out = self.two_slots({}, {}, first_hint="compile_report")  # compile_report not in a's allow
+        assert out["decision_outcomes"]["extract.a"]["vetted_route"] is None
+        assert out["decision_override_counts"] == {"extract.b": 1}
+
+    def test_a_first_slot_that_parks_shields_the_second_without_being_charged(self):
+        out = self.two_slots({}, {}, first_hint="human_review")
+        assert "decision_override_counts" not in out
+        assert out["decision_outcomes"]["extract.a"]["vetted_route"] == "human_review"
+        assert "capped" not in out["decision_outcomes"]["extract.b"]
+
+    def test_each_slot_keeps_its_own_count_across_passes(self):
+        out = self.two_slots({"max_overrides": 0}, {"max_overrides": 2})
+        dp.register_decision_point_backend("second", lambda i: hint_to("boss_escalation"))
+        wrapped = dp.wrap_node("extract", node_returning({}), [
+            policy(slot="extract.a", backend="first", allow=("judge_verify",), max_overrides=0),
+            policy(slot="extract.b", backend="second", allow=("boss_escalation",), max_overrides=2),
+        ])
+        state = {**PROPOSES_COMPILE, **out}
+        state = {**state, **wrapped(state)}
+        assert state["decision_override_counts"] == {"extract.b": 2}
+        again = wrapped(state)
+        assert again["decision_outcomes"]["extract.b"]["capped"] is True
 
     def test_a_router_that_raises_counts_as_an_override(self, monkeypatch):
         dp.register_decision_point_backend("fake", lambda i: hint_to("judge_verify"))
@@ -1284,14 +1459,6 @@ def backend_module(tmp_path, monkeypatch):
         sys.modules.pop(name, None)
 
 
-class _Recorder:
-    def __init__(self):
-        self.events = []
-
-    def __getattr__(self, level):
-        return lambda event, **kw: self.events.append((level, event, kw))
-
-
 class TestBackendResolution:
     def slot(self, backend, **extra):
         return {"extract.post": {"node": "extract", "backend": backend, "allow": ["human_review"], **extra}}
@@ -1347,6 +1514,21 @@ class TestBackendResolution:
         warned = [e for e in rec.events if e[1] == "decision_point_backend_unregistered"]
         assert [(w[0], w[2]["slot"], w[2]["on_failure"]) for w in warned] == [
             ("warning", "extract.post", "fail_safe"), ("warning", "classify.post", "fail_open")]
+
+    def test_unregistered_warning_is_once_per_slot_per_process(self, decision_points, monkeypatch):
+        rec = _Recorder()
+        monkeypatch.setattr(dp, "logger", rec)
+        decision_points(self.slot("not_yet"))
+        for _ in range(3):  # startup, then every build_graph()
+            dp.prepare_slots()
+        assert len([e for e in rec.events if e[1] == "decision_point_backend_unregistered"]) == 1
+
+    def test_async_import_specs_are_config_errors(self, decision_points, backend_module, tmp_path):
+        (tmp_path / "dp_backend_mod.py").write_text(
+            (tmp_path / "dp_backend_mod.py").read_text() + "async def coro(inp):\n    return {}\n")
+        decision_points(self.slot("dp_backend_mod:coro"))
+        with pytest.raises(DecisionPointConfigError, match="is async"):
+            dp.prepare_slots()
 
     def test_registered_bare_name_does_not_warn(self, decision_points, monkeypatch):
         rec = _Recorder()
