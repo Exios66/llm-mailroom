@@ -129,7 +129,8 @@ _ON_UNVERIFIED = ("baseline", "park")
 _TOP_KEYS = ("gate_support_min", "cap_warmup", "gate_key_fields", *SLOTS)
 _MAX_GATE_FIELDS = 64
 # Review causes a gate release may clear: none of them is hard evidence of a bad extraction.
-_SOFT_CAUSES = frozenset({"low_extraction_confidence", "retries_exhausted", "judge_partial"})
+_SOFT_CAUSES = frozenset({"low_extraction_confidence", "retries_exhausted", "judge_partial",
+                          "judge_complete_unconfirmed"})
 _MAX_RESOLVED_FIELDS = 8
 
 

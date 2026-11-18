@@ -47,6 +47,8 @@ class DocumentState(TypedDict, total=False):
     # resets). Routing treats a conflict as adjudicated only when it matches.
     # Absent on pre-existing checkpoints, which keep the legacy behaviour.
     boss_conflict_fingerprint: str | None
+    # Archived matter records the boss saw for its ruling; an approval with 0 parks.
+    boss_context_records: int | None
     extraction_guardrail: list[str]
     classification_guardrail: list[str]
     file_path: str

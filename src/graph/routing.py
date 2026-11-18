@@ -58,6 +58,37 @@ def _thresholds_for(state: Mapping[str, Any] | dict) -> dict:
     return get_confidence_thresholds(doc_type if isinstance(doc_type, str) else None)
 
 
+def judge_complete_archives(state: Mapping[str, Any]) -> bool:
+    """Whether a judge ``complete`` may archive on its own (taxonomy ``confidence``; default False).
+
+    A document reaches the judge because the pipeline doubted it, and the judge has not earned
+    that trust: in the sandbox slice-100 r2 audit it passed 5 of r2's 6 wrong archives, and
+    judged contracts archived wrong 10 of 12 times (#242, #278). So by default a judge
+    ``complete`` goes to a person (cause ``judge_complete_unconfirmed``). Per-class overridable
+    under ``by_class``; true restores the old route.
+    """
+    return bool(_thresholds_for(state).get("judge_complete_archives", False))
+
+
+def arbiter_accept_archives(state: Mapping[str, Any]) -> bool:
+    """Whether an arbiter ``accept_with_caveats`` may archive (taxonomy ``confidence``; default False).
+
+    The arbiter overrules a judge that found problems; every such accept seen in past runs
+    archived a wrong extraction (3 of 3). By default it goes to a person (cause
+    ``arbiter_accept_unconfirmed``); ``retry_extraction`` still re-extracts. Per-class overridable.
+    """
+    return bool(_thresholds_for(state).get("arbiter_accept_archives", False))
+
+
+def judge_clears_low_confidence(state: Mapping[str, Any]) -> bool:
+    """Whether a judge that saw the whole source clears an extraction below ``low`` (default False).
+
+    The extracting model itself was unsure after its retries; a judge verdict is not evidence
+    enough to archive that (see ``judge_complete_archives``). Per-class overridable.
+    """
+    return bool(_thresholds_for(state).get("judge_clears_low_confidence", False))
+
+
 def _after_confident_sorter(state: dict) -> Literal["review_classify", "extract"]:
     """A ``decision_only`` class always gets its second opinion.
 
@@ -307,7 +338,7 @@ def _extraction_still_unsure(state: Mapping[str, Any]) -> bool:
     """
     if _chunks_lost(state):
         return True  # no verdict clears missing windows
-    if state.get("judge_source_verified"):
+    if state.get("judge_source_verified") and judge_clears_low_confidence(state):
         return False
     confidence = state.get("extraction_confidence")
     return confidence is None or confidence < _thresholds_for(state).get("low", 0.70)
@@ -602,8 +633,28 @@ def after_boss(state: dict) -> Literal["boss_escalation", "compile_report", "hum
         return "human_review"
     decision = state.get("review_decision")
     if decision == "approved":
+        if not boss_ruling_grounded(state):
+            # The boss ruled on a matter conflict without seeing any matter record (the
+            # catalog read failed or returned nothing): its approval is not evidence.
+            logger.info("boss_approval_ungrounded", doc_id=state.get("doc_id"))
+            return "human_review"
         return "compile_report"
     return "human_review"
+
+
+def boss_ruling_grounded(state: Mapping[str, Any]) -> bool:
+    """True when the boss saw at least one archived matter record for its ruling.
+
+    ``boss_escalation_node`` writes ``boss_context_records``; a missing value (a state written
+    before it existed) counts as grounded, so only a ruling known to be blind parks.
+    """
+    records = state.get("boss_context_records")
+    if records is None:
+        return True
+    try:
+        return int(records) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 # review_decision token set by ``human_review_node`` when a reviewer's own
@@ -829,6 +880,9 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
     if verdict in (None, "", "skipped", "complete"):
         if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
             return "human_review"
+        if verdict == "complete" and not judge_complete_archives(state):
+            logger.info("judge_complete_needs_review", doc_id=state.get("doc_id"))
+            return "human_review"
         return "compile_report"
     max_passes = _judge_max_passes(_thresholds_for(state))
     passes = int(state.get("judge_pass_count") or 0)
@@ -868,6 +922,9 @@ def after_arbiter(state: dict) -> Literal[
     decision = state.get("arbiter_decision")
     if decision == "accept_with_caveats":
         if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
+            return "human_review"
+        if not arbiter_accept_archives(state):
+            logger.info("arbiter_accept_needs_review", doc_id=state.get("doc_id"))
             return "human_review"
         return "compile_report"
     thresholds = _thresholds_for(state)

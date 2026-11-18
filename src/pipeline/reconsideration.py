@@ -50,6 +50,10 @@ JUDGE_ERROR = "judge_error"
 RETRIES_EXHAUSTED = "retries_exhausted"
 CHUNK_FAILED = "chunk_failed"
 OUT_OF_VOCABULARY = "out_of_vocabulary"
+# Default archive checks (graph/routing.py): an approval that is not evidence enough to archive.
+JUDGE_COMPLETE_UNCONFIRMED = "judge_complete_unconfirmed"
+ARBITER_ACCEPT_UNCONFIRMED = "arbiter_accept_unconfirmed"
+BOSS_UNGROUNDED = "boss_ungrounded"
 # Decision-model slots (graph/decision_slots.py), each parking a document the router would archive.
 ARCHIVE_GATE_UNSUPPORTED = "archive_gate_unsupported"
 ARBITER_VETO_GATE = "arbiter_veto_gate"
@@ -94,6 +98,9 @@ CAUSE_LABELS: dict[str, str] = {
     RETRIES_EXHAUSTED: "confidence retry budget spent without a settled answer",
     CHUNK_FAILED: "one or more extraction windows failed",
     OUT_OF_VOCABULARY: "a closed-label field holds a value off its vocabulary",
+    JUDGE_COMPLETE_UNCONFIRMED: "the judge called a doubted extraction complete; a judge verdict alone does not archive",
+    ARBITER_ACCEPT_UNCONFIRMED: "the arbiter accepted with caveats what the judge found lacking",
+    BOSS_UNGROUNDED: "the boss approved a matter conflict without seeing any matter record",
     ARCHIVE_GATE_UNSUPPORTED: "the archive gate found extracted values the source does not support",
     ARBITER_VETO_GATE: "the archive gate disagreed with the arbiter's accept_with_caveats",
     GATE_INCOMPLETE: "the arbiter accepted an extraction the gate (as judge) called incomplete",
@@ -512,7 +519,8 @@ def _state_derived_causes(
     if not stub and ("extraction_attempts" in data or data.get("extracted_data")):
         ext_conf = _as_float(data.get("extraction_confidence"))
         judged = bool(data.get("judge_verdict")) or _as_int(data.get("judge_pass_count")) > 0
-        unsure = (ext_conf is None or ext_conf < low) and not data.get("judge_source_verified")
+        cleared = bool(data.get("judge_source_verified")) and bool(thresholds.get("judge_clears_low_confidence", False))
+        unsure = (ext_conf is None or ext_conf < low) and not cleared
         if unsure and (attempts > retry_max or judged):
             add(LOW_EXTRACTION_CONFIDENCE)
             retry_driven = retry_driven or attempts > retry_max
@@ -529,7 +537,19 @@ def _state_derived_causes(
     ) >= max_passes:
         add(RETRIES_EXHAUSTED)
 
+    if str(data.get("judge_verdict") or "") == "complete" and not thresholds.get("judge_complete_archives", False):
+        add(JUDGE_COMPLETE_UNCONFIRMED)
+    if data.get("boss_context_records") is not None and data.get("review_decision") == "approved":
+        try:
+            blind = int(data.get("boss_context_records")) <= 0
+        except (TypeError, ValueError):
+            blind = True
+        if blind:
+            add(BOSS_UNGROUNDED)
+
     arbiter = data.get("arbiter_decision")
+    if arbiter == "accept_with_caveats" and not thresholds.get("arbiter_accept_archives", False):
+        add(ARBITER_ACCEPT_UNCONFIRMED)
     if arbiter and arbiter != "accept_with_caveats":
         arbiter_max = _as_int(thresholds.get("arbiter_retry_max", 2))
         if arbiter != "retry_extraction":

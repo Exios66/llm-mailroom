@@ -161,7 +161,7 @@ def test_a_short_document_is_one_call_with_no_window_note(monkeypatch):
 # -- the node: coverage, source_verified, fail closed ------------------------------------------
 
 
-def test_an_unsure_document_over_16000_chars_archives_after_every_window_checks_clean(monkeypatch):
+def test_an_unsure_document_over_16000_chars_archives_after_every_window_checks_clean(monkeypatch, approvals_archive):
     """Acceptance 1: a long, still-unsure extraction clears only because every window was read."""
     fake = ScriptedJudge(monkeypatch)
     text = long_text()

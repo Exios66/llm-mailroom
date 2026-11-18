@@ -280,6 +280,18 @@ confidence:
   # uncalibrated judge, #242). Per-class overridable under by_class. Routing
   # never reads it.
   keep_best_attempt: false
+  # Archive checks (graph/routing.py). A document reaches the judge or the arbiter because
+  # the pipeline doubted it, and neither has earned the trust to archive it alone: in the
+  # slice-100 r2 judge audit the judge passed 5 of r2's 6 wrong archives, judged contracts
+  # archived wrong 10 of 12 times, and every arbiter accept_with_caveats seen archived a
+  # wrong extraction (#242, #278). false (default): they go to a person instead
+  # (judge_complete_unconfirmed, arbiter_accept_unconfirmed); an enforcing decision slot
+  # (decision_slots.archive_gate release) may still archive a capped share the gate backs.
+  # judge_clears_low_confidence false: a judge never clears an extraction below `low`.
+  # Per-class overridable under by_class; true restores the old route.
+  judge_complete_archives: false
+  arbiter_accept_archives: false
+  judge_clears_low_confidence: false
   # Unused routing knob (kept for config-file compatibility). Matter conflicts
   # escalate via deterministic same-class field comparison in
   # graph/build_graph.py:_detect_conflict — not an extraction-confidence gap.
@@ -452,6 +464,9 @@ review_queue:
     reviewer_low_confidence: 1.2
     reporting_incomplete: 1.2
     out_of_vocabulary: 3.0         # a closed label the Dojo scores wrong: deterministic, like schema_invalid
+    judge_complete_unconfirmed: 1.2  # a doubted extraction the judge called complete (judge_complete_archives false)
+    arbiter_accept_unconfirmed: 1.5  # accept_with_caveats over a judge that found problems
+    boss_ungrounded: 3.0           # the boss approved a conflict without seeing the matter record
     archive_gate_unsupported: 2.0  # decision slot: the gate found values the source does not support
     arbiter_veto_gate: 2.0         # decision slot: the gate disagreed with accept_with_caveats
     gate_incomplete: 2.0           # decision slot: the arbiter accepted a gate "incomplete"

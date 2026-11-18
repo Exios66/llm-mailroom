@@ -772,6 +772,7 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
         "retry_count": 0,
         "conflict_detected": False,
         "boss_conflict_fingerprint": None,
+        "boss_context_records": None,
         "error_message": None if text_ok else f"Could not extract text from {file_path.suffix} file",
         "file_sha256": file_hash,
         "size_bytes": _file_size(file_path),
@@ -3026,6 +3027,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             "conflict_detected": False,
             "conflict_details": [],
             "boss_conflict_fingerprint": None,
+            "boss_context_records": None,
             "file_path": str(dest) if dest is not None else file_path_str,
             "checkpoint_thread_id": thread_id or None,
             "transient_error": False,
@@ -3058,6 +3060,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             "conflict_detected": False,
             "conflict_details": [],
             "boss_conflict_fingerprint": None,
+            "boss_context_records": None,
             "file_path": str(dest) if dest is not None else file_path_str,
             "checkpoint_thread_id": thread_id or None,
             "transient_error": False,
@@ -3288,6 +3291,8 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
         # Bind the ruling to the conflict it ruled on: routing treats a later
         # conflict as adjudicated only when its fingerprint matches this one.
         "boss_conflict_fingerprint": conflict_fingerprint(state.get("conflict_details")),
+        # routing.after_boss parks an approval made without any matter record.
+        "boss_context_records": len(matter_context),
         "transient_error": False,
     }
     # A-1: Boss adjudication is part of the compliance record ("who decided
@@ -4795,6 +4800,7 @@ def run_pipeline(
         "retry_count": 0,
         "conflict_detected": False,
         "boss_conflict_fingerprint": None,
+        "boss_context_records": None,
         "file_path": str(file_path),
         "doc_text": "",
         "doc_pages": [],
@@ -5102,6 +5108,7 @@ def _run_human_applied_stateless(manifest, review_file: Path, payload: dict) -> 
         "retry_count": 0,
         "conflict_detected": False,
         "boss_conflict_fingerprint": None,
+        "boss_context_records": None,
         "file_path": str(review_file),
         "doc_text": "",
         "doc_pages": [],
@@ -5229,6 +5236,7 @@ def resume_from_review(
         "retry_count": 0,
         "conflict_detected": False,
         "boss_conflict_fingerprint": None,
+        "boss_context_records": None,
         "file_path": str(queued),
         "doc_text": doc_text,
         "doc_pages": doc_pages,

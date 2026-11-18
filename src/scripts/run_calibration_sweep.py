@@ -448,6 +448,7 @@ def build_initial_state(file_path: Path, matter_id: str) -> dict:
         "retry_count": 0,
         "conflict_detected": False,
         "boss_conflict_fingerprint": None,
+        "boss_context_records": None,
         "file_path": str(file_path),
         "doc_text": "",
         "doc_pages": [],

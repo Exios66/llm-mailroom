@@ -421,7 +421,7 @@ def test_f2_single_window_path_is_identical():
     assert _merge_sorter_reads([one]) is one
 
 
-def test_conflict_on_judge_tail_never_archives_unadjudicated():
+def test_conflict_on_judge_tail_never_archives_unadjudicated(approvals_archive):
     from graph.routing import after_arbiter, after_judge
 
     base = {"doc_type": "contract", "conflict_detected": True, "judge_source_verified": True,
@@ -458,7 +458,7 @@ def _boss_ruled_on(details, decision="approved"):
         return {**state, **bg.boss_escalation_node(state)}
 
 
-def test_boss_ruling_on_conflict_a_does_not_cover_later_conflict_b():
+def test_boss_ruling_on_conflict_a_does_not_cover_later_conflict_b(approvals_archive):
     from graph.routing import after_arbiter, after_judge
 
     ruled = _boss_ruled_on(_CONFLICT_A)
@@ -472,7 +472,7 @@ def test_boss_ruling_on_conflict_a_does_not_cover_later_conflict_b():
     assert after_arbiter({**later, "arbiter_decision": "accept_with_caveats"}) == "human_review"
 
 
-def test_boss_ruling_is_order_and_whitespace_insensitive():
+def test_boss_ruling_is_order_and_whitespace_insensitive(approvals_archive):
     from graph.routing import after_judge
 
     two = [*_CONFLICT_A, *_CONFLICT_B]
@@ -491,7 +491,7 @@ def test_human_reextract_approval_does_not_adjudicate_a_new_conflict():
     assert after_judge(state) == "human_review"
 
 
-def test_legacy_state_without_fingerprint_keeps_boss_approval():
+def test_legacy_state_without_fingerprint_keeps_boss_approval(approvals_archive):
     from graph.routing import after_arbiter, after_judge
 
     # A checkpoint that predates the field: the key is ABSENT, old rule applies.
@@ -565,7 +565,7 @@ def test_t64_no_lost_chunk_keeps_every_existing_route():
     assert after_extraction({**clean, "conflict_detected": True}) == "boss_escalation"
 
 
-def test_t65_judge_and_arbiter_cannot_clear_a_lost_window():
+def test_t65_judge_and_arbiter_cannot_clear_a_lost_window(approvals_archive):
     from graph.routing import after_arbiter, after_judge, judge_should_run
 
     state = _lost_chunk_state(judge_source_verified=True)

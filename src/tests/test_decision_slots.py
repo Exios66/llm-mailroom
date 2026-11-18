@@ -19,6 +19,7 @@ from graph.route_spec import ROUTE_SPECS, clear_route_rules, decide_route, route
 from pipeline import limits
 from pipeline.decision_review import DecisionAnswer
 from pipeline.reconsideration import collect_review_causes
+from tests.conftest import LEGACY_APPROVAL_ROUTE
 
 SPEC = {s.node: s for s in ROUTE_SPECS}
 CONTRACT = {"parties": ["Acme Corp.", "Beta LLC"], "governing_law": "New York", "cuad_family": "service",
@@ -67,8 +68,10 @@ def slots(monkeypatch):
 
     base = copy.deepcopy(config.load_config())
 
-    def apply(section, reviewer=None):
+    def apply(section, reviewer=None, approvals_archive=False):
         cfg = copy.deepcopy(base)
+        if approvals_archive:  # the slot sits behind an approval that archives (pre-check routing)
+            cfg["confidence"].update(LEGACY_APPROVAL_ROUTE)
         # The gate slots need the class's key fields; tests name their own when it matters.
         cfg["decision_slots"] = {"gate_key_fields": KEY, **section}
         if reviewer is not None:
@@ -434,7 +437,7 @@ class TestJudgeReplacement:
         assert out == {"judge_verdict": "complete", "transient_error": False}
 
     def test_accept_with_caveats_never_archives_a_gate_incomplete(self, slots):
-        cfg = slots({"judge_replacement": {"mode": "gate"}})
+        cfg = slots({"judge_replacement": {"mode": "gate"}}, approvals_archive=True)
         base = extracted_state(judge_verdict="incomplete", judge_source="extraction_gate", judge_pass_count=1)
         state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
         assert route("arbiter", state) == "human_review"
@@ -446,7 +449,7 @@ class TestJudgeReplacement:
 
 
     def test_a_gate_incomplete_park_is_never_capped(self, slots):
-        cfg = slots({"judge_replacement": {"mode": "gate"}, "cap_warmup": 1})
+        cfg = slots({"judge_replacement": {"mode": "gate"}, "cap_warmup": 1}, approvals_archive=True)
         base = extracted_state(judge_verdict="incomplete", judge_source="extraction_gate", judge_pass_count=1,
                                decision_slot_outcomes={"judge_replacement": {"node": "judge_verify",
                                                                              "action": "replaced",
@@ -467,7 +470,7 @@ class TestJudgeReplacement:
 
 class TestArbiterVeto:
     def test_gate_disagreement_parks(self, slots):
-        cfg = slots({"arbiter_veto": {"mode": "enforce"}})
+        cfg = slots({"arbiter_veto": {"mode": "enforce"}}, approvals_archive=True)
         base = extracted_state(judge_verdict="partial", extraction_gate=gate({"parties": 0.2}))
         state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
         assert state["decision_slot_outcomes"]["arbiter_veto"]["action"] == "park"
@@ -475,7 +478,7 @@ class TestArbiterVeto:
         assert "arbiter_veto_gate" in collect_review_causes(state)
 
     def test_agreement_and_other_decisions_keep_the_route(self, slots):
-        cfg = slots({"arbiter_veto": {"mode": "enforce"}})
+        cfg = slots({"arbiter_veto": {"mode": "enforce"}}, approvals_archive=True)
         base = extracted_state(judge_verdict="partial", extraction_gate=gate({"parties": 0.9}))
         state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
         assert route("arbiter", state) == "compile_report"
@@ -484,7 +487,7 @@ class TestArbiterVeto:
         assert route("arbiter", state) == "retry_extract"  # a veto only parks an archive
 
     def test_veto_spends_no_cap_on_a_judge_replacement_park(self, slots):
-        cfg = slots({"judge_replacement": {"mode": "gate"}, "arbiter_veto": {"mode": "enforce", "park_cap": 0.0}})
+        cfg = slots({"judge_replacement": {"mode": "gate"}, "arbiter_veto": {"mode": "enforce", "park_cap": 0.0}}, approvals_archive=True)
         base = extracted_state(judge_verdict="incomplete", judge_source="extraction_gate", judge_pass_count=1,
                                extraction_gate=gate({"parties": 0.2}))
         state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
@@ -526,7 +529,7 @@ class TestApprovalChecks:
             ds.parse_slots(raw)
 
     def test_a_judge_complete_the_gate_disagrees_with_parks(self, slots):
-        cfg = slots({"judge_check": {"mode": "enforce"}})
+        cfg = slots({"judge_check": {"mode": "enforce"}}, approvals_archive=True)
         state = run_wrapped("judge_verify", {"judge_verdict": "complete"},
                             extracted_state(extraction_gate=gate({"parties": 0.1})), cfg)
         rec = state["decision_slot_outcomes"]["judge_check"]
@@ -535,19 +538,19 @@ class TestApprovalChecks:
         assert "judge_check_unsupported" in collect_review_causes(state)
 
     def test_a_judge_complete_the_gate_backs_archives(self, slots):
-        cfg = slots({"judge_check": {"mode": "enforce", "on_unverified": "park"}})
+        cfg = slots({"judge_check": {"mode": "enforce", "on_unverified": "park"}}, approvals_archive=True)
         state = run_wrapped("judge_verify", {"judge_verdict": "complete"},
                             extracted_state(extraction_gate=gate({"parties": 0.95})), cfg)
         assert state["decision_slot_outcomes"]["judge_check"]["action"] == "agree"
         assert route("judge_verify", state) == "compile_report"
 
     def test_an_unverified_judge_complete_follows_on_unverified(self, slots):
-        cfg = slots({"judge_check": {"mode": "enforce"}})
+        cfg = slots({"judge_check": {"mode": "enforce"}}, approvals_archive=True)
         state = run_wrapped("judge_verify", {"judge_verdict": "complete"}, extracted_state(), cfg)
         assert state["decision_slot_outcomes"]["judge_check"]["action"] == "unavailable"
         assert route("judge_verify", state) == "compile_report"
         ds.reset_ledger()
-        cfg = slots({"judge_check": {"mode": "enforce", "on_unverified": "park"}})
+        cfg = slots({"judge_check": {"mode": "enforce", "on_unverified": "park"}}, approvals_archive=True)
         state = run_wrapped("judge_verify", {"judge_verdict": "complete"}, extracted_state(), cfg)
         rec = state["decision_slot_outcomes"]["judge_check"]
         assert (rec["action"], rec["cause"]) == ("park", "judge_complete_unverified")
@@ -555,13 +558,13 @@ class TestApprovalChecks:
         assert "judge_complete_unverified" in collect_review_causes(state)
 
     def test_a_class_without_key_fields_is_unverified_not_agreed(self, slots):
-        cfg = slots({"gate_key_fields": {}, "judge_check": {"mode": "enforce"}})
+        cfg = slots({"gate_key_fields": {}, "judge_check": {"mode": "enforce"}}, approvals_archive=True)
         base = extracted_state(extraction_gate=gate({"parties": 0.99}))
         state = run_wrapped("judge_verify", {"judge_verdict": "complete"}, base, cfg)
         rec = state["decision_slot_outcomes"]["judge_check"]
         assert (rec["action"], rec["gate_reason"]) == ("unverified", "coverage_unknown")
         assert route("judge_verify", state) == "compile_report"
-        cfg = slots({"gate_key_fields": {}, "judge_check": {"mode": "enforce", "on_unverified": "park"}})
+        cfg = slots({"gate_key_fields": {}, "judge_check": {"mode": "enforce", "on_unverified": "park"}}, approvals_archive=True)
         state = run_wrapped("judge_verify", {"judge_verdict": "complete"}, base, cfg)
         assert route("judge_verify", state) == "human_review"
 
@@ -577,7 +580,7 @@ class TestApprovalChecks:
         assert "judge_check" not in state["decision_slot_outcomes"]
 
     def test_no_double_charge_when_the_archive_gate_parks(self, slots):
-        cfg = slots({"archive_gate": {"mode": "enforce"}, "judge_check": {"mode": "enforce", "park_cap": 0.0}})
+        cfg = slots({"archive_gate": {"mode": "enforce"}, "judge_check": {"mode": "enforce", "park_cap": 0.0}}, approvals_archive=True)
         state = run_wrapped("judge_verify", {"judge_verdict": "complete"},
                             extracted_state(extraction_gate=gate({"parties": 0.1})), cfg)
         out = state["decision_slot_outcomes"]
@@ -587,7 +590,7 @@ class TestApprovalChecks:
         assert route("judge_verify", state) == "human_review"
 
     def test_a_spent_judge_check_cap_follows_the_baseline(self, slots):
-        cfg = slots({"judge_check": {"mode": "enforce", "park_cap": 0.0}})
+        cfg = slots({"judge_check": {"mode": "enforce", "park_cap": 0.0}}, approvals_archive=True)
         state = run_wrapped("judge_verify", {"judge_verdict": "complete"},
                             extracted_state(extraction_gate=gate({"parties": 0.1})), cfg)
         assert state["decision_slot_outcomes"]["judge_check"]["action"] == "capped"
@@ -635,15 +638,35 @@ class TestApprovalChecks:
 
     def test_veto_parks_an_unverified_accept_only_when_asked(self, slots):
         base = extracted_state(judge_verdict="partial")
-        cfg = slots({"arbiter_veto": {"mode": "enforce"}})
+        cfg = slots({"arbiter_veto": {"mode": "enforce"}}, approvals_archive=True)
         state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
         assert state["decision_slot_outcomes"]["arbiter_veto"]["action"] == "unavailable"
         assert route("arbiter", state) == "compile_report"
-        cfg = slots({"arbiter_veto": {"mode": "enforce", "on_unverified": "park"}})
+        cfg = slots({"arbiter_veto": {"mode": "enforce", "on_unverified": "park"}}, approvals_archive=True)
         state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
         assert state["decision_slot_outcomes"]["arbiter_veto"]["cause"] == "arbiter_accept_unverified"
         assert route("arbiter", state) == "human_review"
         assert "arbiter_accept_unverified" in collect_review_causes(state)
+
+    def test_by_default_a_judge_complete_parks_and_the_gate_may_release_it(self, slots):
+        """The default route parks a judge "complete"; an enforcing gate release is the capped way out."""
+        cfg = slots({"archive_gate": {"mode": "enforce", "release": True, "release_cap": None}})
+        base = extracted_state(judge_verdict="complete", judge_pass_count=1)
+        assert route("judge_verify", base) == "human_review"
+        assert "judge_complete_unconfirmed" in collect_review_causes(base)
+        state = run_wrapped("judge_verify", {"extraction_gate": gate({"parties": 0.99})}, base, cfg)
+        assert state["decision_slot_outcomes"]["archive_gate"]["action"] == "release"
+        assert route("judge_verify", state) == "compile_report"
+        weak = run_wrapped("judge_verify", {"extraction_gate": gate({"parties": 0.6})}, base, cfg)
+        assert route("judge_verify", weak) == "human_review"
+
+    def test_by_default_accept_with_caveats_never_releases(self, slots):
+        cfg = slots({"archive_gate": {"mode": "enforce", "release": True, "release_cap": None},
+                     "arbiter_veto": {"mode": "enforce"}})
+        base = extracted_state(judge_verdict="partial", judge_pass_count=1, extraction_gate=gate({"parties": 0.99}))
+        state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
+        assert route("arbiter", state) == "human_review"
+        assert "arbiter_accept_unconfirmed" in collect_review_causes(state)
 
     def test_every_slot_cause_has_a_label_and_a_tray_weight(self):
         import pipeline.config as config
