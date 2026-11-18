@@ -10,6 +10,7 @@ from llm.prompt_doctrine import (
     JUDGE_CORRECTNESS as _CORRECTNESS_DOCTRINE,
 )
 from agents.source_windows import cached_window, source_windows, store_window, text_digest, window_label
+from llm.prompt_sets import served_prompt
 from llm.prompts import get_managed_prompt
 from pipeline import limits
 from pipeline.config import load_config
@@ -222,7 +223,7 @@ class CompletenessJudge(BaseAgent):
     agent_name = "judge"
 
     def system_prompt(self) -> str:
-        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
+        text, self._langfuse_prompt = get_managed_prompt(*served_prompt(self.agent_name, SYSTEM_PROMPT))
         return text
 
     @staticmethod
@@ -503,7 +504,7 @@ Document type: {doc_type}
 </SOURCE_DOCUMENT_TEXT>"""
 
         variant_prompt, self._langfuse_prompt = get_managed_prompt(
-            "judge-correctness", CORRECTNESS_SYSTEM_PROMPT
+            *served_prompt("judge-correctness", CORRECTNESS_SYSTEM_PROMPT)
         )
         result = self._call_structured(
             user_message,
