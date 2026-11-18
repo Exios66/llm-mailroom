@@ -109,8 +109,9 @@ Unreleased work on `main`. Canonical source: [`CHANGELOG.md`](https://github.com
   - A locked or slow store ends the lookup after `LOOKUP_TIMEOUT_SECONDS` (2 s; SQLite connect and busy timeout, Postgres connect and statement timeout) with reason `timeout` and verification `unverified`, for both the document lookup and the listing.
   - When `MAX_EVENTS` cuts an event chain the record carries `truncated` and `events_shown` and a note names the cap (`N of M events read`); `last_event`, `status` and `updated_at` describe the last event read.
   - The panel lists at most 10 verification failures with a "N more failures not shown" row, and every failure row has a stable id (`scope|id|reason`).
-  - `src/audit/verify.py` is unchanged: its `stage` / `attempt_no` reference comparison stays an open owner decision (#238). The `run_calibration_sweep.py` items of #238 are not part of this entry.
-  - Tests: `test_audit_api.py`, `auditFailures.test.ts` and `App.test.tsx`.
+  - `runs.py` drops NaN and infinity from journal and experiment projections (a bool was already refused), and `run_calibration_sweep.py --resume` no longer lets a saved bool pass as the integer `limit`, `seed` or `per_class` (`True == 1`); `legacy_rows()` now documents which legacy shapes `--allow-legacy-resume` waives.
+  - `src/audit/verify.py` is unchanged: its `stage` / `attempt_no` reference comparison stays an open owner decision (#238).
+  - Tests: `test_audit_api.py`, `test_runs_api.py`, `test_calibration_resume_identity.py`, `auditFailures.test.ts` and `App.test.tsx`.
 
 ## Fixed
 
