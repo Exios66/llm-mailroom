@@ -30,6 +30,18 @@ executors:
     resource_class: << parameters.size >>
 
 jobs:
+  no-session-links:
+    # Rejects claude.ai links, Claude-Session trailers and "Generated with
+    # Claude Code" footers in commit messages and the PR description.
+    docker:
+      - image: cimg/python:3.11
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: No session links or Claude Code footers
+          command: bash .circleci/check_no_session_links.sh
+
   test:
     parameters:
       force_full:
@@ -169,6 +181,12 @@ jobs:
 workflows:
   ci:
     jobs:
+      - no-session-links:
+          filters:
+            branches:
+              ignore: gh-pages
+            tags:
+              ignore: /.*/
       - test:
           force_full: << pipeline.parameters.full_suite >>
           filters:

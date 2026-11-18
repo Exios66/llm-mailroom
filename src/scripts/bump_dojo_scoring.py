@@ -3,21 +3,19 @@
 
 Resolves the latest published GitHub Release on Exios66/llm-dojo-scoring
 (or an explicit ``--tag``) and rewrites the pin in ``pyproject.toml`` plus
-the documented pin references. Used by humans and by
-``.github/workflows/bump-dojo-scoring.yml``.
+the documented pin references. Run by hand (GitHub Actions is off; CI is CircleCI only).
 
 RELEASE-TIME ONLY: in the mailroom-hub monorepo, development resolves
 ``llm-dojo-scoring`` from the workspace (``[tool.uv.sources]`` redirect) —
 the pin here matters only when cutting a release / building deploy images.
-The companion auto-bump workflow is inert inside the monorepo (nested
-``.github/`` is not read by GitHub); run this script manually at release
-time.
+Run this script manually at release time; there is no auto-bump workflow
+(CI is CircleCI only).
 
 The pin may be a release tag (``v0.21.0``) or, while a fix is unreleased, a
 40-hex commit SHA (an INTERIM pin). Everything here treats both as a "ref":
 a SHA pin renders as its 7-char short form on badges and links to the commit,
 and ``--apply --tag vX.Y.Z`` replaces a SHA pin everywhere it is documented.
-The auto-bump never downgrades an interim SHA pin to an older release: when
+``--apply`` never downgrades an interim SHA pin to an older release: when
 the current pin is a SHA that the target tag does not contain, ``--check``
 reports it up to date and ``--apply`` refuses (see ``tag_contains_commit``).
 
