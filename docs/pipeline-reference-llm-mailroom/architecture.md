@@ -221,6 +221,7 @@ Same three-way branch as classification, plus:
 * **Schema invalid**: retry (`retry_extract`) while `attempts <= retry_max` (2), then human review
 * **Low confidence**: retry → still low → human review
 * **High confidence**: proceed to report compilation (via `judge_verify` when the judge gate fires)
+* **Archive checks** (taxonomy `confidence`, all off by default): a judge `complete` and an arbiter `accept_with_caveats` go to a person instead of archiving (`judge_complete_archives`, `arbiter_accept_archives`), a judge never clears an extraction below `low` (`judge_clears_low_confidence`), and a Boss approval made without any archived matter record (`boss_context_records` 0) parks with cause `boss_ungrounded`
 * `retry_extract` uses the same router: it can loop on itself (transient errors or another quality retry), or go to `judge_verify`, `boss_escalation`, `compile_report` or human review
 
 ### 6. Compile Report (Reporter)

@@ -1548,7 +1548,7 @@ class TestCompiledRedirects:
         assert final["decision_override_counts"] == {"classify.post": 1}
 
     def test_extract_slot_redirects_to_judge_verify(
-        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
+        self, approvals_archive, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm
     ):
         arbiter_accepts(mock_openai_client)
         decision_points({"extract.post": {"node": "extract", "backend": "fake", "allow": ["judge_verify"]}})
@@ -1580,7 +1580,7 @@ class TestCompiledRedirects:
         assert "decision_override_counts" not in final
 
     def test_cyclic_allow_config_terminates_and_the_document_finishes(
-        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch
+        self, approvals_archive, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch
     ):
         arbiter_accepts(mock_openai_client)
         judge_satisfied(monkeypatch)
@@ -1594,7 +1594,7 @@ class TestCompiledRedirects:
         assert any(o.get("capped") for o in final["decision_outcomes"].values())
 
     def test_a_larger_budget_still_terminates_within_the_limit(
-        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch
+        self, approvals_archive, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch
     ):
         arbiter_accepts(mock_openai_client)
         judge_satisfied(monkeypatch)
@@ -1605,9 +1605,7 @@ class TestCompiledRedirects:
         assert max(counts.values()) == 2 and sum(counts.values()) <= 8
         assert final["stage"] == "archived"
 
-    def test_without_a_budget_the_same_cycle_never_finishes(
-        self, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch
-    ):
+    def test_without_a_budget_the_same_cycle_never_finishes(self, approvals_archive, decision_points, temp_base_dir, mock_openai_client, mock_langchain_llm, monkeypatch):
         """Control: the budget is what ends the cycle (the real cap is lifted for this test).
 
         Unbounded, the loop only stops when the run's output-token budget aborts it (or

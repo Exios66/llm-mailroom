@@ -298,7 +298,7 @@ The deterministic clerk (dojo `llm_dojo_scoring.intake` gold, re-exported byte-c
 | **Node**        | `boss_escalation`                            |
 | **Trigger**     | Data conflict or repeated low confidence     |
 | **Input**       | Manifest + conflicting matter context        |
-| **Output**      | Decision: approved or review                 |
+| **Output**      | Decision: approved or review; `boss_context_records` (an approval with 0 parks, `boss_ungrounded`) |
 | **Personality** | Calm under pressure, makes the judgment call |
 
 **Two implementation paths, one personality:**

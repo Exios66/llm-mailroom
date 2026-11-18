@@ -3,8 +3,9 @@
 Taxonomy ``decision_slots:`` (``src/config/taxonomy.yaml``). Every slot ships ``mode:
 baseline``, which is exactly the pipeline without this module: no node is wrapped, no route
 rule is registered, no slot state key is written and no model is called (a registered
-extraction gate's record carries the ``attempt`` it judged either way). The slots are the six
-places the decision-model experiments (Sets A-F) measured or plan to measure:
+extraction gate's record carries the ``attempt`` it judged either way). The slots are the
+places the decision-model experiments (Sets A-F) measured or plan to measure, plus two
+approval checks:
 
 ``sorter_reviewer``
     The Lane A decision reviewer (``reviewer:`` block, ``decision_only`` classes) gains a
@@ -38,6 +39,16 @@ places the decision-model experiments (Sets A-F) measured or plan to measure:
     ``mode: enforce``: an arbiter ``accept_with_caveats`` that the gate disagrees with parks
     (cause ``arbiter_veto_gate``). A veto only parks; it never releases. It does not spend
     its cap on a document ``judge_replacement`` already parks (``action: hold``).
+``judge_check`` / ``boss_check``
+    ``mode: enforce``: a judge ``complete`` (``judge_verify``) or a boss ``approved``
+    (``boss_escalation``) about to archive must be backed by the gate: disagreement parks
+    (``judge_check_unsupported``, ``boss_check_unsupported``), and with ``on_unverified:
+    park`` so does an approval the gate cannot confirm (no usable answer, or a class without
+    ``gate_key_fields``: ``judge_complete_unverified``, ``boss_approval_unverified``).
+    ``arbiter_veto.on_unverified`` does the same for an ``accept_with_caveats``
+    (``arbiter_accept_unverified``). They only park, within ``park_cap`` (10%). Taxonomy
+    ``confidence`` already parks a judge ``complete`` and an ``accept_with_caveats`` by
+    default (``graph/routing.py``); these checks matter where a class opts back in.
 ``closed_field_resolver``
     #285 parks any closed-label value off its taxonomy vocabulary. ``mode: suggest`` asks the
     registered resolver (``agents.closed_field_resolver``) to pick an allowed value and

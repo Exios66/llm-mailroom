@@ -1,6 +1,6 @@
 # Decision-model slots
 
-Six places in the graph where a decision model may change what happens to a document.
+Eight places in the graph where a decision model may change what happens to a document.
 They are configured in `src/config/taxonomy.yaml` under `decision_slots:` and implemented
 in `src/graph/decision_slots.py`. Every slot ships `mode: baseline`: the pipeline then runs
 exactly as it would without the block (no node is wrapped, no route rule is registered,
@@ -12,7 +12,7 @@ The mailroom never builds a decision model. The host registers one per role:
 | Role | Registry | Used by |
 | --- | --- | --- |
 | Sorter reviewer | `agents.decision_backend.register_decision_backend` | `sorter_reviewer` |
-| Extraction gate | `agents.extraction_gate.register_extraction_gate` | `archive_gate`, `judge_replacement`, `arbiter_veto`, `field_review` |
+| Extraction gate | `agents.extraction_gate.register_extraction_gate` | `archive_gate`, `judge_replacement`, `arbiter_veto`, `judge_check`, `boss_check`, `field_review` |
 | Closed-field resolver | `agents.closed_field_resolver.register_closed_field_resolver` | `closed_field_resolver`, `field_review` |
 
 The experiments run these on OpenRouter Decisions-API models (local-mailroom-sandbox
@@ -25,7 +25,9 @@ registers them from its run spec); the chat sorter reviewer is the baseline.
 | `sorter_reviewer` | `reviewer:` decision_only classes park on any failed rule | `park_cap`: past it the chat reviewer reviews instead | accepts are never capped; every non-accept route (a park or a classification-arbiter escalation) counts |
 | `archive_gate` | gate answer recorded only | `enforce`: the gate parks an archive it does not support, on the `extract`, `retry_extract` and `judge_verify` routes; optional `release` of a soft park | `park_cap` 10%, `release_cap` 3% |
 | `judge_replacement` | LLM judge, up to `judge_max_passes` | `gate`: the gate answer on this attempt is the verdict (classes with `gate_key_fields` only); no judge call, no judge score | an arbiter `accept_with_caveats` on a gate `incomplete` always parks (`gate_incomplete`, never capped) |
-| `arbiter_veto` | `accept_with_caveats` archives | `enforce`: gate disagreement parks (`arbiter_veto_gate`) | only parks, never releases; `park_cap` (none by default); no charge when `judge_replacement` already parks |
+| `arbiter_veto` | `accept_with_caveats` parks unless `confidence.arbiter_accept_archives` | `enforce`: gate disagreement parks (`arbiter_veto_gate`); `on_unverified: park` also parks an accept the gate cannot confirm (`arbiter_accept_unverified`) | only parks, never releases; `park_cap` (none by default); no charge when `judge_replacement` already parks |
+| `judge_check` | a judge `complete` parks unless `confidence.judge_complete_archives` | `enforce`: where a judge `complete` would archive, gate disagreement parks (`judge_check_unsupported`); `on_unverified: park` also parks a `complete` the gate cannot confirm (`judge_complete_unverified`) | only parks; `park_cap` 10%; no charge when `archive_gate` already parks |
+| `boss_check` | a Boss `approved` archives (a blind one parks, `boss_ungrounded`) | `enforce`: gate disagreement with a Boss approval parks (`boss_check_unsupported`); `on_unverified: park` also parks one the gate cannot confirm (`boss_approval_unverified`) | only parks; `park_cap` 10% |
 | `closed_field_resolver` | off-list closed label parks (#285) | `suggest` records an allowed pick; `resolve` applies it | every off-list field needs an on-list pick at `min_probability`; `release_cap` 3% |
 | `field_review` | the whole document parks | `annotate`: the review block lists `review_focus` fields | at most `max_fields`, else the whole document |
 
@@ -53,14 +55,24 @@ evidence. A class without key fields can still park through `archive_gate` and
 `archive_gate.release: true` lets the gate archive a document the router would park, only
 when all of these hold:
 
-- every review cause is soft: `low_extraction_confidence`, `retries_exhausted`, `judge_partial`;
+- every review cause is soft: `low_extraction_confidence`, `retries_exhausted`, `judge_partial`,
+  `judge_complete_unconfirmed` (a judge `complete` the default archive checks parked);
 - the judge did not say `incomplete` (or error), there is no matter conflict and no guardrail issue;
 - the class has `gate_key_fields` and every one of them is supported at `release_support_min`
   (default 0.9); a key field the gate did not answer counts as support 0;
 - the `release_cap` allows it.
 
-`archive_gate` does not see an arbiter `accept_with_caveats` archive (that is
-`arbiter_veto`'s place) or a boss approval (never gated).
+`archive_gate` does not see an arbiter `accept_with_caveats` (that is `arbiter_veto`'s
+place, and an accept is never released) or a Boss approval (`boss_check`'s place).
+
+### The default archive checks and the slots
+
+Without any slot, taxonomy `confidence` keeps a judge `complete`, an arbiter
+`accept_with_caveats` and a blind Boss approval from archiving (see the configuration
+reference). The slots work on top of that: `archive_gate.release` is the capped way a
+decision model may archive a judge `complete` it backs on every key field, and
+`judge_check` / `arbiter_veto` matter for a class that sets `judge_complete_archives` or
+`arbiter_accept_archives` back to `true`.
 
 ## Caps
 
@@ -85,7 +97,9 @@ or watcher worker keeps its own. `graph.decision_slots.reset_ledger()` starts a 
   probability and whether it was applied. An applied pick also leaves
   `extracted_data["_closed_field_resolutions"]` on the archived record.
 - `judge_source`: `extraction_gate` or `llm` while `judge_replacement` is on.
-- Review causes `archive_gate_unsupported`, `arbiter_veto_gate`, `gate_incomplete`.
+- Review causes `archive_gate_unsupported`, `arbiter_veto_gate`, `gate_incomplete`,
+  `arbiter_accept_unverified`, `judge_check_unsupported`, `judge_complete_unverified`,
+  `boss_check_unsupported`, `boss_approval_unverified`.
 - A parked document's `_review.review_focus` under `field_review: annotate`.
 
 ## Example (Set B: enforcing gate, judge replaced)

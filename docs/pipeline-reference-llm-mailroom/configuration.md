@@ -57,6 +57,9 @@ Controls the branching logic in `graph/routing.py`. Tunable without code changes
 | `judge_max_passes`   | 3                      | `1 + arbiter_retry_max` — one completeness judge per extraction attempt                                                                                                                                             |
 | `judge_rejudge_retry` | false | Opt-in (#241): `true` (global or per class) sends a retry whose earlier attempt was judged back to `judge_verify` whatever its confidence, while `judge_pass_count < judge_max_passes`. Off until the judge is calibrated (#242), so a confident retry archives unjudged |
 | `keep_best_attempt` | false | Opt-in (#254): `true` (global or per class) makes `compile_report` and the review handoff use the best-judged extraction attempt instead of the latest: `complete` > `partial` > `incomplete`, then `extraction_confidence`, ties keep the latest; only judged attempts that passed the schema/quality gate compete, and a matter conflict pins the latest. Two exceptions keep the latest attempt: an unjudged latest retry that passed the gate is kept over any judged earlier attempt, even a `complete` one, and archiving keeps the latest when the selected earlier attempt is still unsure or below the coverage floor (`earlier_attempt_requires_review`). Every attempt is recorded in `extraction_attempt_history` whatever the knob says, and `selected_attempt` names the one used. Off until the judge is calibrated (#242). Routing never reads it |
+| `judge_complete_archives` | false | Archive check: `false` sends a judge `complete` to a person (cause `judge_complete_unconfirmed`) instead of archiving. A document reaches the judge because the pipeline doubted it, and in the slice-100 r2 judge audit the judge passed 5 of 6 wrong archives (#242, #278). Per class overridable; `true` restores the old route |
+| `arbiter_accept_archives` | false | Archive check: `false` sends an arbiter `accept_with_caveats` to a person (cause `arbiter_accept_unconfirmed`); `retry_extraction` still re-extracts. Every such accept seen in past runs archived a wrong extraction. Per class overridable |
+| `judge_clears_low_confidence` | false | `false`: a judge that saw the whole source (`judge_source_verified`) no longer clears an extraction below `low`. Per class overridable |
 | `conflict_threshold` | 0.3                    | **Unused routing knob** (kept for config-file compatibility). Matter conflicts escalate via deterministic same-class field comparison in `graph/build_graph.py:_detect_conflict`, not an extraction-confidence gap. |
 | `by_class`           | (severity map)         | Per-class `high` / `low` / `judge_band_high` for critical contracts/mergers/insurance, high compliance, elevated corporate, standard correspondence                                                                 |
 
@@ -70,6 +73,9 @@ confidence:
   judge_max_passes: 3
   judge_rejudge_retry: false
   keep_best_attempt: false
+  judge_complete_archives: false
+  arbiter_accept_archives: false
+  judge_clears_low_confidence: false
   conflict_threshold: 0.3  # unused; conflicts are field-value comparison
   by_class:
     contract: { severity: critical, high: 0.98, low: 0.90, judge_band_high: 0.97 }

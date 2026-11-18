@@ -84,7 +84,7 @@ def test_model_scores_not_credited_with_correction(api, temp_base_dir, llm, mock
     assert corr["attempt_no"] == last["attempt_no"] + 1
 
 
-def test_resume_reruns_extract(api, temp_base_dir, llm):
+def test_resume_reruns_extract(api, temp_base_dir, llm, approvals_archive):
     doc_id = _sorter_park(temp_base_dir, "resume.txt")
     _judge_passes(llm)
     assert _resolve(api, doc_id, resolution="approve_as_is").status_code == 200
@@ -97,7 +97,7 @@ def test_resume_reruns_extract(api, temp_base_dir, llm):
     assert row["detail"]["extraction"]["extraction_source"] == "model"
 
 
-def test_doc_type_override_reruns_extraction_and_routes_scoring(api, temp_base_dir, llm):
+def test_doc_type_override_reruns_extraction_and_routes_scoring(api, temp_base_dir, llm, approvals_archive):
     doc_id = _extraction_park(temp_base_dir, "override.txt")
     _judge_passes(llm)
     r = _resolve(api, doc_id, resolution="reclassify", doc_type="correspondence")
