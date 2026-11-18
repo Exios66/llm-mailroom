@@ -1095,6 +1095,8 @@ def _minimal_unified_store(
     attempt_trigger: str = "initial",
     ref_stage: str = "extraction",
     ref_attempt_no: int = 1,
+    row_id: str | None = None,
+    attempt_parent_id: str | None = None,
 ) -> Path:
     """One unified document whose every stored detail is the object ``{}``.
 
@@ -1117,14 +1119,15 @@ def _minimal_unified_store(
                 json.dumps({"migrated_at": "2026-11-09T08:00:00+00:00", "legacy_rows": 0}),
             ),
         )
-        row_id = f"row-{DOC}"
+        row_id = row_id if row_id is not None else f"row-{DOC}"
+        parent_id = attempt_parent_id if attempt_parent_id is not None else row_id
         timestamp = "2026-11-09T12:00:00+00:00"
         main_detail: dict = {}
         if with_attempt:
             attempt_id = f"{DOC}-attempt-1"
             sub = {
                 "attempt_id": attempt_id,
-                "parent_id": row_id,
+                "parent_id": parent_id,
                 "doc_id": DOC,
                 "stage": attempt_stage,
                 "attempt_no": 1,
@@ -1139,7 +1142,7 @@ def _minimal_unified_store(
                 "INSERT INTO audit_attempts VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     attempt_id,
-                    row_id,
+                    parent_id,
                     DOC,
                     attempt_stage,
                     1,
@@ -2043,3 +2046,34 @@ def test_legacy_only_document_with_a_missing_subrow_table_is_never_verified(
     assert verification["status"] == "unverified"
     assert not verification["failures"]
     assert any(table in note for note in verification["notes"])
+
+
+def test_padded_row_id_is_matched_raw_by_its_attempts(client, tmp_path, monkeypatch):
+    """A legitimately padded entry_id is the identity the writer hashed; attempts naming it verify."""
+    _minimal_unified_store(tmp_path, monkeypatch, with_attempt=True, row_id=f"row-{DOC} ")
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["verification"]["status"] == "verified"
+    assert payload["verification"]["failures"] == []
+    assert payload["record"]["attempts_total"] == 1
+
+
+def test_attempt_naming_the_trimmed_parent_id_is_an_orphan_not_a_match(client, tmp_path, monkeypatch):
+    """The display trim of an id must not make a different parent id compare equal.
+
+    The row id is ``"row-<doc> "`` (padded); the attempt names ``"row-<doc>"``.
+    Both rows hash correctly on their own, so only an identity comparison on the
+    raw values can tell they were not written together.
+    """
+    _minimal_unified_store(
+        tmp_path,
+        monkeypatch,
+        with_attempt=True,
+        row_id=f"row-{DOC} ",
+        attempt_parent_id=f"row-{DOC}",
+    )
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["verification"]["status"] == "failed"
+    assert any(f["reason"] == "attempt-orphan" for f in payload["verification"]["failures"])
+    # The projection must not attach the attempt to the row either.
+    assert payload["record"]["attempts"] == []
+    assert payload["record"]["attempts_total"] == 0

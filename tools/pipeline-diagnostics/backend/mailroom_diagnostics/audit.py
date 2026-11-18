@@ -951,7 +951,10 @@ def _verify_unified(
         else "hash recomputation: schemas.audit.compute_audit_hash (attempt sub-rows unverified)"
     )
 
+    # ``row_id`` is the display id (failure rows); ``row_key`` is the identity the
+    # attempts' ``parent_id`` is compared with, exactly as stored.
     row_id = _as_str(row.get("entry_id")) if row is not None else None
+    row_key = _text(row.get("entry_id")) if row is not None else None
     if row is None:
         # No terminal row: only the migrated legacy event chain can be verified.
         pass
@@ -983,10 +986,10 @@ def _verify_unified(
         )
 
     parents: list[dict[str, Any]] = []
-    if row is not None and row_id:
+    if row is not None and row_key:
         parents.append(
             {
-                "parent_id": row_id,
+                "parent_id": row_key,
                 "doc_id": row.get("doc_id"),
                 "matter_id": matter_id if matter_id is not None else row.get("matter_id"),
                 "actor": row.get("actor"),
@@ -999,7 +1002,7 @@ def _verify_unified(
     allowed_kinds = _addendum_kinds()
     for addendum in addenda:
         checked["addenda"] += 1
-        addendum_id = _as_str(addendum.get("addendum_id"))
+        addendum_id = _as_str(addendum.get("addendum_id"))  # display only
         # The foundation verifier rejects a kind its writer never emits; a
         # correctly rehashed row with another kind must not verify here either.
         if addendum.get("kind") not in allowed_kinds:
@@ -1018,7 +1021,7 @@ def _verify_unified(
         previous = data.get("entry_hash")
         parents.append(
             {
-                "parent_id": addendum_id,
+                "parent_id": _text(addendum.get("addendum_id")),
                 "doc_id": addendum.get("doc_id"),
                 "matter_id": matter_id,
                 "actor": addendum.get("actor"),
@@ -1754,10 +1757,15 @@ def _read_unified(
     # MAX_FOREIGN_ATTEMPTS rows of other documents naming this record (the rest
     # are counted in a note); the projection shows only this document's own,
     # never another document's content.
-    attempt_projection = [
-        _project_attempt(item) for item in attempts if item.get("doc_id") == doc_id
-    ]
-    parent_of = {_as_str(item.get("attempt_id")): _as_str(item.get("parent_id")) for item in attempts}
+    own_attempts = [item for item in attempts if item.get("doc_id") == doc_id]
+
+    def _children(parent_key: Any) -> list[dict[str, Any]]:
+        # Which sub-rows belong to a parent is an identity question: compare the
+        # stored ids exactly (type-equal, untrimmed), never their display form.
+        if not isinstance(parent_key, str) or not parent_key:
+            return []
+        return [_project_attempt(item) for item in own_attempts if item.get("parent_id") == parent_key]
+
     row_id = _as_str(data.get("entry_id"))
     event = _as_str(data.get("event"), limit=64)
     payload["record"] = {
@@ -1773,23 +1781,13 @@ def _read_unified(
         "status": _TERMINAL_STATUS.get(event or "", "recorded"),
         "terminal": event in _TERMINAL_STATUS,
         "decision_fields": _decision_fields(data.get("detail")),
-        "attempts": [item for item in attempt_projection if parent_of.get(item["attempt_id"]) == row_id],
-        "attempts_total": len(
-            [
-                item
-                for item in attempts
-                if item.get("doc_id") == doc_id and _as_str(item.get("parent_id")) == row_id
-            ]
-        ),
+        "attempts": _children(data.get("entry_id")),
+        "attempts_total": len(_children(data.get("entry_id"))),
         "addenda": [],
     }
     for addendum in addenda:
-        addendum_id = _as_str(addendum.get("addendum_id"))
         payload["record"]["addenda"].append(
-            _project_addendum(
-                addendum,
-                [item for item in attempt_projection if parent_of.get(item["attempt_id"]) == addendum_id],
-            )
+            _project_addendum(addendum, _children(addendum.get("addendum_id")))
         )
     payload["verification"] = _verify_unified(
         row=data,
