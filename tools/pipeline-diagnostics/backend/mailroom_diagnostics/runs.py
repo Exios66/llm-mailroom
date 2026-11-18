@@ -101,7 +101,10 @@ def _leaf_number(value: Any) -> float | int | None:
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return value if math.isfinite(value) else None
+    try:
+        return value if math.isfinite(value) else None
+    except OverflowError:  # an int too large for a float, which json.loads accepts
+        return None
 
 
 def _is_scalar(value: Any) -> bool:

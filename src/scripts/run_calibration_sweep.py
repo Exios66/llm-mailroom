@@ -1178,11 +1178,11 @@ def resume_mismatch(
                 diffs.setdefault("limit", f"saved {saved_limit!r}, now {new_limit!r} (it can only be raised)")
         if "judge_attempts" not in diag:
             diffs.setdefault("judge_attempts", "not recorded in the saved records")
-        elif diag["judge_attempts"] != current["judge_attempts"]:
+        elif not _same_setting(diag["judge_attempts"], current["judge_attempts"]):
             diffs.setdefault("judge_attempts", f"saved {diag['judge_attempts']!r}, now {current['judge_attempts']!r}")
         if "max_extraction_candidates" not in diag:
             diffs.setdefault("max_extraction_candidates", "not recorded in the saved records")
-        elif diag["max_extraction_candidates"] != current["max_extraction_candidates"]:
+        elif not _same_setting(diag["max_extraction_candidates"], current["max_extraction_candidates"]):
             diffs.setdefault("max_extraction_candidates",
                              f"saved {diag['max_extraction_candidates']!r}, now {current['max_extraction_candidates']!r}")
         if "thresholds_in_force" not in row:

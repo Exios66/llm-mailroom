@@ -235,3 +235,15 @@ def test_a_saved_bool_never_equals_an_integer_selection_setting(key, saved, now)
     # the same integer still matches
     run[key] = now
     assert sw.resume_mismatch([_row(**run)], [], current) is None
+
+
+@pytest.mark.parametrize("key,saved,now", [("judge_attempts", True, 1), ("max_extraction_candidates", True, 1),
+                                           ("max_extraction_candidates", False, 0)])
+def test_a_saved_bool_never_equals_an_integer_diagnostics_setting(key, saved, now):
+    """The diagnostics settings share the ``True == 1`` hole of the selection settings."""
+    row = _row(seed=1, per_class=5, limit=None)
+    row["diagnostics"] = {"judge_attempts": "first", "max_extraction_candidates": 2, key: saved}
+    why = sw.resume_mismatch([row], [], {**_CURRENT, key: now})
+    assert why is not None and f"{key}: saved {saved!r}, now {now!r}" in why
+    row["diagnostics"][key] = now
+    assert sw.resume_mismatch([row], [], {**_CURRENT, key: now}) is None

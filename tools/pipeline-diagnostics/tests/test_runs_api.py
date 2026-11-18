@@ -445,3 +445,22 @@ def test_non_finite_experiment_numbers_are_dropped_by_the_reader(dirs):
         assert "accuracy" not in payload["metrics"] and "latency" not in payload["metrics"]
         assert payload["metrics"]["n"] == 1
         assert payload["corpus"]["revision"] == {"tag": "v9.3"}
+
+
+def test_an_int_too_large_for_a_float_does_not_break_the_run_listing(dirs):
+    """``json.loads`` accepts ``10**400``; ``math.isfinite`` raises ``OverflowError`` on it."""
+    from mailroom_diagnostics import runs
+
+    root, _ = dirs
+    journal = _journal()
+    journal["events"][0]["duration_ms"] = 10**400
+    journal["outcome"]["node_count"] = 10**400
+    (root / "journal.json").write_text(json.dumps(journal), encoding="utf-8")
+
+    run = runs.load_run("run-abc123")
+    assert run is not None
+    assert "duration_ms" not in run["events"][0]
+    assert run["outcome"]["node_count"] is None
+    assert runs.list_runs() is not None
+    assert runs._leaf_number(10**400) is None
+    assert runs._leaf_number(10**15) == 10**15
