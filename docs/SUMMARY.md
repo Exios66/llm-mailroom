@@ -60,6 +60,7 @@
 * [Architecture](pipeline-reference-llm-mailroom/architecture.md)
 * [Agents](pipeline-reference-llm-mailroom/agents.md)
 * [Decision reviewer](pipeline-reference-llm-mailroom/decision-reviewer.md)
+* [Decision-model slots](pipeline-reference-llm-mailroom/decision-slots.md)
 * [Configuration](pipeline-reference-llm-mailroom/configuration.md)
 * [API](pipeline-reference-llm-mailroom/api.md)
 * [Gmail intake](pipeline-reference-llm-mailroom/gmail-intake.md)

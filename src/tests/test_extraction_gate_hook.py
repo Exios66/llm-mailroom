@@ -149,7 +149,7 @@ def test_parse_error_is_not_sent(monkeypatch):
     spy = Spy()
     register_extraction_gate(spy)
     assert bg.extract_node(_state())["extraction_gate"] == {"doc_subclass": "service_agreement",
-                                                            "skipped": "parse_error"}
+                                                            "attempt": 1, "skipped": "parse_error"}
     assert spy.calls == []
 
 
@@ -162,7 +162,8 @@ def test_all_empty_extraction_is_not_sent(monkeypatch):
     # No subclass, so contract enrichment derives no CUAD family: every field stays empty.
     updates = bg.extract_node(_state(doc_subclass=None))
     assert not any(v not in (None, [], {}, "") for v in updates["extracted_data"].values())
-    assert updates["extraction_gate"] == {"doc_subclass": None, "skipped": "empty_extraction"}
+    assert updates["extraction_gate"] == {"doc_subclass": None, "attempt": 1,
+                                          "skipped": "empty_extraction"}
     assert spy.calls == []
 
 

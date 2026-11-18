@@ -144,6 +144,9 @@ def reset_compiled_graph():
         # the same lock, so a concurrent get_compiled_graph() cannot install a new graph's
         # rules between the drop and the clear and lose them.
         decision_points.clear_rules()
+        from graph import decision_slots
+
+        decision_slots.clear_rules()
 
 
 def _ensure_dirs():
@@ -1194,7 +1197,9 @@ def _call_decision_backend(backend, doc_text, doc_types, catalogs, handoff=None)
     return _run_bounded(lambda: backend(doc_text, doc_types, catalogs))
 
 
-def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, Any]) -> dict[str, Any] | None:
+def _review_extraction(
+    state: DocumentState, doc_type: str, result: dict[str, Any], attempt: int | None = None
+) -> dict[str, Any] | None:
     """Ask the registered extraction gate about ``result``; ``None`` when no gate is registered.
 
     The handoff carries the sorter's subclass (``doc_subclass``, else the contract
@@ -1211,7 +1216,9 @@ def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, An
     # The first non-blank of the sorter's subclass and the contract subtype.
     subclass = next((v.strip() for v in (state.get("doc_subclass"), state.get("contract_subtype"))
                      if isinstance(v, str) and v.strip()), None)
-    record: dict[str, Any] = {"doc_subclass": subclass}
+    # ``attempt`` ties the answer to the extraction it judged: a decision slot reads it only
+    # while ``extraction_attempts`` still names that attempt (graph/decision_slots.gate_view).
+    record: dict[str, Any] = {"doc_subclass": subclass, "attempt": attempt}
     if result.get("_parse_error"):
         return {**record, "skipped": "parse_error"}
     # Same emptiness rule as guard_extraction: only None / empty containers is no extraction.
@@ -1568,8 +1575,17 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
     from pipeline.config import get_review_mode
 
     if get_review_mode(state.get("doc_type")) == "decision_only":
-        return _decision_review_classify(state)
+        from graph import decision_slots
 
+        # Decision slot sorter_reviewer: past its park cap the chat reviewer decides instead.
+        return decision_slots.cap_reviewer_park(
+            state, _decision_review_classify(state), _llm_review_classify
+        )
+    return _llm_review_classify(state)
+
+
+def _llm_review_classify(state: DocumentState) -> dict[str, Any]:
+    """The chat (LLM) sorter reviewer branch of ``review_classify_node``."""
     from agents.sorter_reviewer import SorterReviewerAgent
     from llm.retry import is_transient_error
     from pipeline.config import get_sorter_label_set
@@ -2002,7 +2018,15 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
-    gate = _review_extraction(state, doc_type, result)
+    # Decision slot closed_field_resolver (baseline by default): off-list closed labels are
+    # resolved or suggested before the gate reviews the extraction.
+    from graph import decision_slots
+
+    result, slot_updates = decision_slots.resolve_closed_fields(state, doc_type, result, attempts)
+    if slot_updates:
+        result_dict["extracted_data"] = result
+        result_dict.update(slot_updates)
+    gate = _review_extraction(state, doc_type, result, attempts)
     if gate is not None:
         result_dict["extraction_gate"] = gate
     # #254: every attempt is recorded, whether or not the best one is later kept.
@@ -2241,7 +2265,13 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
-    gate = _review_extraction(state, doc_type, result)
+    from graph import decision_slots
+
+    result, slot_updates = decision_slots.resolve_closed_fields(state, doc_type, result, attempts)
+    if slot_updates:
+        updates["extracted_data"] = result
+        updates.update(slot_updates)
+    gate = _review_extraction(state, doc_type, result, attempts)
     if gate is not None:
         updates["extraction_gate"] = gate
     updates["extraction_attempt_history"] = attempt_history.record_attempt(
@@ -2294,12 +2324,22 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
     the node returns anything but a transient error.
     """
     from agents.source_windows import forget_document, resume_cache
+    from graph import decision_slots
 
+    # Decision slot judge_replacement (baseline by default): the gate's per-field answer on
+    # this attempt is the verdict, and no LLM judge runs. Without one the LLM judge runs.
+    extra: dict[str, Any] = {}
+    if judge_should_run(state):
+        replaced, extra = decision_slots.gate_judge_update(state)
+        if replaced is not None:
+            return replaced
     scope = str(state.get("doc_id") or "")
     with resume_cache(scope):
         update = _judge_verify(state)
     if not update.get("transient_error"):
         forget_document(str(state.get("doc_text") or ""), scope)
+        if extra:
+            update = {**update, **extra}
     return update
 
 
@@ -2833,6 +2873,8 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
         "_review": {
             **_review_evidence_fields(state, causes),
             **({"review_entered_at": entered_at.isoformat()} if entered_at else {}),
+            # Decision slot field_review (baseline by default): the few fields to check.
+            **({"review_focus": focus} if (focus := _review_focus(state)) else {}),
         },
     }
     if file_path_str:
@@ -3417,6 +3459,17 @@ def _reviewer_cause_tokens() -> frozenset[str]:
     )
 
 
+def _review_focus(state: Mapping[str, Any]) -> list[dict[str, Any]] | None:
+    """``decision_slots.review_focus``, never raising into the review park."""
+    from graph import decision_slots
+
+    try:
+        return decision_slots.review_focus(state)
+    except Exception:  # noqa: BLE001 - an annotation must not stop a park
+        logger.warning("review_focus_failed", doc_id=state.get("doc_id"), exc_info=True)
+        return None
+
+
 def _review_evidence_fields(
     state: Mapping[str, Any] | dict, causes: list[str] | None
 ) -> dict[str, Any]:
@@ -3850,8 +3903,15 @@ def build_graph(checkpointer=None):
     slots = decision_points.prepare_slots()
     decision_points.install_rules(slots)
 
+    # Decision-model slots (taxonomy ``decision_slots:``, every slot baseline by default):
+    # validated now; with every slot baseline no node is wrapped and no rule registered.
+    from graph import decision_slots
+
+    slot_cfg = decision_slots.get_slots()
+    decision_slots.install_rules(slot_cfg)
+
     def _dp(node: str, fn):
-        return decision_points.wrap_node(node, fn, slots)
+        return decision_slots.wrap_node(node, decision_points.wrap_node(node, fn, slots), slot_cfg)
 
     workflow = StateGraph(DocumentState)
 

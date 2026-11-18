@@ -1,0 +1,84 @@
+# Decision-model slots
+
+Six places in the graph where a decision model may change what happens to a document.
+They are configured in `src/config/taxonomy.yaml` under `decision_slots:` and implemented
+in `src/graph/decision_slots.py`. Every slot ships `mode: baseline`: the pipeline then runs
+exactly as it would without the block (no node is wrapped, no route rule is registered,
+no state key is written, no model is called).
+
+The mailroom never builds a decision model. The host registers one per role:
+
+| Role | Registry | Used by |
+| --- | --- | --- |
+| Sorter reviewer | `agents.decision_backend.register_decision_backend` | `sorter_reviewer` |
+| Extraction gate | `agents.extraction_gate.register_extraction_gate` | `archive_gate`, `judge_replacement`, `arbiter_veto`, `field_review` |
+| Closed-field resolver | `agents.closed_field_resolver.register_closed_field_resolver` | `closed_field_resolver`, `field_review` |
+
+The experiments run these on OpenRouter Decisions-API models (the sandbox refuses a chat
+model in these roles); the chat sorter reviewer is the baseline.
+
+## The slots
+
+| Slot | Baseline | Decision-model role | Guard |
+| --- | --- | --- | --- |
+| `sorter_reviewer` | `reviewer:` decision_only classes park on any failed rule | `park_cap`: past it the chat reviewer reviews instead | accepts are never capped |
+| `archive_gate` | gate answer recorded only | `enforce`: the gate parks an archive it does not support; optional `release` of a soft park | `park_cap` 10%, `release_cap` 3% |
+| `judge_replacement` | LLM judge, up to `judge_max_passes` | `gate`: the gate answer on this attempt is the verdict; no judge call | an arbiter `accept_with_caveats` on a gate `incomplete` parks (`gate_incomplete`) |
+| `arbiter_veto` | `accept_with_caveats` archives | `enforce`: gate disagreement parks (`arbiter_veto_gate`) | only parks, never releases |
+| `closed_field_resolver` | off-list closed label parks (#285) | `suggest` records an allowed pick; `resolve` applies it | every off-list field needs an on-list pick at `min_probability`; `release_cap` 3% |
+| `field_review` | the whole document parks | `annotate`: the review block lists `review_focus` fields | at most `max_fields`, else the whole document |
+
+### The gate verdict is derived in code
+
+The gate answers one "is this value supported by the source" question per key field
+(`field_support`, probabilities). The slots never read the model's own `verdict` answer:
+a field below `gate_support_min` (default 0.5) is unsupported, and an extraction with any
+unsupported field is not supported. The answer counts only for the extraction attempt it
+judged (`extraction_gate.attempt` equals `extraction_attempts`); an error, a skip, a stale
+or malformed answer is `unavailable`, and the slot then follows the baseline.
+
+### Releases are narrow
+
+`archive_gate.release: true` lets the gate archive a document the router would park, only
+when all of these hold:
+
+- every review cause is soft: `low_extraction_confidence`, `retries_exhausted`, `judge_partial`;
+- the judge did not say `incomplete` (or error), there is no matter conflict and no guardrail issue;
+- every gate field is supported at `release_support_min` (default 0.9);
+- the `release_cap` allows it.
+
+## Caps
+
+A cap is a share of the documents the slot has seen in this process. A park or release
+is allowed while `count + 1 <= cap * max(seen, cap_warmup)`; `cap_warmup` (default 20)
+keeps a cap from opening wide on the first documents, so a 3% release cap allows no release
+before document 34. Each document counts once per slot. A capped decision follows the
+baseline route and is recorded with `action: capped`. The ledger is per process: each API
+or watcher worker keeps its own. `graph.decision_slots.reset_ledger()` starts a new one and
+`ledger_snapshot()` reports it.
+
+## What a run records
+
+- `decision_slot_outcomes[slot]`: the slot's latest decision. `node`, `attempt`,
+  `proposal` (what the router chose), `action` (`park`, `release`, `capped`, `agree`,
+  `hold`, `unavailable`, `replaced`), `route`, `cause`, and the gate numbers
+  (`unsupported_fields`, `min_support`, or `gate_reason`).
+- `decision_slot_marks`: `seen:<slot>`, `park:<slot>`, `release:<slot>` for the document.
+- `closed_field_resolutions`: each off-list field, its original value, the pick, its
+  probability and whether it was applied. An applied pick also leaves
+  `extracted_data["_closed_field_resolutions"]` on the archived record.
+- `judge_source`: `extraction_gate` or `llm` while `judge_replacement` is on.
+- Review causes `archive_gate_unsupported`, `arbiter_veto_gate`, `gate_incomplete`.
+- A parked document's `_review.review_focus` under `field_review: annotate`.
+
+## Example (Set B: enforcing gate, judge replaced)
+
+```yaml
+decision_slots:
+  archive_gate: {mode: enforce, park_cap: 0.10}
+  judge_replacement: {mode: gate}
+  arbiter_veto: {mode: enforce}
+```
+
+Edits need a watcher or API restart (the taxonomy is cached). A malformed block stops the
+watcher and the API at startup.

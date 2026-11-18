@@ -109,6 +109,10 @@ async def lifespan(app: FastAPI):
     from graph.decision_points import prepare_slots
 
     prepare_slots()
+    # And a malformed ``decision_slots:`` block (DecisionSlotConfigError).
+    from graph.decision_slots import get_slots
+
+    get_slots()
     _ensure_dirs()
     from audit.sinks.sql import warn_if_ephemeral
 

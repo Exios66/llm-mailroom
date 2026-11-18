@@ -1424,6 +1424,10 @@ class Watcher:
         from graph.decision_points import prepare_slots
 
         prepare_slots()
+        # And a malformed ``decision_slots:`` block (DecisionSlotConfigError).
+        from graph.decision_slots import get_slots
+
+        get_slots()
 
         inbox = inbox_dir()
         ensure_dirs(inbox)

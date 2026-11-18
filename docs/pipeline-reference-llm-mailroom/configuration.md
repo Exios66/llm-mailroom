@@ -22,6 +22,7 @@ file_extensions:               # accepted file types
 agents:                        # per-agent model/provider configs
 reviewer:                      # classification reviewer mode per class
 decision_points:               # pluggable decision-model slots (empty by default)
+decision_slots:                # typed decision-model slots (all baseline by default)
 ```
 
 Duplicate keys are an error at runtime: `load_config` (the pipeline, watcher and API reader) refuses a mapping that names the same key twice anywhere in the file, instead of silently keeping the last value. YAML merge keys (`<<:`) still work.
@@ -267,6 +268,10 @@ Pluggable decision points (`graph/decision_points.py`). Empty by default (`decis
 | `by_class` | `{}` | Per-class overrides of `enabled`, `allow` and `min_confidence`. |
 
 A hint to `human_review` is followed only when the outcome names at least one cause, and those causes reach the reviewer as `decision_point:<slot>:<cause>`. A malformed section, or an import spec that does not import on an active slot (one that is enabled slot-wide or for some class), stops the watcher and the API at startup (`DecisionPointConfigError`). Edits need a watcher or API restart, because the configuration is cached. See the commented example in `taxonomy.yaml`.
+
+### `decision_slots`
+
+Typed decision-model slots for the decision-model experiments (`graph/decision_slots.py`): `sorter_reviewer`, `archive_gate`, `judge_replacement`, `arbiter_veto`, `closed_field_resolver` and `field_review`, plus the shared `gate_support_min` (default 0.5) and `cap_warmup` (default 20). Every slot ships `mode: baseline`, which leaves the pipeline unchanged. Modes are words (`enforce`, `gate`, `suggest`, `resolve`, `annotate`), never YAML booleans: an unquoted `off` is refused. Park and release caps are shares of the documents a slot has seen in the process. Unknown keys and out-of-range values stop the watcher and the API at startup. Full reference: [Decision-model slots](decision-slots.md).
 
 ### `chunking.merge`
 

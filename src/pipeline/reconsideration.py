@@ -50,6 +50,10 @@ JUDGE_ERROR = "judge_error"
 RETRIES_EXHAUSTED = "retries_exhausted"
 CHUNK_FAILED = "chunk_failed"
 OUT_OF_VOCABULARY = "out_of_vocabulary"
+# Decision-model slots (graph/decision_slots.py), each parking a document the router would archive.
+ARCHIVE_GATE_UNSUPPORTED = "archive_gate_unsupported"
+ARBITER_VETO_GATE = "arbiter_veto_gate"
+GATE_INCOMPLETE = "gate_incomplete"
 
 CAUSE_LABELS: dict[str, str] = {
     CLASS_MISS: "classification miss vs ground truth",
@@ -85,6 +89,9 @@ CAUSE_LABELS: dict[str, str] = {
     RETRIES_EXHAUSTED: "confidence retry budget spent without a settled answer",
     CHUNK_FAILED: "one or more extraction windows failed",
     OUT_OF_VOCABULARY: "a closed-label field holds a value off its vocabulary",
+    ARCHIVE_GATE_UNSUPPORTED: "the archive gate found extracted values the source does not support",
+    ARBITER_VETO_GATE: "the archive gate disagreed with the arbiter's accept_with_caveats",
+    GATE_INCOMPLETE: "the arbiter accepted an extraction the gate (as judge) called incomplete",
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})
@@ -554,6 +561,27 @@ def _decision_point_causes(data: Mapping[str, Any]) -> list[str]:
     return out
 
 
+_DECISION_SLOT_CAUSES = frozenset({ARCHIVE_GATE_UNSUPPORTED, ARBITER_VETO_GATE, GATE_INCOMPLETE})
+
+
+def _decision_slot_causes(data: Mapping[str, Any]) -> list[str]:
+    """The cause of each decision-slot outcome that parked the document (``route`` = human_review).
+
+    ``graph.decision_slots`` rewrites a node's entries on every pass of that node, so a
+    parking entry is about the pass that routed the document here.
+    """
+    outcomes = data.get("decision_slot_outcomes")
+    if not isinstance(outcomes, Mapping):
+        return []
+    return [
+        record["cause"]
+        for record in outcomes.values()
+        if isinstance(record, Mapping)
+        and record.get("route") == "human_review"
+        and record.get("cause") in _DECISION_SLOT_CAUSES
+    ]
+
+
 def collect_review_causes(
     state: Mapping[str, Any] | None = None,
     *,
@@ -653,6 +681,7 @@ def collect_review_causes(
         causes.extend(t for t in reviewer_causes if isinstance(t, str) and t)
 
     causes.extend(_decision_point_causes(data))
+    causes.extend(_decision_slot_causes(data))
 
     seen: set[str] = set()
     ordered: list[str] = []
