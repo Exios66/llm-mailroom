@@ -69,6 +69,8 @@ Checks the API plus best-effort dependency health: LLM provider connectivity (re
 
 `status` is `"ok"` when all checks pass, `"degraded"` when any dependency is unreachable (e.g. provider resolution fails, missing API key, the models endpoint is down, ingestion is paused, the watcher lamp is `stale`/`missing`, or the tracing backend is unhealthy). Dependency checks are best-effort and never block the response.
 
+`checks.llm_provider.detail` also reports a sorter model that the free-only spend guardrail (`MAILROOM_LLM_FREE_ONLY`) blocks, as `<provider>:<model> — blocked by spend guardrail: <ExceptionType>` with `status` `degraded`. It is read from configuration without a network call, so a blocked model is not probed. This is the same check the upload gate applies.
+
 `checks.watcher` is the producer lamp The-Mailroom reads (`live` / `stale` / `missing`; stale after 15s without a heartbeat). `watcher_heartbeat_seconds_ago` is the age of the watcher's liveness beacon. `inbox_pending` counts processable inbox documents (not `.meta` upload sidecars). `checks.gmail_intake` reports the optional Gmail intake channel (`enabled` / `running` / `last_poll_at` / counters; never credentials). `producer` / `review_resolve` / `inbox_upload` advertise the The-Mailroom contract (`GET /lookup`, `POST /review/{doc_id}/resolve`, `GET /documents/{doc_id}/source`, `POST /upload`). The API embeds the inbox watcher by default (`MAILROOM_EMBED_WATCHER=1`) so uploads drain without a second process; set `0` when a dedicated `python -m pipeline.watcher` already holds `watcher.lock`.
 
 ***
@@ -103,6 +105,8 @@ The uploaded file is written to the inbox and a small `<file>.meta` sidecar pers
     "message": "File queued for processing — watcher will pick it up."
 }
 ```
+
+`503` while ingestion is paused, or, with `MAILROOM_UPLOAD_REQUIRE_PROVIDER` on (the Compose producer's default), while no LLM provider resolves or the free-only spend guardrail blocks the sorter model; `checks.llm_provider` in `GET /health` names which one.
 
 `upload_id` is the tracking id for this upload — it appears in the `GET /queue` listing until the file is claimed. The pipeline's `doc_id` (for `GET /status/{doc_id}`) is minted when the watcher starts processing, so poll `GET /queue` or watch the watcher logs for it.
 
@@ -598,7 +602,7 @@ All errors follow a consistent format:
 | `413`  | Upload exceeds `MAILROOM_MAX_UPLOAD_BYTES`                          |
 | `429`  | Upload rate limit exceeded (`MAILROOM_UPLOAD_RATE` per 60 s window) |
 | `500`  | Internal server error / database unavailable                        |
-| `503`  | Ingestion paused / dependency unavailable / no live API token and the request arrived off loopback |
+| `503`  | Ingestion paused / dependency unavailable / no live API token and the request arrived off loopback / `/upload` with `MAILROOM_UPLOAD_REQUIRE_PROVIDER` on while no LLM provider resolves or the free-only spend guardrail blocks the sorter model |
 
 ***
 
