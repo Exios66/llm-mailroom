@@ -65,10 +65,11 @@ MAX_FOREIGN_ATTEMPTS = 50
 MAX_ADDENDA = 200
 MAX_DECISION_FIELDS = 40
 MAX_FIELD_NAME = 64
-# Upper bound, in seconds, a lookup waits on a locked or slow store (SQLite
-# connect + busy timeout, Postgres connect + statement timeout). When it fires
-# the reader reports reason ``timeout`` and ``unverified``; it never hangs the
-# request and never reports a verdict it could not reach.
+# Seconds a single statement waits on a locked or slow store (SQLite connect +
+# busy timeout, Postgres connect + statement timeout). It bounds each wait, not
+# the whole request: a lookup or listing issues several statements, and a slow
+# unlocked SQLite scan has no interrupt. When it fires the reader reports reason
+# ``timeout`` and ``unverified``; it never reports a verdict it could not reach.
 LOOKUP_TIMEOUT_SECONDS = 2.0
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,127}$")
@@ -466,7 +467,9 @@ def _schema_mode(
         for index in inspector.get_indexes("audit_log"):
             if index.get("unique") and list(index.get("column_names") or []) == ["doc_id"]:
                 return "unified-row"
-    except Exception:
+    except Exception as exc:
+        if _is_timeout(exc):
+            raise  # do not read a store we could not inspect as an event chain
         return "event-chain"
     return "event-chain"
 
@@ -571,7 +574,9 @@ def _migration_info(conn: Connection, tables: set[str]) -> dict[str, Any] | None
         row = conn.execute(
             text("SELECT value FROM audit_meta WHERE key = :key"), {"key": "migration"}
         ).first()
-    except Exception:
+    except Exception as exc:
+        if _is_timeout(exc):
+            raise  # a locked or slow store is a timeout, not an unreadable marker
         return {
             "migrated": None,
             "legacy_rows": None,

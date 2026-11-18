@@ -2164,3 +2164,62 @@ def test_legacy_only_truncation_is_not_reported_as_an_event_truncation(client, m
     payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
     assert payload["record"]["truncated"] is False
     assert payload["verification"]["status"] == "verified"
+
+
+def test_a_legacy_copy_longer_than_the_cap_truncates_only_the_legacy_section(client, make_store, monkeypatch):
+    from mailroom_diagnostics import audit
+
+    db = make_store("event-chain")
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE audit_log_legacy AS SELECT * FROM audit_log WHERE doc_id=?", (DOC,))
+        conn.execute(
+            "INSERT INTO audit_log_legacy SELECT * FROM audit_log_legacy "
+            "WHERE rowid = (SELECT MIN(rowid) FROM audit_log_legacy)"
+        )
+    total = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["record"]["entries"]
+    monkeypatch.setattr(audit, "MAX_EVENTS", total)  # the event chain fits; the legacy copy has one row more
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["record"]["truncated"] is False
+    assert payload["verification"]["status"] == "unverified"
+    notes = " ".join(payload["verification"]["notes"] + payload["notes"])
+    assert "legacy section exceeds the bounded read" in notes
+    assert "capped by MAX_EVENTS" not in notes
+
+
+def test_a_lock_inside_the_schema_probes_is_a_timeout_not_a_guess():
+    """``_migration_info`` and ``_schema_mode`` swallow ordinary errors, but a lock must reach the timeout handler."""
+    from mailroom_diagnostics import audit
+    from sqlalchemy.exc import OperationalError
+
+    class _Conn:
+        def __init__(self, exc):
+            self.exc = exc
+
+        def execute(self, *a, **kw):
+            raise self.exc
+
+    locked = OperationalError("SELECT", {}, Exception("database is locked"))
+    with pytest.raises(OperationalError):
+        audit._migration_info(_Conn(locked), {"audit_meta"})
+    other = OperationalError("SELECT", {}, Exception("no such table: audit_meta"))
+    assert audit._migration_info(_Conn(other), {"audit_meta"})["reason"] == "migration-marker-unreadable"
+
+
+def test_a_lock_while_inspecting_indexes_is_a_timeout_not_an_event_chain(monkeypatch):
+    from mailroom_diagnostics import audit
+    from sqlalchemy.exc import OperationalError
+
+    class _Inspector:
+        def __init__(self, exc):
+            self.exc = exc
+
+        def get_unique_constraints(self, table):
+            raise self.exc
+
+    locked = OperationalError("PRAGMA", {}, Exception("database is locked"))
+    monkeypatch.setattr(audit, "inspect", lambda conn: _Inspector(locked))
+    with pytest.raises(OperationalError):
+        audit._schema_mode(object(), set(), {"migrated": False})
+    other = RuntimeError("boom")
+    monkeypatch.setattr(audit, "inspect", lambda conn: _Inspector(other))
+    assert audit._schema_mode(object(), set(), {"migrated": False}) == "event-chain"
