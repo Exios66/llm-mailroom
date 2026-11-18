@@ -1520,3 +1520,50 @@ async def test_a_recovered_detail_addendums_attempts_are_checked_against_their_h
     reasons = {f.get("reason") for f in report.addenda.failures}
     assert not report.ok and "recovered_detail_mismatch" in _failure_kinds(report)
     assert reasons & {"missing_attempt", "attempt_hash", "attempt_malformed", "extra_attempt"}
+
+
+# ---------------------------------------------------------------- #303: a stale sweep never overwrites the manifest
+
+
+async def test_a_sweep_that_read_an_open_gap_does_not_overwrite_the_manifest_a_second_sweep_closed(
+        sinks, db_down, monkeypatch):
+    """Sweep A reads the row (gap open), sweep B then closes the gap and marks ``written``, A must not re-mark it.
+
+    Deterministic interleaving: B runs to completion inside A's ``get_row`` call, after A took its snapshot,
+    so A decides "the gap is still open" from a stale view and reaches its ``_mark_partial`` after B.
+    """
+    import audit.writer as writer
+    from audit.reconcile import reconcile
+    from audit.row import mark_manifest
+
+    small, late = FakeSink("small", max_payload_bytes=8_000), FakeSink("late")
+    sinks[:] = [small, late]
+    _save_manifest()
+    out = await writer.commit_or_park(_row(big=True))
+    mark_manifest("d-1", out.status, out.refs)
+    held = dict(late.pending)
+    late.pending.clear()  # the complete copy is out of reach for sweep A
+    db_down[0] = None
+    assert (await reconcile()).partial == 1  # the decisions-only row is in; the manifest shows the gap
+    assert _manifest().audit_written == "pending_partial"
+
+    original_get = writer.get_row
+    inside_b = False
+    b_report = []
+
+    async def get_row_then_let_b_win(doc_id):
+        nonlocal inside_b
+        row = await original_get(doc_id)
+        if not inside_b:
+            inside_b = True
+            late.pending.update(held)  # the complete copy turns up, for B only (A's copies are already read)
+            b_report.append(await reconcile())
+        return row  # A keeps the snapshot from before B closed the gap
+
+    monkeypatch.setattr(writer, "get_row", get_row_then_let_b_win)
+    a_report = await reconcile()
+
+    assert b_report[0].gap_closed == 1
+    assert a_report.failed == 0
+    m = _manifest()
+    assert m.audit_written is True and m.audit_pending_refs == []

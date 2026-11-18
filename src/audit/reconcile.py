@@ -220,10 +220,17 @@ def _kept_refs(copies: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _mark_partial(doc_id: str, copies: list[dict[str, Any]], *, row_gap: dict | None = None) -> None:
-    """Keep the gap on the manifest: ``pending_partial`` with the kept copies, until a complete one closes it."""
-    from audit.row import mark_manifest
-    from pipeline.bins import load_manifest
+def _mark_partial(doc_id: str, copies: list[dict[str, Any]], *, row_gap: dict | None = None,
+                  observed: Any = None) -> None:
+    """Keep the gap on the manifest: ``pending_partial`` with the kept copies, until a complete one closes it.
+
+    A compare-and-set against ``observed`` (the manifest as the sweep saw it before it read the row): a
+    second sweep that closed the gap in between has marked ``written`` and dropped the spooled copies,
+    and writing ``pending_partial`` over that would point the manifest at copies that no longer exist,
+    with nothing left for a later sweep to repair. The mark is then skipped. Without ``observed`` the
+    manifest is read here, which still makes the update atomic but not relative to the row read.
+    """
+    from audit.row import _refs_key, mark_manifest, observe_manifest
 
     refs = _kept_refs(copies)
     if row_gap and not any((r["sink"], r["ref"]) == (row_gap.get("sink"), row_gap.get("ref")) for r in refs):
@@ -232,13 +239,10 @@ def _mark_partial(doc_id: str, copies: list[dict[str, Any]], *, row_gap: dict | 
         # this sweep read that copy back successfully.
         refs.append({"sink": row_gap.get("sink"), "ref": row_gap.get("ref"),
                      "complete": False, "recoverable": False})
-    try:
-        current = load_manifest(doc_id)
-    except Exception:
-        current = None
-    if current is not None and current.audit_written == "pending_partial" and current.audit_pending_refs == refs:
+    expect = observed if observed is not None else observe_manifest(doc_id)
+    if expect is not None and expect.audit_written == "pending_partial" and expect.audit_pending_refs == _refs_key(refs):
         return
-    mark_manifest(doc_id, "pending_partial", refs)
+    mark_manifest(doc_id, "pending_partial", refs, expect=expect)
 
 
 def _content_sha(detail: Any, event: Any, sub_rows: Any) -> str | None:
@@ -340,7 +344,8 @@ async def _write_repeat(doc_id: str, rec: dict[str, Any], known: set[str] | None
 
 
 async def _reconcile_repeats(report: ReconcileReport, doc_id: str, row: dict[str, Any],
-                             copies: list[dict[str, Any]], unique: list[dict[str, Any]], *, dry_run: bool) -> None:
+                             copies: list[dict[str, Any]], unique: list[dict[str, Any]], *, dry_run: bool,
+                             observed: Any = None) -> None:
     """A document with a (complete) row: its copies are spent, or later terminal writes to record."""
     from audit.row import mark_manifest
 
@@ -376,7 +381,7 @@ async def _reconcile_repeats(report: ReconcileReport, doc_id: str, row: dict[str
         a["kind"] == "recovered_detail" for a in row.get("addenda") or []
     ) else None
     if open_partials or row_gap:
-        _mark_partial(doc_id, open_partials, row_gap=row_gap)
+        _mark_partial(doc_id, open_partials, row_gap=row_gap, observed=observed)
         _drop([c for c in copies if not any(c is o for o in open_partials)])
         return
     # The row (and every repeat write) is in place: the copies are spent. A manifest still
@@ -399,9 +404,12 @@ async def _reconcile_doc(report: ReconcileReport, doc_id: str, copies: list[dict
     writer would have recorded them.
     """
     from audit.models import Addendum, AuditRowExists
-    from audit.row import mark_manifest
+    from audit.row import mark_manifest, observe_manifest
     from audit.writer import get_row, write_addendum, write_terminal_row
 
+    # The manifest as it stands before the row is read: every decision below rests on that read, so a
+    # later "the gap is still open" mark only applies if no other sweep moved the manifest meanwhile.
+    observed = observe_manifest(doc_id)
     unique_by_sha: dict[str, dict[str, Any]] = {}
     for rec in copies:
         unique_by_sha.setdefault(rec["detail_sha256"], rec)
@@ -444,9 +452,9 @@ async def _reconcile_doc(report: ReconcileReport, doc_id: str, copies: list[dict
             # A different complete copy can be a later terminal write, not a
             # corrupt version of the original. hash_ok already validated it.
             # Recover those repeats while retaining the original row's gap.
-            await _reconcile_repeats(report, doc_id, row, copies, unique, dry_run=dry_run)
+            await _reconcile_repeats(report, doc_id, row, copies, unique, dry_run=dry_run, observed=observed)
             return True
-        await _reconcile_repeats(report, doc_id, row, copies, unique, dry_run=dry_run)
+        await _reconcile_repeats(report, doc_id, row, copies, unique, dry_run=dry_run, observed=observed)
         return True
 
     rec = complete[0] if complete else unique[0]
@@ -459,7 +467,7 @@ async def _reconcile_doc(report: ReconcileReport, doc_id: str, copies: list[dict
             logger.info("audit_reconcile_lost_race", doc_id=doc_id)
             return False
         if is_partial:
-            _mark_partial(doc_id, copies)  # the row is only a decisions-only record: the gap stays visible
+            _mark_partial(doc_id, copies, observed=observed)  # the row is only a decisions-only record: the gap stays visible
         else:
             mark_manifest(doc_id, "written")
     report.docs.append({"doc_id": doc_id, "action": "partial" if is_partial else "recovered"})
