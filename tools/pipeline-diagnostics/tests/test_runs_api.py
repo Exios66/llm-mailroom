@@ -382,3 +382,66 @@ def test_load_experiment_forwards_only_allowlisted_fields(dirs, client):
     assert "nested_blob" not in detail["metrics"]
     assert "raw_text" not in detail["runs"][0]
     assert detail["metrics"]["all_checks_ok"] is True
+
+
+def _no_non_finite(value):
+    """Walk a projected payload; fail on any float that is NaN or infinite."""
+    import math
+
+    if isinstance(value, float):
+        assert math.isfinite(value), f"non-finite number {value!r} in the projection"
+    elif isinstance(value, dict):
+        for item in value.values():
+            _no_non_finite(item)
+    elif isinstance(value, list):
+        for item in value:
+            _no_non_finite(item)
+
+
+def test_leaf_number_rejects_nan_inf_and_bool():
+    from mailroom_diagnostics import runs
+
+    for bad in (float("nan"), float("inf"), float("-inf"), True, False, "1", None):
+        assert runs._leaf_number(bad) is None
+    assert runs._leaf_number(0) == 0
+    assert runs._leaf_number(12.5) == 12.5
+
+
+def test_non_finite_numbers_in_a_journal_are_dropped_by_the_reader(dirs):
+    from mailroom_diagnostics import runs
+
+    root, _ = dirs
+    journal = _journal()
+    journal["events"][0].update(
+        {"ts": float("nan"), "duration_ms": float("inf"), "output": {"classification_confidence": float("nan"), "stage": "x"}}
+    )
+    journal["events"][1]["duration_ms"] = 12.5
+    journal["outcome"]["node_count"] = float("-inf")
+    (root / "journal.json").write_text(json.dumps(journal), encoding="utf-8")  # writes NaN / Infinity tokens
+
+    run = runs.load_run("run-abc123")
+    assert run is not None
+    _no_non_finite(run)
+    first, second = run["events"]
+    assert "ts" not in first and "duration_ms" not in first
+    assert first["output"] == {"stage": "x"}
+    assert second["duration_ms"] == 12.5
+    assert run["outcome"]["node_count"] is None
+
+
+def test_non_finite_experiment_numbers_are_dropped_by_the_reader(dirs):
+    from mailroom_diagnostics import runs
+
+    _, root = dirs
+    experiment = _experiment()
+    experiment["metrics"].update({"accuracy": float("nan"), "latency": float("inf"), "n": 1})
+    experiment["corpus"]["revision"] = {"tag": "v9.3", "score": float("nan")}
+    (root / "exp.json").write_text(json.dumps(experiment), encoding="utf-8")
+
+    listed = runs.list_experiments()[0]
+    detail = runs.load_experiment(experiment["experiment_id"])
+    for payload in (listed, detail):
+        _no_non_finite(payload)
+        assert "accuracy" not in payload["metrics"] and "latency" not in payload["metrics"]
+        assert payload["metrics"]["n"] == 1
+        assert payload["corpus"]["revision"] == {"tag": "v9.3"}

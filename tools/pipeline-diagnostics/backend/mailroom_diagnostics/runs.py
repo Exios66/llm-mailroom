@@ -8,6 +8,7 @@ module never imports the graph or executes a pipeline.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -93,9 +94,19 @@ def _leaf_str(value: Any) -> str | None:
 
 
 def _leaf_number(value: Any) -> float | int | None:
-    if isinstance(value, bool):
+    """A finite number, or None. A bool is not a number, and NaN / infinity are not data.
+
+    ``json.loads`` accepts the ``NaN`` and ``Infinity`` tokens, and a consumer that sums or
+    sorts the values (or re-serialises them strictly) must never receive one.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return value if isinstance(value, (int, float)) else None
+    return value if math.isfinite(value) else None
+
+
+def _is_scalar(value: Any) -> bool:
+    """A bool, a string or a finite number (a metric or metadata leaf)."""
+    return isinstance(value, (bool, str)) or _leaf_number(value) is not None
 
 
 def _document_leaves(document: dict[str, Any]) -> dict[str, Any]:
@@ -163,7 +174,7 @@ def _curated_event_output(value: Any) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key in _EVENT_OUTPUT_KEYS:
         item = value.get(key)
-        if isinstance(item, bool) or isinstance(item, (int, float, str)):
+        if _is_scalar(item):
             out[key] = item
     return out
 
@@ -348,7 +359,7 @@ def load_experiment(experiment_id: str) -> dict[str, Any] | None:
 
 def _scalar_metadata(value: Any) -> Any:
     """A bounded scalar, or a shallow object of scalars (``{"tag": ...}``)."""
-    if isinstance(value, bool) or isinstance(value, (int, float, str)):
+    if _is_scalar(value):
         return value
     if isinstance(value, dict):
         return {
@@ -356,7 +367,7 @@ def _scalar_metadata(value: Any) -> Any:
             for key, item in list(value.items())[:10]
             if isinstance(key, str)
             and len(key) <= MAX_FIELD_NAME
-            and (isinstance(item, bool) or isinstance(item, (int, float, str)))
+            and _is_scalar(item)
         }
     return None
 
@@ -370,7 +381,7 @@ def _scalar_metrics(metrics: Any) -> dict[str, Any]:
         for key, value in list(metrics.items())[:MAX_METRIC_FIELDS]
         if isinstance(key, str)
         and len(key) <= MAX_FIELD_NAME
-        and (isinstance(value, bool) or isinstance(value, (int, float, str)))
+        and _is_scalar(value)
     }
 
 
