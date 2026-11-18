@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0.0",
+  "contract_version": "2.0.0",
   "pipeline_version": "0.9.3",
   "trace_name": "document-pipeline",
   "graph": {
@@ -499,6 +499,7 @@
     "extract-fields": "agent",
     "extract-image-text": "retriever",
     "intake-document": "span",
+    "intake-llm-prep": "span",
     "intake-ml-triage": "span",
     "judge-verify": "evaluator",
     "normalize-intake": "span",
@@ -787,6 +788,15 @@
         "data_type": "NUMERIC"
       },
       {
+        "name": "deterministic_verdict",
+        "data_type": "CATEGORICAL",
+        "categories": [
+          "CORRECT",
+          "PARTIAL",
+          "MISS"
+        ]
+      },
+      {
         "name": "entity_list_f1",
         "data_type": "NUMERIC"
       },
@@ -983,10 +993,7 @@
         "name": "total_tokens",
         "data_type": "NUMERIC"
       }
-    ],
-    "langfuse_aliases": {
-      "extraction_overall_verified_precision": "extraction_verified_precision"
-    }
+    ]
   },
   "confidence": {
     "high": 0.97,

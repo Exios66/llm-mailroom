@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Local audit continuity is preserved through model errors and watcher recovery.** LangChain generation I/O is captured on failure as well as success; the watcher keeps claimed-document tracking through terminal handling, and audit spool reconciliation retries the pending row without losing the local evidence when a selected sink fails. Offline regression tests cover these paths; no hosted sink delivery is claimed.
+- **The Mailroom contract is provider-neutral (schema 2.0.0).** `mailroom_contract` now owns the 22 graph node/span/type bindings, observation semantics, and emitted score definitions. `build_graph()` rejects binding drift before a run; Langfuse, Braintrust, Phoenix and disabled tracing use the same declared observations while the local audit visits remain available. Braintrust maps semantic types to valid native types and Phoenix opens OTel root and node spans. Score names, types and ranges validate before sink delivery; Langfuse's long-name alias stays in its adapter. The exported JSON removes `scores.langfuse_aliases` and adds the previously emitted, Dojo-derived `deterministic_verdict` score. Diagnostics reads both 1.x and 2.x contracts. The-Mailroom must refresh its pinned contract reader for 2.0.0; local-mailroom-sandbox must refresh its vendored Mailroom snapshot after release. This entry claims no hosted trace verification.
+
 ### Added
 
 - **Audit verifier checks the parent reference's stage and attempt number; the sweep identifies a manifest by its full path.** `audit.verify` now fails `reference_envelope_mismatch` when a parent's `detail.attempts` reference disagrees with its sub-row on `stage` or `attempt_no` (raw comparison, so `"1"` for `1` fails), matching the diagnostics reader. `run_calibration_sweep.py --manifest` records `dataset_id` as `manifest:<resolved path>` instead of the file name, so same-named manifests in different folders no longer look identical on `--resume`; a file written with the old `manifest:<name>` id still resumes a manifest of that name (the per-document content check still applies, but a same-named manifest whose ids do not overlap is not detected for such old files).

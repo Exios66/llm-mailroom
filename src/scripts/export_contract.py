@@ -29,7 +29,7 @@ from graph.contract import graph_section, node_row  # noqa: F401  (public re-exp
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = REPO_ROOT / "contract" / "mailroom-contract.json"
-CONTRACT_VERSION = "1.0.0"
+from mailroom_contract import CONTRACT_VERSION, OBSERVATION_BINDINGS, TRACE_NAME, ALL_SCORE_CONFIGS
 
 
 def _pipeline_version() -> str:
@@ -83,19 +83,17 @@ def _failure_classes() -> list[str]:
 
 
 def _scores() -> dict[str, Any]:
-    """Score configs (name, type, categories) and Langfuse name aliases."""
-    from observability.scores import LANGFUSE_SCORE_NAME_ALIASES, SCORE_CONFIGS
-
+    """Provider-independent score definitions."""
     configs = []
-    for cfg in SCORE_CONFIGS:
+    for cfg in ALL_SCORE_CONFIGS:
         row = {"name": cfg["name"], "data_type": cfg.get("data_type")}
+        for bound in ("min_value", "max_value"):
+            if bound in cfg:
+                row[bound] = cfg[bound]
         if cfg.get("categories"):
-            row["categories"] = [c.get("label") for c in cfg["categories"]]
+            row["categories"] = [dict(c) for c in cfg["categories"]]
         configs.append(row)
-    return {
-        "configs": sorted(configs, key=lambda r: r["name"]),
-        "langfuse_aliases": dict(sorted(LANGFUSE_SCORE_NAME_ALIASES.items())),
-    }
+    return {"configs": sorted(configs, key=lambda r: r["name"])}
 
 
 def build_contract() -> dict[str, Any]:
@@ -104,16 +102,14 @@ def build_contract() -> dict[str, Any]:
     Reads the environment but never changes it, so callers in the same process
     keep their own tracing provider. The CLI disables tracing in ``main``.
     """
-    from observability.tracing import NODE_OBSERVATION_TYPES
-
     taxonomy = _taxonomy()
     confidence = dict(taxonomy.get("confidence") or {})
     return {
         "contract_version": CONTRACT_VERSION,
         "pipeline_version": _pipeline_version(),
-        "trace_name": "document-pipeline",
+        "trace_name": TRACE_NAME,
         "graph": _graph_section(),
-        "spans": dict(sorted(NODE_OBSERVATION_TYPES.items())),
+        "spans": dict(sorted(OBSERVATION_BINDINGS.items())),
         "agents": sorted((taxonomy.get("agents") or {}).keys()),
         "doc_classes": _doc_classes(taxonomy),
         "unknown_doc_class": "unknown",

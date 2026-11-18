@@ -45,6 +45,7 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 | `src/schemas/` | Pydantic document and manifest models, `EXTRACTION_SCHEMAS` |
 | `src/storage/` | SQLite/Postgres catalog, audit log, relations tables |
 | `src/observability/` | tracing backends, scores, field-scoring adapters to the Dojo |
+| `src/mailroom_contract/` | SDK-free node/span/type bindings and emitted score definitions; runtime and adapters validate against it |
 | `src/api/` | FastAPI app (`main.py`), embeds the watcher |
 | `src/config/taxonomy.yaml` | **Single source of truth**: classes, thresholds, agent → model, token caps |
 | `src/scripts/` | operator and maintenance CLIs (pilots, gates, sync, release, bumps) |
@@ -53,7 +54,7 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 | `tools/gt-label-workbook/` | builds the editable ground-truth label workbook (`.xlsx`) from the pinned corpus; tests in `src/tests/test_gt_label_workbook.py` |
 | `src/legalbench/` | LegalBench evaluation submodule |
 | `deploy/` | compose files, LiteLLM gateway, Modal vLLM, HF Space payload |
-| `contract/` | generated display contract (`export_contract.py --write`) |
+| `contract/` | generated provider-neutral contract (`export_contract.py --write`, schema 2.0.0) |
 | `docs/` | GitBook site and reports (`docs/reports/<kind>/`); `docs/changelog/` is generated |
 | `landing/`, `notebooks/` | landing page (JS tested by `test_landing.py`); notebooks 00–14 |
 | `vendor/llm-dojo-scoring/` | fallback Dojo snapshot. **Never patch it.** |

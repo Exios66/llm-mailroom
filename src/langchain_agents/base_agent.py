@@ -385,14 +385,81 @@ class BaseAgent(ABC):
         except ImportError:
             pass
 
-    def _record_usage(self, usage) -> None:
+    @staticmethod
+    def _audit_content(content):
+        """Keep text blocks intact while replacing image payload blocks."""
+        if isinstance(content, list):
+            return [BaseAgent._audit_content(part) for part in content]
+        if isinstance(content, dict) and content.get("type") in ("image_url", "image"):
+            return {"type": content["type"], "omitted": True}
+        return content
+
+    @staticmethod
+    def _audit_prompt(messages: list) -> str:
+        """Serialize the sent messages, omitting page data URIs from audit text."""
+        roles = {"system": "system", "human": "user", "ai": "assistant"}
+        out = []
+        for message in messages:
+            content = BaseAgent._audit_content(message.content)
+            out.append({"role": roles.get(message.type, message.type), "content": content})
+        return json.dumps(out, ensure_ascii=False, default=str)
+
+    def _audit_prompt_version(self) -> str | int | None:
+        managed = getattr(self, "_langfuse_prompt", None)
+        version = getattr(managed, "version", None) if managed is not None else None
+        if isinstance(version, (str, int)):
+            return version
+        pinned = getattr(self, "prompt_version", None)
+        if isinstance(pinned, str) and pinned != self.agent_name:
+            return pinned
+        try:
+            from llm.prompt_sets import resolve
+
+            served = resolve(self.agent_name)
+            if served is not None:
+                return served[0]
+        except Exception:
+            pass  # Prompt metadata must not fail a completed LLM call.
+        return pinned if isinstance(pinned, (str, int)) else None
+
+    @staticmethod
+    def _audit_completion(message) -> str | None:
+        """Keep the raw response, including function-call output with empty content."""
+        if message is None:
+            return None
+        content = getattr(message, "content", None)
+        if isinstance(content, str) and content:
+            return content
+        if isinstance(content, (list, dict)) and content:
+            return json.dumps(BaseAgent._audit_content(content), ensure_ascii=False, default=str)
+        tool_calls = getattr(message, "tool_calls", None)
+        if isinstance(tool_calls, list) and tool_calls:
+            return json.dumps(tool_calls, ensure_ascii=False, default=str)
+        extra = getattr(message, "additional_kwargs", None)
+        if isinstance(extra, dict) and extra.get("tool_calls"):
+            return json.dumps(extra["tool_calls"], ensure_ascii=False, default=str)
+        return content if isinstance(content, str) else None
+
+    def _record_usage(self, usage, *, messages: list, response, prompt_override: bool = False) -> None:
         """Feed per-call usage into the run's token/cost accumulator
         (pipeline.limits.record_usage) so Langfuse scores and run budgets see
-        the LangChain agents' token spend like every other agent's."""
+        the LangChain agents' token spend and audit I/O like other agents."""
         try:
             from pipeline.limits import record_usage
 
-            record_usage(usage, self.model, agent=self.agent_name)
+            metadata = getattr(response, "response_metadata", None)
+            served_model = None
+            if isinstance(metadata, dict):
+                served_model = metadata.get("model_name") or metadata.get("model")
+            if not isinstance(served_model, str) or not served_model:
+                candidate = getattr(response, "model", None)
+                served_model = candidate if isinstance(candidate, str) and candidate else None
+            record_usage(
+                usage, self.model, agent=self.agent_name, served_model=served_model,
+                prompt=self._audit_prompt(messages),
+                completion=self._audit_completion(response),
+                prompt_version=None if prompt_override else self._audit_prompt_version(),
+            )
         except ImportError:
             pass
 
@@ -464,7 +531,10 @@ class BaseAgent(ABC):
             "total_tokens": self._usage_from_message(response).get("total_tokens") or 0,
             "cost": (response.response_metadata or {}).get("cost"),
         }
-        self._record_usage(self._usage_from_message(response))  # MAILROOM PATCH
+        self._record_usage(
+            self._usage_from_message(response), messages=messages, response=response,
+            prompt_override=bool(system_prompt),
+        )  # MAILROOM PATCH
         logger.info("llm_response", agent=self.agent_name, length=len(content))
         return content
 
@@ -539,7 +609,10 @@ class BaseAgent(ABC):
                 "total_tokens": usage.get("total_tokens") or 0,
                 "cost": (message.response_metadata or {}).get("cost"),
             }
-            self._record_usage(usage)  # MAILROOM PATCH
+            self._record_usage(
+                usage, messages=messages, response=message,
+                prompt_override=bool(system_prompt),
+            )  # MAILROOM PATCH
         else:
             self._last_usage = None
 
@@ -644,6 +717,6 @@ class BaseAgent(ABC):
             "total_tokens": usage.get("total_tokens") or 0,
             "cost": (response.response_metadata or {}).get("cost"),
         }
-        self._record_usage(usage)  # MAILROOM PATCH
+        self._record_usage(usage, messages=messages, response=response, prompt_override=True)  # MAILROOM PATCH
         logger.info("llm_vision_response", agent=self.agent_name, length=len(raw_content))
         return raw_content

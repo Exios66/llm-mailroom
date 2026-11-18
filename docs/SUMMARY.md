@@ -14,6 +14,7 @@
 * [Pipeline flowchart](the-pipeline-in-depth/flowchart.md)
 * [Extraction schemas](the-pipeline-in-depth/extraction-schemas.md)
 * [Scoring and performance](the-pipeline-in-depth/scoring-and-metrics.md)
+* [Provider-neutral contract](the-pipeline-in-depth/provider-neutral-contract.md)
 
 ## How it fits together
 

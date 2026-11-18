@@ -135,11 +135,13 @@ def score_and_log_extraction(
     are emitted from it. ``presence_expectations`` (CUAD-style presence
     categories) enables ``extraction_category_presence`` when provided.
 
-    No-ops (without crashing) when Langfuse is not the active backend — the
-    result is still returned so callers can gate on ``needs_judge_review``
-    regardless of the tracing backend.
+    Scores are computed on every backend. Langfuse attaches by trace ID;
+    Braintrust/Phoenix attach to the active document context, and disabled
+    tracing validates names and values without external delivery. The result
+    always remains available for the ``needs_judge_review`` gate.
     """
-    from observability.scores import create_trace_score, is_enabled
+    from observability.scores import create_trace_score, score_trace
+    from observability.tracing import resolve_provider_name
     from observability.suite_scoring import score_with_suite
 
     result, extras = score_with_suite(
@@ -152,15 +154,23 @@ def score_and_log_extraction(
     from observability.honest_gaps import honesty_trace_metadata
 
     honesty = honesty_trace_metadata(doc_class, predicted)
-    if not is_enabled():
-        return result
-
+    provider = resolve_provider_name()
     common_kwargs = {"trace_id": trace_id}
     if observation_id:
         common_kwargs["observation_id"] = observation_id
 
+    def emit_score(*, name, value, **kwargs):
+        if provider == "langfuse":
+            create_trace_score(name=name, value=value, **kwargs)
+        else:
+            # This function runs inside the document root; the other sinks
+            # deliver to the active span rather than mutate a trace by ID.
+            kwargs.pop("trace_id", None)
+            kwargs.pop("observation_id", None)
+            score_trace(name=name, value=value, **kwargs)
+
     for field_name, value in result.field_scores.items():
-        create_trace_score(
+        emit_score(
             name="extraction_field_score",
             value=value,
             comment=f"field={field_name} doc_class={doc_class}",
@@ -179,14 +189,14 @@ def score_and_log_extraction(
                 comment += f" honest_gap={str(gap)[:180]}"
             if "determination_consistent" in honesty:
                 comment += f" determination_consistent={honesty['determination_consistent']}"
-        create_trace_score(
+        emit_score(
             name="extraction_overall_score",
             value=result.overall_score,
             comment=comment,
             **common_kwargs,
         )
 
-    create_trace_score(
+    emit_score(
         name="extraction_needs_judge_review",
         value=bool(result.ambiguous_fields),
         comment=f"ambiguous_fields={result.ambiguous_fields}" if result.ambiguous_fields else None,
@@ -201,7 +211,7 @@ def score_and_log_extraction(
         needs_judge_review=bool(result.needs_judge_review),
         class_mismatch=mismatch,
     )
-    create_trace_score(
+    emit_score(
         name="deterministic_verdict",
         value=verdict,
         data_type="CATEGORICAL",
@@ -210,7 +220,7 @@ def score_and_log_extraction(
     )
 
     for field_name, el_score in result.entity_list_scores.items():
-        create_trace_score(
+        emit_score(
             name="entity_list_precision",
             value=el_score.precision,
             comment=(
@@ -219,7 +229,7 @@ def score_and_log_extraction(
             ),
             **common_kwargs,
         )
-        create_trace_score(
+        emit_score(
             name="entity_list_recall",
             value=el_score.recall,
             comment=f"field={field_name}",
@@ -229,14 +239,14 @@ def score_and_log_extraction(
     # Both factuality scores consume the suite result's canonical field support.
     audit = result.audit_support
     if audit["verified_precision"] is not None:
-        create_trace_score(
+        emit_score(
             name="extraction_overall_verified_precision",
             value=audit["verified_precision"],
             comment=f"doc_class={doc_class} n_audited={audit['n_audited']}",
             **common_kwargs,
         )
     if audit["hallucination_rate"] is not None:
-        create_trace_score(
+        emit_score(
             name="extraction_hallucination_rate",
             value=audit["hallucination_rate"],
             comment=f"doc_class={doc_class} n_audited={audit['n_audited']}",
@@ -247,7 +257,7 @@ def score_and_log_extraction(
         from llm_dojo_scoring import score_category_presence
 
         cat_score, _ = score_category_presence(predicted, presence_expectations, field_types)
-        create_trace_score(
+        emit_score(
             name="extraction_category_presence",
             value=cat_score,
             comment=f"doc_class={doc_class}",
@@ -268,7 +278,7 @@ def score_and_log_extraction(
         gt = meta.get("ground_truth")
         if gt:
             comment += f" gt={gt}"
-        create_trace_score(
+        emit_score(
             name=extra_name,
             value=extra_value,
             comment=comment,

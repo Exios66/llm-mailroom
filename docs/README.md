@@ -53,6 +53,7 @@ New: the pipeline in depth.
 | [Pipeline flowchart](the-pipeline-in-depth/flowchart.md)                | Every node and routing condition in one diagram, plus the Gmail and review-resolve paths. |
 | [Extraction schemas](the-pipeline-in-depth/extraction-schemas.md)       | The fields each specialist extracts, their types, and how they are normalized.            |
 | [Scoring and performance](the-pipeline-in-depth/scoring-and-metrics.md) | How specialist extractions are scored, and every measured result on record.               |
+| [Provider-neutral contract](the-pipeline-in-depth/provider-neutral-contract.md) | Runtime span and score authority, trace adapters, and contract 2.0.0. |
 
 The pipeline reference:
 

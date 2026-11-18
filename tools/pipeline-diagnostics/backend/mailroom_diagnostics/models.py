@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 # 1.1.0 adds the provenance config_source/hashes/missing_inputs fields. The
 # display contract keeps its own 1.x version; this is the diagnostics envelope.
 SNAPSHOT_SCHEMA_VERSION = "1.1.0"
-SUPPORTED_CONTRACT_MAJOR = 1
+SUPPORTED_CONTRACT_MAJORS = frozenset({1, 2})
 START = "__start__"
 END = "__end__"
 

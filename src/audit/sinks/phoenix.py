@@ -67,10 +67,9 @@ def probe(url: str, timeout: float = PROBE_TIMEOUT_S) -> bool:
 
 def _tracer():
     from observability.phoenix_setup import _init_opentelemetry
-    from opentelemetry import trace
 
-    _init_opentelemetry()
-    return trace.get_tracer("mailroom.audit")
+    provider = _init_opentelemetry()
+    return provider.get_tracer("mailroom.audit") if provider is not None else None
 
 
 class PhoenixSink:
@@ -97,7 +96,10 @@ class PhoenixSink:
     def record_io(self, visit_id: str, doc_id: str | None, prompt: str | None, completion: str | None) -> str | None:
         from audit.digests import io_sha256
 
-        with _tracer().start_as_current_span("audit.io") as span:
+        tracer = _tracer()
+        if tracer is None:
+            return None
+        with tracer.start_as_current_span("audit.io") as span:
             span.set_attribute("audit.visit_id", visit_id)
             span.set_attribute("audit.doc_id", str(doc_id or ""))
             span.set_attribute("input.value", prompt or "")
@@ -108,7 +110,10 @@ class PhoenixSink:
             return format(span.get_span_context().span_id, "016x")
 
     def capture_pending(self, record: dict[str, Any]) -> str | None:
-        with _tracer().start_as_current_span("audit.pending_row") as span:
+        tracer = _tracer()
+        if tracer is None:
+            return None
+        with tracer.start_as_current_span("audit.pending_row") as span:
             span.set_attribute("audit.doc_id", str(record.get("doc_id") or ""))
             span.set_attribute("audit.record", json.dumps(record, default=str))
             if not span.is_recording():

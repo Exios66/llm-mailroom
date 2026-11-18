@@ -31,10 +31,9 @@ def node_row(node_id: str, func: Any) -> dict[str, str]:
     if not span:
         raise RuntimeError(f"graph node {node_id!r} is not wrapped by traced_node")
     obs_type = getattr(func, "mailroom_observation_type", None)
-    if not obs_type:
-        from observability.tracing import observation_type_for
+    from mailroom_contract import validate_node_binding
 
-        obs_type = observation_type_for(span)
+    validate_node_binding(node_id, span, obs_type)
     return {"id": node_id, "span": span, "observation_type": obs_type}
 
 

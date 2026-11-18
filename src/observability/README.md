@@ -11,7 +11,7 @@ This repo keeps only a backward-compatibility shim.
 | Module | Status |
 | --- | --- |
 | `tracing.py`, `langfuse_setup.py`, `phoenix_setup.py` | local — tracing facade/backends |
-| `scores.py` | local — Langfuse score configs; names validated against the dojo metric registry at import |
+| `scores.py` | local — score delivery adapters; definitions come from `mailroom_contract`, with Dojo names checked against its metric registry |
 | `classification_scoring.py` | local — exact class match (MAUD ≠ CUAD) |
 | `field_scoring.py` | **deprecated shim** over `llm_dojo_scoring.field_scoring` |
 | `specialist_suites.py` | local — one dedicated scoring suite per live extract class |
@@ -37,10 +37,12 @@ Tests that patch internals (`_get_embedding`) must patch
 
 ## Score schema governance
 
-`scores.py::SCORE_CONFIGS` is checked against `load_registry().metrics` at
-import time. Adding a score name here without registering it upstream fails
+`mailroom_contract.scores.SCORE_CONFIGS` is checked against `load_registry().metrics` at
+import time. Adding a Dojo score name here without registering it upstream fails
 fast with a `RuntimeError` naming the drifted entries — register new metrics
-in llm-dojo-scoring first, then use them here.
+in llm-dojo-scoring first, then use them here. The existing
+`deterministic_verdict` label is declared separately as a Mailroom transport
+score; its decision rule still comes from Dojo's `pipeline_verdict` helper.
 
 **Production first-pass (`success_rate`, gt=none):** `emit_pipeline_scores`
 always attaches this registered 0/1 flag. 1 means the document archived in

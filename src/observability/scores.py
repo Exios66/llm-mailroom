@@ -1,8 +1,8 @@
 """Quality scores for document runs.
 
-Backend-agnostic helpers to attach evaluation scores to Langfuse traces
-(no-ops when observability is disabled). Score configs are created
-idempotently via the SDK so the project always has a canonical scoring schema.
+Canonical score definitions and validation live in ``mailroom_contract``.
+This module delivers current-context scores through the selected sink, and
+creates Langfuse score configs idempotently when that sink is active.
 
 Two score origins:
 
@@ -16,8 +16,8 @@ Two score origins:
   completeness (`judge_verify_node`) also emits `completeness` /
   `completeness_label` / `judge_notes` when the judge actually fires.
 
-All helpers silently no-op when Langfuse is not the active backend, matching
-the tracing facade in `observability/tracing.py`.
+Offline trace-id scoring is supported by Langfuse; the Braintrust and Phoenix
+adapters receive current-context scores. Disabled tracing retains local values.
 """
 
 import structlog
@@ -31,128 +31,9 @@ _WARMUP_RETRY_SECONDS = 600.0  # sticky-bounded retry (O-1): at most once per 10
 
 # Canonical scoring schema, mirrored as Langfuse score configs by
 # `ensure_score_configs()`. Keys: name, data_type, optional min/max/categories.
-SCORE_CONFIGS: list[dict] = [
-    {"name": "class_correct", "data_type": "BOOLEAN"},
-    {"name": "stage_correct", "data_type": "BOOLEAN"},
-    {"name": "parse_error", "data_type": "BOOLEAN"},
-    {"name": "schema_valid", "data_type": "BOOLEAN"},
-    {"name": "stage_completed", "data_type": "BOOLEAN"},
-    # Production STP (straight-through processing). Dojo registry: gt=none,
-    # "value is whatever the pipeline emits". Mailroom emits 1 only when the
-    # document archived in one pass with no retry/Lane A/arbiter/boss/human
-    # review/guardrail/transient self-loop — no ground truth required.
-    {"name": "success_rate", "data_type": "BOOLEAN"},
-    {"name": "guardrail_triggered", "data_type": "BOOLEAN"},
-    {"name": "classification_confidence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "extraction_confidence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "confidence_calibration_error", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "expected_field_presence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "completeness", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {
-        "name": "completeness_label",
-        "data_type": "CATEGORICAL",
-        "categories": [
-            {"label": "complete", "value": 1.0},
-            {"label": "partial", "value": 0.5},
-            {"label": "incomplete", "value": 0.0},
-        ],
-    },
-    {"name": "judge_notes", "data_type": "TEXT"},
-    {"name": "classification_quality", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {
-        "name": "classification_correct",
-        "data_type": "CATEGORICAL",
-        "categories": [
-            {"label": "correct", "value": 1.0},
-            {"label": "ambiguous", "value": 0.5},
-            {"label": "incorrect", "value": 0.0},
-        ],
-    },
-    {"name": "extraction_correctness", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {
-        "name": "extraction_correctness_label",
-        "data_type": "CATEGORICAL",
-        "categories": [
-            {"label": "accurate", "value": 1.0},
-            {"label": "partial", "value": 0.5},
-            {"label": "inaccurate", "value": 0.0},
-        ],
-    },
-    # Core run metrics — computed for EVERY run (success, review, failed,
-    # aborted) and persisted to the catalog regardless of tracing backend, so
-    # runs can be compared against one another offline.
-    {"name": "run_aborted", "data_type": "BOOLEAN"},
-    {"name": "run_duration_seconds", "data_type": "NUMERIC", "min_value": 0.0},
-    {"name": "total_tokens", "data_type": "NUMERIC", "min_value": 0.0},
-    {"name": "estimated_cost_usd", "data_type": "NUMERIC", "min_value": 0.0},
-    {"name": "llm_call_count", "data_type": "NUMERIC", "min_value": 0.0},
-    {"name": "classification_attempts", "data_type": "NUMERIC", "min_value": 0.0},
-    {"name": "extraction_attempts", "data_type": "NUMERIC", "min_value": 0.0},
-    # Deterministic field-type-aware extraction scoring (issues #4/#5) —
-    # emitted for grounded runs alongside the LLM-as-a-Judge evaluators.
-    {"name": "extraction_field_score", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "extraction_overall_score", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "extraction_needs_judge_review", "data_type": "BOOLEAN"},
-    {"name": "entity_list_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "entity_list_recall", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    # Factuality audit (every reported value must match a GT label or be
-    # grounded in the source document) + category presence.
-    {"name": "extraction_overall_verified_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "extraction_hallucination_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "extraction_category_presence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    # Dedicated specialist-suite extras (llm-dojo-scoring 0.9.0): Enron
-    # topic/sentiment on correspondence, MAUD per-question extraction on
-    # merger_agreement. Not extraction fields — peeled before typed scoring.
-    {"name": "content_topic_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "content_topic_f1_macro", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "sentiment_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "sentiment_f1_macro", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "maud_question_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "maud_question_macro_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "maud_clause_presence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "maud_valid_class_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "maud_category_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    # Intake clerk (llm-dojo-scoring PR #5): get_suite("intake") scores the
-    # pre-sorter normalize against clerk gold. Live method is deterministic;
-    # completeness/changed/messy/count flags still land on the trace.
-    {"name": "intake_prep_completeness", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "intake_changed_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "intake_messy_rate", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "intake_hyphen_unwraps", "data_type": "NUMERIC", "min_value": 0.0},
-    {"name": "intake_collapsed_blanks", "data_type": "NUMERIC", "min_value": 0.0},
-    # Dojo 0.10.0+: field-micro P/R/F1/F2 + insurance claims extras.
-    # v0.14.0 adds citation/inclusion/ground_truth on these names; it does
-    # not add `field_presence` (honesty gap — score_extraction does not emit it).
-    {"name": "extraction_precision", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "extraction_recall", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "extraction_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "extraction_f2", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    # The scoring node family's tier-0 schema adherence (unified audit row, roadmap M12).
-    {"name": "schema_adherence", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "entity_list_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "determination_consistency", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "amount_exactness", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    # --- LegalBench evaluation suite (legalbench/) ----------------------
-    # Run-level scores attached to the per-run Langfuse trace by the suite's
-    # runner; deterministic, computed locally (never LLM-graded).
-    {"name": "legalbench_accuracy", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "legalbench_macro_f1", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "legalbench_calibration_error", "data_type": "NUMERIC", "min_value": 0.0, "max_value": 1.0},
-    {"name": "legalbench_n_questions", "data_type": "NUMERIC", "min_value": 0.0},
-    {"name": "legalbench_task", "data_type": "TEXT"},
-]
+from mailroom_contract.scores import SCORE_CONFIGS, ALL_SCORE_CONFIGS, validate_score
 
-# Langfuse Cloud rejects score *config* names over 35 characters
-# (`extraction_overall_verified_precision` is 40). Keep the canonical
-# Python/dojo name in SCORE_CONFIGS; emit this alias on the wire.
-LANGFUSE_SCORE_NAME_ALIASES = {
-    "extraction_overall_verified_precision": "extraction_verified_precision",
-}
-
-
-def langfuse_score_name(name: str) -> str:
-    """Name actually sent to Langfuse (may be a short transport alias)."""
-    return LANGFUSE_SCORE_NAME_ALIASES.get(name, name)
+from observability.langfuse_score_adapter import langfuse_score_name
 
 # KANBAN-061: SCORE_CONFIGS is validated against llm-dojo-scoring's metric
 # registry (single source of truth). A name here but not in the registry
@@ -226,7 +107,7 @@ def _client():
 
 def _all_configs_ensured() -> bool:
     """True once EVERY spec is known to exist (a partial cache is not done)."""
-    return all(spec["name"] in _configs_ensured for spec in SCORE_CONFIGS)
+    return all(spec["name"] in _configs_ensured for spec in ALL_SCORE_CONFIGS)
 
 
 def ensure_score_configs() -> list[str]:
@@ -252,7 +133,7 @@ def ensure_score_configs() -> list[str]:
             # and a partial cache would stick for the process lifetime (#201).
             logger.warning("score_config_fetch_failed")
             return []
-        for spec in SCORE_CONFIGS:
+        for spec in ALL_SCORE_CONFIGS:
             if spec["name"] in _configs_ensured:
                 continue  # created/seen on an earlier call; only retry the missing specs
             try:
@@ -334,15 +215,42 @@ def score_trace(
     """Attach a score to the currently active trace (inside a pipeline_trace
     block). No-ops when tracing is disabled. ``metadata`` rides on the score
     (Langfuse score metadata); omitted when None, so older SDKs are unaffected."""
+    spec = validate_score(name, value, data_type)
+    from observability.tracing import resolve_provider_name
+
+    provider = resolve_provider_name()
+    if provider == "braintrust":
+        try:
+            import braintrust
+
+            native_meta = {**(metadata or {}), f"mailroom.score.{name}": value,
+                           f"mailroom.score_type.{name}": spec["data_type"]}
+            if spec["data_type"] == "TEXT":
+                braintrust.current_span().log(metadata=native_meta)
+            else:
+                native_value = (next(row["value"] for row in spec["categories"] if row["label"] == value)
+                                if spec["data_type"] == "CATEGORICAL" else float(value))
+                braintrust.current_span().log(scores={name: native_value}, metadata=native_meta)
+        except Exception:
+            logger.warning("braintrust_score_attach_failed", name=name, exc_info=True)
+        return
+    if provider == "phoenix":
+        try:
+            from opentelemetry import trace
+
+            trace.get_current_span().set_attribute(f"mailroom.score.{name}", value)
+        except Exception:
+            logger.warning("phoenix_score_attach_failed", name=name, exc_info=True)
+        return
     client = _client()
     if client is None:
         return
     try:
         extra = {"metadata": metadata} if metadata else {}
         client.score_current_trace(
-            name=name,
+            name=langfuse_score_name(name),
             value=value,
-            data_type=data_type,
+            data_type=spec["data_type"],
             comment=comment,
             config_id=config_id or _config_ids.get(langfuse_score_name(name)),
             score_id=score_id,
@@ -366,6 +274,7 @@ def create_trace_score(
 ) -> None:
     """Attach a score to a trace by id (offline/pilot scoring — no active
     tracing context required). No-ops when tracing is disabled."""
+    spec = validate_score(name, value, data_type)
     client = _client()
     if client is None:
         return
@@ -374,7 +283,7 @@ def create_trace_score(
             trace_id=trace_id,
             name=langfuse_score_name(name),
             value=value,
-            data_type=data_type,
+            data_type=spec["data_type"],
             comment=comment,
             config_id=config_id or _config_ids.get(langfuse_score_name(name)),
             score_id=score_id,
@@ -586,15 +495,14 @@ def emit_pipeline_scores(state: dict, metrics: dict | None = None, *, precompute
     `graph/build_graph.py:_execute_run`. Returns the selected scores so
     callers can persist them locally too.
 
-    Score selection is backend-agnostic; only the Langfuse trace attachment is
-    gated on the active backend (a no-op otherwise).
+    Every selected score is validated before a sink receives it, including
+    when tracing is disabled.
     ``precomputed`` supplies audit-row metrics to emit without recomputation
     when a terminal node has already calculated them.
     """
     scores = dict(precomputed) if precomputed is not None else compute_pipeline_scores(state, metrics)
-    if is_enabled():
-        for name, value in scores.items():
-            score_trace(name, value, data_type=_score_data_type(name))
+    for name, value in scores.items():
+        score_trace(name, value, data_type=_score_data_type(name))
     return scores
 
 
@@ -623,9 +531,8 @@ def emit_scoring_scores(scoring: dict | None, adherence: dict | None, *, trace_i
     value = (adherence or {}).get("schema_adherence")
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         out["schema_adherence"] = float(value)
-    if out and is_enabled():
-        for name, val in out.items():
-            score_trace(name, val, data_type="NUMERIC", score_id=f"{trace_id}-{name}" if trace_id else None)
+    for name, val in out.items():
+        score_trace(name, val, data_type="NUMERIC", score_id=f"{trace_id}-{name}" if trace_id else None)
     return out
 
 
