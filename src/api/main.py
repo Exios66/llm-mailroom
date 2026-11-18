@@ -379,7 +379,7 @@ async def upload_document(
             503,
             f"No usable LLM provider for the sorter ({provider_problem}): it does not resolve "
             "or the spend guardrail blocks its model; uploads are refused until that is fixed "
-            "— the llm check of GET /health names the cause",
+            "— `checks.llm_provider` in GET /health names the cause",
         )
 
     _rate_limit_upload()

@@ -124,3 +124,37 @@ async def test_health_names_a_guardrail_block_without_probing(monkeypatch, mocke
         "provider": "openrouter",
     }
     sdk.assert_not_called()
+
+
+def test_a_missing_openrouter_key_is_refused_through_the_real_resolution(client, monkeypatch):
+    """The deploy scenario unmocked: the flag on, DEFAULT_PROVIDER=openrouter and no key."""
+    monkeypatch.setenv("MAILROOM_UPLOAD_REQUIRE_PROVIDER", "1")
+    monkeypatch.setenv("DEFAULT_PROVIDER", "openrouter")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("MAILROOM_LLM_FREE_ONLY", raising=False)
+    r = _upload(client)
+    assert r.status_code == 503
+    assert "ValueError" in r.json()["detail"]
+
+
+def test_a_refused_upload_does_not_use_a_rate_limit_slot(client, monkeypatch):
+    import api.main as api_main
+
+    monkeypatch.setenv("MAILROOM_UPLOAD_REQUIRE_PROVIDER", "1")
+    _no_provider(monkeypatch)
+    api_main._upload_timestamps.clear()
+    assert _upload(client).status_code == 503
+    assert api_main._upload_timestamps == []
+
+
+def test_the_pause_gate_answers_before_the_provider_gate(client, monkeypatch):
+    monkeypatch.setenv("MAILROOM_UPLOAD_REQUIRE_PROVIDER", "1")
+    _no_provider(monkeypatch)
+    monkeypatch.setattr("pipeline.bins.is_ingestion_paused", lambda: True)
+    r = _upload(client)
+    assert r.status_code == 503 and "paused" in r.json()["detail"]
+
+
+def test_producer_compose_forwards_the_free_only_guardrail():
+    compose = (REPO_ROOT / "deploy" / "docker-compose.producer.yml").read_text(encoding="utf-8")
+    assert 'MAILROOM_LLM_FREE_ONLY: "${MAILROOM_LLM_FREE_ONLY:-}"' in compose

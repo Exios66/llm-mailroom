@@ -37,6 +37,9 @@ services:
       # Refuse uploads (503) while no LLM provider resolves, instead of parking
       # every document in review. Set to 0 to accept uploads without a model.
       MAILROOM_UPLOAD_REQUIRE_PROVIDER: "${MAILROOM_UPLOAD_REQUIRE_PROVIDER:-1}"
+      # Spend guardrail (1 = only free OpenRouter models). Forwarded so a value in .env reaches the
+      # container; the upload gate above and /health both apply it.
+      MAILROOM_LLM_FREE_ONLY: "${MAILROOM_LLM_FREE_ONLY:-}"
       # vLLM provider (DEFAULT_PROVIDER=vllm): the container must reach the
       # deployed/local server — without these passthroughs it resolves the
       # in-container default localhost:8000 and every request fails (DMR-051).
