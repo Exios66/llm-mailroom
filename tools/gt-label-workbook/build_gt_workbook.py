@@ -383,8 +383,13 @@ def cell_for(cls: str, key: str, gt: dict, presence: dict, subclass: str) -> tup
             "not_applicable", "schema_documented_absence", "pending_annotation"):
         # the Dojo derives this field (merger_consideration: from the MAUD answer first): never a labelling gap
         derived = _derived_value(cls, gt, subclass)
+        if derived:
+            return derived, "populated"
+        if cls == "merger_agreement" and presence.get("maud_clause_labels") == "pending_annotation":
+            # the pending MAUD map may still answer Type of Consideration: outstanding, not closed
+            return "", "pending_annotation"
         # the Dojo scores no value here (merger subclass ``other``, no MAUD answer): not a labelling gap either
-        return (derived, "populated") if derived else ("", "not_applicable")
+        return "", "not_applicable"
     value, status = gt.get(key), presence.get(key)
     if status in ("not_applicable", "schema_documented_absence", "pending_annotation"):
         return render(value), status

@@ -79,7 +79,7 @@ the workbook properties.
   from the row's MAUD `Type of Consideration` answer first and the subclass as the fallback (the Dojo's own rules). They
   are shown as populated, never as gaps. The one exception is a merger on the unannotated `other` subclass with no MAUD
   `Type of Consideration` answer: the Dojo scores no `merger_consideration` there, so the cell is `not_applicable` and
-  empty. MAUD answers follow the Dojo's answer rules: a blank or `nan` answer is
+  empty, or `pending_annotation` (counted as missing) while the row's MAUD map is still pending. MAUD answers follow the Dojo's answer rules: a blank or `nan` answer is
   `UNLABELED`, the Hub class `None` is a label, and a record still `pending_annotation` is not counted as populated.
   Corporate records include `filing_number` for the subclasses
   that carry it; the per-row missing set equals the Dojo's `unlabeled_fields`.

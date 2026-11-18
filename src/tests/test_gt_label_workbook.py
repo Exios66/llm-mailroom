@@ -964,3 +964,15 @@ def test_a_marked_absent_maud_map_does_not_feed_merger_consideration(tool):
     labels = {"maud_clause_labels": {"Type of Consideration": {"answer": "All Cash"}},
               "gt_presence": {"maud_clause_labels": "not_applicable"}}
     assert _consideration_cell(tool, labels, "other") == ("", "not_applicable")
+
+
+def test_an_other_merger_awaiting_maud_annotation_stays_pending(tool):
+    """A pending MAUD map can still answer ``Type of Consideration``, so the field is outstanding, not closed.
+
+    The Dojo gives a pending row at most the subclass-derived ``merger_consideration``; on ``other`` that
+    is nothing yet, and the To Label sheet must keep counting the row instead of marking it not applicable.
+    """
+    pending = {"gt_presence": {"maud_clause_labels": "pending_annotation"}}
+    assert _consideration_cell(tool, pending, "other") == ("", "pending_annotation")
+    # a real subclass still derives its token while the MAUD map is pending
+    assert _consideration_cell(tool, pending, "all_stock") == ("all_stock", "populated")
