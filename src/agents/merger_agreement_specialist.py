@@ -68,8 +68,8 @@ class MergerAgreementSpecialist(_LangChainMergerAgreementSpecialist):
 
     - Model/budget defaults come from ``taxonomy.yaml``
       ``agents.merger_agreement_specialist``.
-    - Production prompt is frozen v1 via Langfuse-managed
-      ``mailroom-merger_agreement_specialist``.
+    - Production prompt is the frozen v1 repo stem (Langfuse
+      ``mailroom-merger_agreement_specialist`` only under the opt-in source).
     - Inherits chunked extraction from the LangChain specialist so long
       MAUD agreements are windowed, not truncated.
     """

@@ -72,7 +72,7 @@ class SorterAgent(_LangChainSorterAgent):
             self._reasoning_effort = cfg["reasoning_effort"]
 
     def system_prompt(self) -> str:
-        """Langfuse-managed pinned prompt with live taxonomy catalogs compiled in.
+        """Pinned repo prompt (Langfuse override only on opt-in) with live taxonomy catalogs compiled in.
 
         LangGraph ``classify`` / ``retry_classify`` call ``classify_json`` →
         ``_call_structured`` → this method. Eval pins via ``prompt_version=``

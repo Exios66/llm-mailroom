@@ -312,8 +312,9 @@ def test_corrected_roles_record_their_eval_environment_mutation_keys():
     assert not any(row["eval_environment_key"].endswith("_v2") for row in catalog.values())
 
 
-def test_production_templates_are_frozen_v1_specialists_and_condensed_sorter():
-    """Bind production templates and version labels to their frozen prompts."""
+def test_production_templates_are_frozen_v1_specialists_and_condensed_sorter(monkeypatch):
+    """Bind production templates and version labels to their frozen prompts (frozen_v1 set)."""
+    monkeypatch.setenv("MAILROOM_PROMPT_SET", "frozen_v1")
     templates = prompt_templates()
     assert templates["sorter"] == LP.SORTER_PROMPT_CONDENSED
     for agent in SPECIALIST_AGENTS:
@@ -356,6 +357,8 @@ def test_mailroom_wrappers_resolve_prompts_through_get_managed_prompt(monkeypatc
     from agents.sorter import SorterAgent
 
     seen: dict[str, str] = {}
+    # The frozen-v1 wiring is the frozen_v1 prompt set; deploy_v1 is covered in test_prompt_sets.py.
+    monkeypatch.setenv("MAILROOM_PROMPT_SET", "frozen_v1")
 
     def fake(agent_name, default_text, variables=None, label="production"):
         seen[agent_name] = default_text
