@@ -43,6 +43,23 @@ def _clean():
     limits.reset_run_usage()
 
 
+@pytest.fixture(autouse=True)
+def _route_logs_stay_out_of_structlog(monkeypatch):
+    """Keep ``route_spec``'s module logger from being first used here (as test_decision_points does).
+
+    A slot rule that applies logs ``route_rule_applied``; structlog binds the module logger on
+    that first use (``cache_logger_on_first_use``), and ``test_route_spec.py``'s
+    ``capture_logs`` tests would then miss their events whenever this file runs first.
+    """
+    import graph.route_spec as route_spec
+
+    class _Silent:
+        def __getattr__(self, level):
+            return lambda *a, **k: None
+
+    monkeypatch.setattr(route_spec, "logger", _Silent())
+
+
 @pytest.fixture
 def slots(monkeypatch):
     """Set taxonomy ``decision_slots:`` (and optionally ``reviewer:``): ``slots({...})``."""
