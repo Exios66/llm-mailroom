@@ -131,6 +131,53 @@ def test_native_calls_send_backend_reasoning(gateway, monkeypatch, mocker, metho
     assert completion.call_args.kwargs["model"] == client.resolve_agent_model("sorter").model
 
 
+_FIRST_IMPORT_UNDER_PATCH = """
+import sys
+from unittest.mock import patch
+
+import llm.client
+
+assert "agents.base" not in sys.modules, "this check needs agents.base unimported"
+fake = lambda name: (None, "mock-model")
+# The order the mock pilots use (run_pilot, run_hf_pilot, run_calibration_sweep,
+# stress_test, ...): llm.client is patched first, so the agents.base patch is
+# what first imports agents.base.
+with patch("llm.client.get_llm", side_effect=fake), patch("agents.base.get_llm", side_effect=fake):
+    pass
+
+import agents.base
+
+with patch("llm.client.get_llm", return_value=(None, "served")):
+    print(agents.base.get_llm("sorter")[1])
+"""
+
+
+def test_agents_resolve_the_live_get_llm_after_a_first_import_under_patch():
+    """Importing agents.base while llm.client.get_llm is patched must not pin the mock.
+
+    The mock pilots patch ``llm.client.get_llm`` and then ``agents.base.get_llm``;
+    when that second patch is the first import of ``agents.base``, a name-bound
+    ``from llm.client import get_llm`` captured the first mock, and the exit
+    "restored" it for the rest of the process. Every later agent in the same
+    pytest worker then reported ``mock-model`` (the CI failure of
+    ``test_native_calls_send_backend_reasoning`` under ``--dist worksteal``).
+    A fresh interpreter makes the first import order deterministic.
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    src = Path(client.__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "-c", _FIRST_IMPORT_UNDER_PATCH],
+        capture_output=True, text=True, timeout=120, cwd=src,
+        env={**os.environ, "PYTHONPATH": str(src)},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == "served"
+
+
 @pytest.fixture
 def langchain_agent():
     from langchain_agents.base_agent import BaseAgent

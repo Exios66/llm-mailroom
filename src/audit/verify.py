@@ -390,6 +390,8 @@ async def _check_subrows(session, migrated: bool, doc_id: str | None = None) -> 
 
     parents: dict[str, tuple[Any, str, str, str]] = {}
     listed: dict[str, dict[str, Any]] = {}
+    # What each parent's reference claims about the sub-row's envelope (stage, attempt_no).
+    ref_claims: dict[tuple[str, str], dict[str, Any]] = {}
     row_matter = {record.doc_id: record.matter_id for record in rows}
     for record in rows:
         parents[record.entry_id] = (record, record.matter_id, record.actor, record.doc_id)
@@ -444,6 +446,9 @@ async def _check_subrows(session, migrated: bool, doc_id: str | None = None) -> 
                 )
                 continue
             listed[parent_id][attempt_id] = ref_hash
+            ref_claims[(parent_id, attempt_id)] = {
+                key: ref[key] for key in ("stage", "attempt_no") if key in ref
+            }
 
     for record in rows:
         _collect_refs(record.entry_id, record.detail)
@@ -540,6 +545,19 @@ async def _check_subrows(session, migrated: bool, doc_id: str | None = None) -> 
                     parent_id=parent_id,
                     attempt_id=attempt_id,
                 )
+            else:
+                # The writer copies the sub-row's stage and int attempt_no into its
+                # parent's reference. Compare raw (a type change such as "1" for 1 is a
+                # mismatch), the same way the diagnostics reader does.
+                for key, claim in ref_claims.get((parent_id, attempt_id), {}).items():
+                    actual = getattr(attempt, key)
+                    if type(claim) is not type(actual) or claim != actual:
+                        report.fail(
+                            kind="reference_envelope_mismatch",
+                            parent_id=parent_id,
+                            attempt_id=attempt_id,
+                            field=key,
+                        )
     return report
 
 

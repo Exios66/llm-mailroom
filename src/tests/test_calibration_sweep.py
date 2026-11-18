@@ -391,7 +391,8 @@ def test_manifest_docs_resolve_files_and_gold(tmp_path):
     docs, ds = sw.load_manifest_docs(manifest, None)
     assert docs[0].path == tmp_path / "s" / "a.txt" and docs[0].gold_class == "contract"
     assert docs[0].expected_fields == {"parties": ["X"]} and docs[0].expected_stage == "archived"
-    assert ds["dataset_id"] == "manifest:manifest.csv"
+    assert ds["dataset_id"] == f"manifest:{manifest.resolve().as_posix()}"
+    assert ds["legacy_dataset_id"] == "manifest:manifest.csv"
 
 
 def test_hf_split_end_to_end_keeps_full_text_and_provenance(tmp_path, capsys, temp_base_dir, monkeypatch):
