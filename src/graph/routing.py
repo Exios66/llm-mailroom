@@ -660,6 +660,16 @@ def after_boss(state: dict) -> Literal["boss_escalation", "compile_report", "hum
             # catalog read failed or returned nothing): its approval is not evidence.
             logger.info("boss_approval_ungrounded", doc_id=state.get("doc_id"))
             return "human_review"
+        if retry_after_judge_doubt(state):
+            # A retry the judge doubted that then found a matter conflict reaches the Boss
+            # before any re-judge; the Boss rules on the conflict, not on completeness.
+            logger.info(
+                "retry_unjudged_needs_review",
+                doc_id=state.get("doc_id"),
+                judge_verdict=state.get("judge_verdict"),
+                extraction_attempts=state.get("extraction_attempts"),
+            )
+            return "human_review"
         return "compile_report"
     return "human_review"
 

@@ -302,6 +302,8 @@ arbiter ─┬─ transient (budget left) ─▶ arbiter
 
 boss_escalation ─┬─ transient (budget left) ─▶ boss_escalation
                  ├─ approved ─▶ compile_report
+                 ├─ approved blind (0 matter records) ─▶ human_review (boss_ungrounded)
+                 ├─ approved a retry the judge doubted ─▶ human_review (retry_unjudged)
                  └─ review ───▶ human_review
 
 human_review ─┬─ interrupt() pause (file parked in review/)

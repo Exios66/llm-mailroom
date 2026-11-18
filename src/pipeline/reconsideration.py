@@ -343,15 +343,19 @@ def retry_unjudged(data: Mapping[str, Any], thresholds: Mapping[str, Any]) -> bo
     The one predicate behind the ``retry_unjudged`` park (``graph/routing.py``
     ``retry_after_judge_doubt``) and its review cause: the judge said ``incomplete`` or
     ``partial``, the arbiter approved a re-extraction within ``arbiter_retry_max`` and it ran
-    (``extraction_attempts`` >= 2), there is no matter conflict, and the class does not let a
-    judge verdict archive on its own (``judge_complete_archives``). A re-judged retry replaces
-    the verdict, so it never matches; a review resume resets ``arbiter_retry_count`` to 0.
+    (``extraction_attempts`` >= 2), and the class does not let a judge verdict archive on its
+    own (``judge_complete_archives``). A retry that found a matter conflict matches only once
+    the Boss approved it (``after_boss``): the Boss rules on the conflict, not on completeness,
+    and while it has not approved the document parks for the conflict anyway. A re-judged retry
+    replaces the verdict, so it never matches; a review resume resets ``arbiter_retry_count`` to 0.
     """
     if thresholds.get("judge_complete_archives", False):
         return False
     if str(data.get("judge_verdict") or "") not in ("incomplete", "partial"):
         return False
-    if data.get("arbiter_decision") != "retry_extraction" or _is_true_flag(data.get("conflict_detected")):
+    if data.get("arbiter_decision") != "retry_extraction":
+        return False
+    if _is_true_flag(data.get("conflict_detected")) and data.get("review_decision") != "approved":
         return False
     try:
         attempts = int(data.get("extraction_attempts") or 0)

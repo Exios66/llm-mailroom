@@ -480,6 +480,23 @@ class TestArchiveChecks:
         state = {**self._RETRY, "judge_verdict": "incomplete", **extra}
         assert "retry_unjudged" not in collect_review_causes(state)
 
+    def test_a_boss_approval_does_not_judge_a_doubted_retry(self):
+        """A doubted retry that finds a matter conflict goes to the Boss, not the judge."""
+        from graph.routing import after_boss
+
+        state = {**self._RETRY, "judge_verdict": "incomplete", "conflict_detected": True,
+                 "review_decision": "approved", "boss_context_records": 2}
+        assert after_boss(state) == "human_review"
+        assert "retry_unjudged" in collect_review_causes(state)
+        assert after_boss({**state, "arbiter_retry_count": 0}) == "compile_report"  # a review resume
+
+    def test_a_boss_approval_of_a_doubted_retry_archives_when_opted_back_in(self, approvals_archive):
+        from graph.routing import after_boss
+
+        state = {**self._RETRY, "judge_verdict": "incomplete", "conflict_detected": True,
+                 "review_decision": "approved", "boss_context_records": 2}
+        assert after_boss(state) == "compile_report"
+
     def test_a_retry_with_no_judge_doubt_still_archives(self):
         state = {"doc_type": "contract", "extraction_confidence": 0.99, "extraction_attempts": 2,
                  "gate_ok": True, "schema_valid": True}
