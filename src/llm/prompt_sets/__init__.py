@@ -119,8 +119,9 @@ def served_prompt(agent: str, default_text: str) -> tuple[str, str]:
 def prompt_id(agent: str) -> str:
     """The id of the prompt this agent serves: ``<agent>@<set>``, or ``<agent>@code`` for
     the agent's code default. Under the opt-in ``MAILROOM_PROMPT_SOURCE=langfuse`` a
-    Langfuse ``production`` prompt can override the repo text, so the id is then
-    ``<agent>@langfuse:<managed name>`` (with the repo id as the fallback after ``|``)."""
+    Langfuse ``production`` prompt *may* replace that text when it exists and Langfuse is
+    reachable, so the id becomes ``<repo id>+langfuse:<managed name>``; whether it did is
+    recorded per generation by the linked Langfuse prompt (none linked = repo text ran)."""
     from llm.prompts import prompt_name, prompt_source
 
     hit = resolve(agent)
@@ -128,7 +129,7 @@ def prompt_id(agent: str) -> str:
     if prompt_source() != "langfuse":
         return repo_id
     managed = prompt_name(repo_id.replace("@", "--") if hit else agent)
-    return f"{agent}@langfuse:{managed}|{repo_id}"
+    return f"{repo_id}+langfuse:{managed}"
 
 
 def prompt_ids() -> dict[str, str]:

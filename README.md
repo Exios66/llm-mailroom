@@ -453,7 +453,7 @@ mailroom/
 │   ├── agents/          # Specialist agents (Sorter, Contract, Corp Records, Judge, …)
 │   ├── langchain_agents/# Vendored LangChain agents (Sorter, Contracts Specialist) originally from llm-entity-extraction (now standalone)
 │   ├── graph/           # LangGraph state machine: nodes, routing, state
-│   ├── llm/             # Provider-agnostic LLM client, retry, Langfuse-managed prompts
+│   ├── llm/             # Provider-agnostic LLM client, retry, repo prompt sets (Langfuse opt-in)
 │   ├── schemas/         # Pydantic models: manifest, matter, documents, audit
 │   ├── pipeline/        # Watcher, filesystem bins, ops monitor
 │   ├── storage/         # SQLite/Postgres: catalog CRUD, audit log
@@ -569,7 +569,7 @@ PYTHONPATH=src python src/scripts/sync_prompts.py --agent sorter
 
 The code ships the same templates as fallbacks (`llm/prompts.py`): if Langfuse is disabled or unreachable, the pipeline runs identically on the local defaults. The `json_object` response-format boilerplate stays hardcoded — some providers require the literal token `json` in the messages.
 
-Vendored LangChain prompt *history* stays in `PROMPT_VERSIONS` (`sorter_v0…v14`, `contracts_specialist_v1…v33`) so eval loops can pin one version per experiment. Production is different: **sorter_condensed_v5** for classify (the token-budgeted condensed sorter), and sandbox / eval-environment **frozen v1** stems for every extract specialist (`llm/frozen_v1/`, `_bound_prompt_versions`). Mailroom wrappers resolve both through `get_managed_prompt` (`mailroom-<agent>`, `production` label) so LangGraph classify/extract nodes share the Langfuse surface.
+Vendored LangChain prompt *history* stays in `PROMPT_VERSIONS` (`sorter_v0…v14`, `contracts_specialist_v1…v33`) so eval loops can pin one version per experiment. Production is different: **sorter_condensed_v5** for classify (the token-budgeted condensed sorter), and sandbox / eval-environment **frozen v1** stems for every extract specialist (`llm/frozen_v1/`, `_bound_prompt_versions`). Mailroom wrappers resolve both through `get_managed_prompt`, which serves the repo prompt unless `MAILROOM_PROMPT_SOURCE=langfuse` opts in to the Langfuse `mailroom-<agent>` `production` override.
 
 ### Observability
 

@@ -118,7 +118,8 @@ lint or type cleanliness.
   mapping). Nothing is hardcoded in code.
 - Files move **only** through `pipeline/bins.py` helpers — never `os.rename` or
   `shutil.move` in node/agent code. Use `review_file_path(manifest)` for review bins.
-- Agent prompts are Langfuse-managed with an identical in-code fallback. A new or changed
+- Agent prompts ship in the repo (`llm/prompt_sets/`, default `deploy_v1`) and production
+  serves them; Langfuse overrides them only under `MAILROOM_PROMPT_SOURCE=langfuse`. A new or changed
   prompt must be registered in `llm/prompts.py:prompt_templates()`. Leave the `json_object`
   boilerplate in `agents/base.py:_call_structured` alone (Qwen rejects requests without the
   literal token `json`).

@@ -27,5 +27,5 @@ Every agent gets its LLM model from `config/taxonomy.yaml` (see `config/` README
 - Specialist agents (`*_specialist.py`) expose `.extract(doc_text) -> dict` that includes a `confidence` field; the graph pops `confidence` and uses it for routing.
 - `reporter.py` — procedural `compile_matter_record(manifest_data)` (no LLM). Called from `graph/build_graph.py:compile_report_node`. Happy-path LLM calls stop at classify + extract; archivist is the durable sink.
 - `boss.py` — `BossAgent.adjudicate(manifest_data)` (in-graph escalation) and `BossAgent.analyze_system_metrics(metrics)` (used by `pipeline/ops_monitor.py`). Shared `BOSS_SYSTEM_PROMPT`.
-- `image_extractor.py` (`agent_name = "image_extractor"`) and `pdf_transcriber.py` (`agent_name = "pdf_transcriber"`) each have their own `taxonomy.yaml` `agents:` entry and Langfuse-managed prompt. They're invoked from `graph/build_graph.py` `_read_file_text()` based on file extension.
+- `image_extractor.py` (`agent_name = "image_extractor"`) and `pdf_transcriber.py` (`agent_name = "pdf_transcriber"`) each have their own `taxonomy.yaml` `agents:` entry and repo prompt (Langfuse override only under `MAILROOM_PROMPT_SOURCE=langfuse`). They're invoked from `graph/build_graph.py` `_read_file_text()` based on file extension.
 - `docs/agents.md` documents the full roster, schemas, and the "add a new agent" checklist.

@@ -3766,8 +3766,8 @@ def _resolved_models(state: dict) -> str:
 
 
 def _prompt_versions(state: dict) -> str:
-    """Prompt versions bound during the run (best-effort; Langfuse-managed
-    prompts link generations; vendored agents use their versioned prompts)."""
+    """Prompt versions bound during the run (best-effort; under the Langfuse
+    opt-in managed prompts link generations; vendored agents use their versioned prompts)."""
     try:
         from llm.prompts import _bound_prompt_versions
 

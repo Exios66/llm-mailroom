@@ -307,10 +307,15 @@ def test_langfuse_source_is_an_explicit_opt_in(monkeypatch):
 
 
 def test_unknown_prompt_source_falls_back_to_repo(monkeypatch):
-    from llm.prompts import prompt_source
+    import llm.prompts as P
 
+    calls = []
+    monkeypatch.setattr(P.logger, "warning", lambda event, **kw: calls.append(event))
+    monkeypatch.setattr(P, "_warned_sources", set())
     monkeypatch.setenv("MAILROOM_PROMPT_SOURCE", "lang-fuse")
-    assert prompt_source() == "repo"
+    assert P.prompt_source() == "repo" and P.prompt_source() == "repo"
+    assert calls == ["prompt_source_env_ignored"], "warn once, not per call"
+    prompt_source = P.prompt_source
     monkeypatch.setenv("MAILROOM_PROMPT_SOURCE", "")
     monkeypatch.setattr("pipeline.config.load_config", lambda: {"prompt_source": "langfuse"})
     assert prompt_source() == "langfuse"
@@ -330,10 +335,10 @@ def test_prompt_ids_name_what_actually_runs(monkeypatch):
     assert ids["sorter"] == "sorter@code" and "boss" in ids  # carried agents are recorded too
     monkeypatch.setenv("MAILROOM_PROMPT_SOURCE", "langfuse")
     assert PS.prompt_id("correspondence_specialist") == (
-        "correspondence_specialist@langfuse:mailroom-correspondence_specialist|correspondence_specialist@code"
+        "correspondence_specialist@code+langfuse:mailroom-correspondence_specialist"
     )
     monkeypatch.delenv(PS.PROMPT_SET_ENV)
-    assert PS.prompt_id("judge") == "judge@langfuse:mailroom-judge--deploy_v1|judge@deploy_v1"
+    assert PS.prompt_id("judge") == "judge@deploy_v1+langfuse:mailroom-judge--deploy_v1"
 
 
 def test_trace_metadata_records_the_prompt_source(monkeypatch, tmp_path, temp_base_dir):

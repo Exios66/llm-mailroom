@@ -1,4 +1,4 @@
-"""Langfuse-managed agent prompts with graceful local fallback.
+"""Agent prompts: the repo prompt by default, a Langfuse-managed override only on opt-in.
 
 Every agent's system prompt ships in this repo (the active prompt set, see
 ``llm.prompt_sets``) and is the default: the mailroom does not depend on Langfuse or
@@ -11,7 +11,9 @@ is not configured or unreachable the repo template is served.
 Linking to traces: the fetched prompt object is returned alongside the compiled
 text. Callers pass it to the OpenAI call via `langfuse_prompt=` (consumed by
 the `langfuse.openai` instrumentation — never forwarded to the provider), so
-every generation shows exactly which prompt version produced it.
+under the opt-in every generation shows exactly which prompt version produced it.
+With the default repo source no prompt object exists; the run's ``prompt_ids``
+metadata names the served prompts.
 
 Syncing: `scripts/sync_prompts.py` pushes the local templates up to Langfuse,
 so code and the managed prompts never drift.
@@ -47,6 +49,7 @@ def prompt_cache_ttl() -> float:
 
 PROMPT_SOURCE_ENV = "MAILROOM_PROMPT_SOURCE"
 PROMPT_SOURCES = ("repo", "langfuse")
+_warned_sources: set[str] = set()  # warn once per unknown value, not per LLM call
 
 
 def prompt_source() -> str:
@@ -61,7 +64,8 @@ def prompt_source() -> str:
     raw = os.environ.get(PROMPT_SOURCE_ENV, "").strip().lower()
     if raw in PROMPT_SOURCES:
         return raw
-    if raw:
+    if raw and raw not in _warned_sources:
+        _warned_sources.add(raw)
         logger.warning("prompt_source_env_ignored", value=raw, allowed=list(PROMPT_SOURCES))
     try:
         from pipeline.config import load_config
@@ -159,8 +163,8 @@ def _langchain_prompt(version: str) -> str:
 def _bound_prompt_versions() -> dict[str, str]:
     """Version keys currently wired into production / agent defaults.
 
-    Used for catalog metadata. Langfuse-managed BaseAgent prompts are the
-    ``production`` label of ``mailroom-<agent_name>``; vendored LangChain
+    Used for catalog metadata. BaseAgent prompts are the repo files (the active
+    prompt set), synced to ``mailroom-<agent_name>`` for the Langfuse opt-in; vendored LangChain
     agents pin an explicit lineage key.
     """
     from llm.prompt_sets import resolve

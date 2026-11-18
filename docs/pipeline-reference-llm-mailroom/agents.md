@@ -94,7 +94,7 @@ For `decision_only` classes the node asks a registered decision backend instead 
 | `cuad_family`    | `str \| None` | CUAD agreement family                              |
 | `cuad_clauses`   | `list[str]`   | Present CUAD categories as `"<label>: <evidence>"` |
 
-The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): production prompt is the sandbox / eval-environment **frozen v1** stem (`llm/frozen_v1/contracts_specialist.txt`, Langfuse `mailroom-contracts_specialist`), not entity-extraction `contracts_specialist_v33`. `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It extracts CUAD `contract` only. MAUD `merger_agreement` has its own specialist and `MergerAgreementExtraction` schema — the two labels are not interchangeable. It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. Every live specialist accepts the same optional `handoff_context` parameter.
+The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): production prompt is the sandbox / eval-environment **frozen v1** stem (`llm/frozen_v1/contracts_specialist.txt`), served as the `deploy_v1` prompt-set file `llm/prompt_sets/deploy_v1/contracts_specialist.txt`, not entity-extraction `contracts_specialist_v33`. `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It extracts CUAD `contract` only. MAUD `merger_agreement` has its own specialist and `MergerAgreementExtraction` schema — the two labels are not interchangeable. It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. Every live specialist accepts the same optional `handoff_context` parameter.
 
 ***
 
@@ -334,7 +334,7 @@ A hybrid agent: text-based PDFs are transcribed **directly** from `pdfplumber`/`
 | **Output**      | Visible text + confidence + method (`vision`)                 |
 | **Personality** | Faithful transcription of visible text — no interpretation    |
 
-A vision LLM agent with its own `taxonomy.yaml` entry and Langfuse-managed prompt (`mailroom-image_extractor`). Transient provider failures retry through `retry_chat_completion`; persistent failure raises so the intake node can route the document to review rather than silently substituting a fallback marker.
+A vision LLM agent with its own `taxonomy.yaml` entry and repo prompt (Langfuse `mailroom-image_extractor` only under the opt-in). Transient provider failures retry through `retry_chat_completion`; persistent failure raises so the intake node can route the document to review rather than silently substituting a fallback marker.
 
 ***
 
