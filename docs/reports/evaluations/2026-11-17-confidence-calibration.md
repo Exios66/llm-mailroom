@@ -173,8 +173,8 @@ about 410k tokens per document in total). An archive of a merger is therefore al
 a review costs -0.25. All 36 merger archives in the baseline table above were wrong, 22 of them never judged. With
 `auto_archive: false` a merger is extracted (a low-confidence or invalid extraction can still retry first, as for any class), its report compiled, and the draft parked for a
 person with the cause `class_requires_review`. Its judge band is emptied (band high = `low`), so
-the judge/arbiter loop (23% to 50% of a merger run's tokens in the autoresearch rounds, about 63k of
-192k tokens per document-run on average) no longer runs, and `_judge_can_review` skips it for any
+the judge/arbiter loop (about a third of a merger run's tokens in the autoresearch rounds: roughly 123k of 372k per
+run over the 80 rows that ran, 22% to 50% by round) no longer runs, and `_judge_can_review` skips it for any
 `auto_archive: false` class even if its band is widened. Expected effect on the v2 draw: 14 wrong archives become reviews,
 about +0.14 mean utility (the study's noise floor is 0.084). Mergers are the lowest-priority class,
 so a person handling them is the intended deploy behaviour until merger extraction improves.
@@ -192,12 +192,12 @@ the sample's confidence, so these checks prove wiring, not quality):
 |:---|:---|:---|
 | `run_pilot.py --mock` (15 sample documents) | 12 archived, 3 review (the 3 mergers, cause `class_requires_review`), class accuracy 1.0 | 15 archived, 0 review, class accuracy 1.0 |
 | `run_experiment.py --dataset mailroom-fixtures --mock --baseline …` | pass, class accuracy 1.0 | pass, class accuracy 1.0 |
-| `src/tests/test_confidence_calibration.py` | 60 tests: profile selection, every changed value, legacy values verbatim, the sorter band per class, reviewer acceptance at 0.95, the merger judge band, the archive park, the cause, and a parked merger that a person approves archiving through `resume_from_review` (no loop) | covered by the same tests |
+| `src/tests/test_confidence_calibration.py` | 61 tests: profile selection, every changed value, legacy values verbatim, the sorter band per class, reviewer acceptance at 0.95, the merger judge band, the archive park, the cause, and a parked merger that a person approves archiving through `resume_from_review` (no loop) | covered by the same tests |
 
 Human-review interaction: a parked merger archives once a person applies or corrects its fields
-(`human_applied`). A plain class approval (`approved`) re-extracts, which is new model output, so it
-parks again for the person to approve the fields; it never loops without a person acting. The
-cost is that a person who only confirms the class reviews the merger twice. The legacy
+(`human_applied`). A class approval on a merger with no parked fields (a sorter-stage park) re-extracts, which is
+new model output, so it parks again for the person to approve the fields; it never loops without a
+person acting. The cost is that a person who only confirms the class reviews the merger twice. The legacy
 `approved` + `resume` request on a merger that already has parked fields is refused (400) instead of
 re-extracting, because it would park the merger again on every click; the way to archive parked
 fields is `resolution=approve_as_is` (or `correct`, or `disposition=complete`). The-Mailroom's Approve

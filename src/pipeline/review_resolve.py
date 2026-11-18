@@ -823,7 +823,8 @@ def plan_resolution(
                 raise ValueError(
                     f"{manifest.doc_type} documents are never archived by a plain approval "
                     "that re-extracts: send resolution=approve_as_is (archives the parked "
-                    "fields), resolution=correct, or disposition=complete"
+                    "fields), resolution=correct, disposition=complete, or disposition=requeue "
+                    "(re-run from intake)"
                 )
     else:
         resolution = str(resolution).strip().lower()

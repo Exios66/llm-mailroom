@@ -463,3 +463,19 @@ def test_legacy_plain_approval_of_an_auto_archive_class_still_re_extracts():
         before=before, manifest=before.model_copy(deep=True), class_override={}, decision="approved",
     )
     assert plan.route == "reextract"
+
+
+def test_smoke_extract_check_follows_the_ground_truth_stage_for_a_policy_class():
+    """A merger is expected to park, but a park before extraction is still a failure."""
+    from scripts.smoke_live_documents import _checks
+
+    row = {"expected_doc_class": "merger_agreement", "expected_stage": "archived"}
+    result = {"doc_type": "merger_agreement", "stage": "review"}
+
+    def journal(sequence):
+        return {"node_sequence": sequence, "events": [1], "persisted": True, "outcome": {"stage": "review"}}
+
+    ran = _checks(row, result, journal(["intake", "classify", "extract", "compile_report", "human_review"]))
+    parked_early = _checks(row, result, journal(["intake", "classify", "human_review"]))
+    assert ran["stage_ok"] and ran["extract_present"]
+    assert parked_early["stage_ok"] and not parked_early["extract_present"]

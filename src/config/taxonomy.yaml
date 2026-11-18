@@ -316,7 +316,7 @@ confidence:
       # No merger extraction has met the quality bar in any study run (MAUD
       # accuracy ~0.10-0.15), so an archive is always a wrong archive. Park every
       # merger for a person and skip the judge loop (judge_band_high == low: empty
-      # band), which spent 23-50% of a merger run's tokens without changing the outcome.
+      # band), which spent about a third (22-50% by round) of a merger run's tokens without changing the outcome.
       judge_band_high: 0.90
       arbiter_retry_max: 1
       judge_max_passes: 2
