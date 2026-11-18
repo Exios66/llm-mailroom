@@ -7,13 +7,14 @@ in this watcher's own worker directory made every new claim of that name fail. A
 identified by its path: reconcile only spares paths a running document holds, and a new claim
 that finds its name taken by an orphan reconciles the orphan instead of failing.
 
-Hermetic: ``temp_base_dir`` is a per-test directory, the handlers are called directly (no pool,
-no observer, no thread), and ``run_pipeline`` is a fake.
+Hermetic: ``temp_base_dir`` is a per-test directory, the handlers are called directly (no pool
+or observer), and ``run_pipeline`` is a fake. The stale-claim race uses two synchronized threads.
 """
 
 from __future__ import annotations
 
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -90,6 +91,108 @@ def test_reconcile_never_touches_the_claim_a_document_is_running(env):
         watcher._unmark_active("b.txt")
     w._reconcile_stale_claims()  # once released it is an ordinary stale claim
     assert not claimed.exists()
+
+
+def test_stale_sweep_cannot_move_a_new_same_path_claim(env, monkeypatch):
+    """A stale check and its move must be atomic with a replacement claim."""
+    watcher = env
+    from pipeline import bins
+
+    w = watcher.Watcher()
+    orphan_dir = bins.processing_dir(w.worker_id)
+    orphan_dir.mkdir(parents=True, exist_ok=True)
+    orphan = orphan_dir / "race.txt"
+    orphan.write_text("old orphan")
+    _age(orphan)
+    fresh = bins.inbox_dir() / "race.txt"
+    fresh.write_text("new document")
+
+    checked = threading.Event()
+    release_sweep = threading.Event()
+    claim_started = threading.Event()
+    gate_checked = threading.Event()
+    claim_finished = threading.Event()
+    gate_state: list[str] = []
+    claimed: list[Path | None] = []
+    errors: list[BaseException] = []
+    original = watcher._is_claim_in_flight
+
+    class ProbeGate:
+        """Expose whether the claimant acquired the real gate or had to wait."""
+
+        def __init__(self, lock):
+            self.lock = lock
+
+        def __enter__(self):
+            if threading.current_thread().name == "new-claim":
+                acquired = self.lock.acquire(blocking=False)
+                gate_state.append("acquired" if acquired else "contended")
+                gate_checked.set()
+                if not acquired:
+                    self.lock.acquire()
+            else:
+                self.lock.acquire()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.lock.release()
+
+    def pause_after_check(path):
+        answer = original(path)
+        if threading.current_thread().name == "stale-sweep" and path == orphan:
+            checked.set()
+            if not release_sweep.wait(5):
+                raise AssertionError("sweep was not released")
+        return answer
+
+    def sweep():
+        try:
+            w._reconcile_stale_claims()
+        except BaseException as exc:
+            errors.append(exc)
+
+    def claim():
+        try:
+            assert watcher._mark_active(fresh.name)
+            claim_started.set()
+            claimed.append(watcher._claim_if_open(fresh, w.worker_id))
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            claim_finished.set()
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(watcher, "_claim_gate", ProbeGate(watcher._claim_gate))
+        patcher.setattr(watcher, "_is_claim_in_flight", pause_after_check)
+        sweeper = threading.Thread(target=sweep, name="stale-sweep")
+        claimant = threading.Thread(target=claim, name="new-claim")
+        sweeper.start()
+        try:
+            assert checked.wait(5)
+            claimant.start()
+            assert claim_started.wait(5)
+            assert gate_checked.wait(5)
+            if gate_state == ["acquired"]:
+                # Old code leaves the sweep outside the gate. Finish the real
+                # replacement claim before the paused sweep resumes.
+                assert claim_finished.wait(5)
+            else:
+                assert gate_state == ["contended"]
+        finally:
+            release_sweep.set()
+            sweeper.join(5)
+            if claimant.ident is not None:
+                claimant.join(5)
+            watcher._unmark_active(fresh.name)
+            if claimed:
+                watcher._release_claim(claimed[0])
+
+    assert not sweeper.is_alive() and not claimant.is_alive()
+    assert not errors
+    assert claimed and claimed[0] is not None
+    assert claimed[0].exists(), "stale sweep moved a newly registered live claim"
+    assert claimed[0].read_text() == "new document"
+    assert gate_state == ["contended"]
 
 
 @pytest.mark.parametrize("same_bytes", [True, False], ids=["same-bytes", "different-bytes"])
