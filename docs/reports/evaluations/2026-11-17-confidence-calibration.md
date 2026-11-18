@@ -190,7 +190,11 @@ the sample's confidence, so these checks prove wiring, not quality):
 
 Human-review interaction: a parked merger archives once a person applies or corrects its fields
 (`human_applied`). A plain class approval (`approved`) re-extracts, which is new model output, so it
-parks again for the person to approve the fields; it never loops without a person acting.
+parks again for the person to approve the fields; it never loops without a person acting. The
+cost is that a person who only confirms the class reviews the merger twice. The `class_requires_review`
+cause is added only when no other cause explains the park, so it never hides a failure. Pilot and
+experiment stage checks expect `review` for such a class (`policy_expected_stage`), so a parked
+merger is not scored as a stage miss.
 
 ## 5. Not verified, and what to measure next
 
@@ -204,5 +208,7 @@ parks again for the person to approve the fields; it never loops without a perso
 - **Thin or untested:** merger `high`; `retry_max` for classification (the 25-document audit saw no
   retry change a class, but that is one run); `judge_rejudge_retry` and `keep_best_attempt` (waiting
   on judge calibration, #242); review-queue weights (no reviewer outcome data yet).
+- **Stage metrics from earlier runs** counted a parked merger as a stage miss; they are not comparable
+  with runs scored after this change for that class.
 - **First real run must report:** contract wrong-class archives (the moderate change), review rate
   per class against legacy_v0 on the same draw, and merger tokens per document.

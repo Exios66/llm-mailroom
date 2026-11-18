@@ -303,3 +303,38 @@ def test_parked_merger_archives_once_a_person_applies_fields(temp_base_dir, monk
     )
     assert out["stage"] == "archived"
     assert out["extraction_source"] == "human"
+
+
+# --- profile-aware readers ---------------------------------------------------------
+
+
+def test_replay_override_wins_over_a_named_profile(legacy):
+    from pipeline.policy_replay import current_policy, policy_override
+
+    assert current_policy()["by_class"]["contract"]["high"] == 0.98  # legacy in force
+    with policy_override({"by_class": {"contract": {"high": 0.5}}}):
+        assert get_confidence_thresholds("contract")["high"] == 0.5
+    assert confidence_profile_name() == "legacy_v0"  # restored afterwards
+    assert get_confidence_thresholds("contract")["high"] == 0.98
+
+
+def test_policy_expected_stage():
+    from pipeline.config import policy_expected_stage
+
+    assert policy_expected_stage("merger_agreement", "archived") == "review"
+    assert policy_expected_stage("merger_agreement", "failed") == "failed"
+    assert policy_expected_stage("contract", "archived") == "archived"
+    assert policy_expected_stage(None, None) is None
+
+
+def test_policy_expected_stage_under_legacy(legacy):
+    from pipeline.config import policy_expected_stage
+
+    assert policy_expected_stage("merger_agreement", "archived") == "archived"
+
+
+def test_policy_cause_does_not_hide_a_real_failure():
+    state = _report_state("merger_agreement", arbiter_decision="escalate")
+    causes = collect_review_causes(state)
+    assert "arbiter_escalated" in causes
+    assert CLASS_REQUIRES_REVIEW not in causes

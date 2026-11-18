@@ -292,7 +292,8 @@ confidence:
   # `auto_archive` (per class, default true): false sends every document of the
   # class that would archive to a person instead (review cause
   # `class_requires_review`), after the report is compiled so the reviewer gets the
-  # draft. A person's approval still archives it (graph/routing.py:after_report).
+  # draft. Fields a person applies or corrects archive; a plain class approval
+  # re-extracts, so the new draft parks again (graph/routing.py:after_report).
   by_class:
     contract:
       # Sorter `high` 0.98 -> 0.95: the sorter answers 0.95 on ~80% of contracts, so

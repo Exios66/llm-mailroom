@@ -1359,6 +1359,10 @@ class Watcher:
         from graph.decision_points import prepare_slots
 
         prepare_slots()
+        # An unknown MAILROOM_CONFIDENCE_PROFILE would fail every run: refuse to start.
+        from pipeline.config import confidence_profile_name
+
+        confidence_profile_name()
 
         inbox = inbox_dir()
         ensure_dirs(inbox)

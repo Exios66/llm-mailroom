@@ -198,16 +198,17 @@ flowchart TD
 
 ## Thresholds used by the routers
 
-Values from the `confidence:` block of `src/config/taxonomy.yaml`. The per-class rows override `high`, `low` and `judge_band_high` once `doc_type` is known (`pipeline/config.py:get_confidence_thresholds`). Retry budgets stay global.
+Values from the `confidence:` block of `src/config/taxonomy.yaml` (profile `calibrated_v1`, 2026-11-17; `MAILROOM_CONFIDENCE_PROFILE=legacy_v0` selects the previous values). The per-class rows override the globals once `doc_type` is known (`pipeline/config.py:get_confidence_thresholds`). Budgets stay global unless a class sets them.
 
 | Key | Global | contract | merger_agreement | insurance_claim | corporate_record | correspondence |
 |---|---|---|---|---|---|---|
-| `high` | 0.97 | 0.98 | 0.98 | 0.98 | 0.96 | 0.95 |
+| `high` | 0.97 | 0.95 | 0.98 | 0.95 | 0.95 | 0.95 |
 | `low` | 0.88 | 0.90 | 0.90 | 0.90 | 0.86 | 0.85 |
-| `judge_band_high` | 0.95 | 0.97 | 0.97 | 0.97 | 0.94 | 0.92 |
+| `judge_band_high` | 0.95 | 0.97 | 0.90 (empty band) | 0.97 | 0.94 | 0.92 |
 | `retry_max` | 2 | global | global | global | global | global |
-| `arbiter_retry_max` | 2 | global | global | global | global | global |
-| `judge_max_passes` | 3 | global | global | global | global | global |
+| `arbiter_retry_max` | 2 | global | 1 | global | global | global |
+| `judge_max_passes` | 3 | global | 2 | global | global | global |
+| `auto_archive` | true | global | false (always a person) | global | global | global |
 | `judge_rejudge_retry` | false | global | global | global | global | global |
 | `keep_best_attempt` | false | global | global | global | global | global |
 

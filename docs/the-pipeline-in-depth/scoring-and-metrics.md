@@ -214,13 +214,13 @@ The sorter and specialists report their own confidence (0 to 1). Thresholds come
 | Scope | `high` | `low` | `judge_band_high` |
 |---|---:|---:|---:|
 | Global fallback | 0.97 | 0.88 | 0.95 |
-| `contract` | 0.98 | 0.90 | 0.97 |
-| `merger_agreement` | 0.98 | 0.90 | 0.97 |
-| `insurance_claim` | 0.98 | 0.90 | 0.97 |
-| `corporate_record` | 0.96 | 0.86 | 0.94 |
+| `contract` | 0.95 | 0.90 | 0.97 |
+| `merger_agreement` | 0.98 | 0.90 | 0.90 |
+| `insurance_claim` | 0.95 | 0.90 | 0.97 |
+| `corporate_record` | 0.95 | 0.86 | 0.94 |
 | `correspondence` | 0.95 | 0.85 | 0.92 |
 
-Other knobs: `retry_max: 2`, `arbiter_retry_max: 2`, `judge_max_passes: 3`.
+Profile `calibrated_v1` (2026-11-17; `legacy_v0` keeps the previous values for A/B). Other knobs: `retry_max: 2`, `arbiter_retry_max: 2`, `judge_max_passes: 3`; mergers use 1 and 2 and `auto_archive: false`, so every merger goes to a person.
 
 ```mermaid
 flowchart TD

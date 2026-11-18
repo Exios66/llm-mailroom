@@ -666,7 +666,9 @@ def compute_pipeline_scores(state: dict, metrics: dict | None = None) -> dict:
             from observability.classification_scoring import classes_match
 
             scores["class_correct"] = int(classes_match(expected, state.get("doc_type")))
-        expected_stage = gt.get("expected_stage")
+        from pipeline.config import policy_expected_stage
+
+        expected_stage = policy_expected_stage(expected, gt.get("expected_stage"))
         if expected_stage:
             scores["stage_correct"] = int(str(stage or "") == str(expected_stage))
     scores["success_rate"] = int(first_pass_success(state, scores))

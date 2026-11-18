@@ -41,7 +41,7 @@ class AgentTool:
 
 def _tool_taxonomy() -> dict:
     try:
-        from pipeline.config import load_config
+        from pipeline.config import confidence_block, load_config
 
         cfg = load_config()
         return {
@@ -49,7 +49,7 @@ def _tool_taxonomy() -> dict:
                 {k: c.get(k) for k in ("key", "label", "description")}
                 for c in cfg.get("doc_classes", [])
             ],
-            "confidence": cfg.get("confidence", {}),
+            "confidence": confidence_block(),
         }
     except Exception:
         return {}

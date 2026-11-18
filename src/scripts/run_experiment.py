@@ -68,7 +68,11 @@ def class_correct_evaluator(*, input, output, expected_output, **kwargs) -> Eval
 
 
 def stage_correct_evaluator(*, input, output, expected_output, **kwargs) -> Evaluation | None:
-    want = (expected_output or {}).get("expected_stage")
+    from pipeline.config import policy_expected_stage
+
+    want = policy_expected_stage(
+        (expected_output or {}).get("expected_doc_class"), (expected_output or {}).get("expected_stage")
+    )
     if not want:
         return None
     return Evaluation(
@@ -123,8 +127,10 @@ def run_evaluators_from_rows(rows: list[dict]) -> list[Evaluation]:
 
 
 def _row_for(item: Any, output: dict | None) -> dict:
+    from pipeline.config import policy_expected_stage
+
     want = _get(item, "expected_output") or {}
-    expected_stage = want.get("expected_stage")
+    expected_stage = policy_expected_stage(want.get("expected_doc_class"), want.get("expected_stage"))
     return {
         "expected": want.get("expected_doc_class"),
         "got": (output or {}).get("doc_type"),

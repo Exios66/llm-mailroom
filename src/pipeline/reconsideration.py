@@ -455,17 +455,6 @@ def _state_derived_causes(
     if data.get("extraction_guardrail"):
         add(GUARDRAIL)
 
-    if (
-        isinstance(doc_type, str)
-        and is_extractable_doc_type(doc_type)
-        and data.get("extracted_data")
-        and not (data.get("review_decision") == "human_applied" and data.get("extraction_source") == "human")
-    ):
-        from pipeline.config import class_auto_archives
-
-        if not class_auto_archives(doc_type):
-            add(CLASS_REQUIRES_REVIEW)
-
     if _failed_chunks(extracted) > 0:
         add(CHUNK_FAILED)
 
@@ -516,6 +505,21 @@ def _state_derived_causes(
         elif _as_int(data.get("arbiter_retry_count")) > arbiter_max:
             add(ARBITER_ESCALATED)
             add(RETRIES_EXHAUSTED)
+
+    # The policy park (taxonomy `auto_archive: false`) names itself only when nothing
+    # else explains the park, so the label never hides a real failure.
+    if (
+        not out
+        and not known
+        and isinstance(doc_type, str)
+        and is_extractable_doc_type(doc_type)
+        and data.get("extracted_data")
+        and not (data.get("review_decision") == "human_applied" and data.get("extraction_source") == "human")
+    ):
+        from pipeline.config import class_auto_archives
+
+        if not class_auto_archives(doc_type):
+            add(CLASS_REQUIRES_REVIEW)
 
     return out
 

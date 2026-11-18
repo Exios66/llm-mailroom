@@ -404,6 +404,13 @@ def run_sample(
 ) -> dict:
     from pipeline.bins import inbox_dir
     from graph.build_graph import run_pipeline
+    from pipeline.config import policy_expected_stage
+
+    # A class that never auto-archives (taxonomy `auto_archive: false`) is right to park.
+    sample = {
+        **sample,
+        "expected_stage": policy_expected_stage(sample["expected_doc_class"], sample["expected_stage"]),
+    }
 
     # Reset first: a sample that raises later keeps only its own usage (see _error_row).
     _LLM_METRICS["calls"] = 0

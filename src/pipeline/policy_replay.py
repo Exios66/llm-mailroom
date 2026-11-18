@@ -176,10 +176,10 @@ def select_split(records: Sequence[RunRecord], split: str) -> tuple[list[RunReco
 
 
 def current_policy() -> dict[str, Any]:
-    """The ``confidence:`` block in force right now (taxonomy, or an active override)."""
+    """The ``confidence:`` block in force right now (the selected profile, or an active override)."""
     import pipeline.config as cfg
 
-    return copy.deepcopy(dict(cfg.load_config().get("confidence") or {}))
+    return copy.deepcopy(cfg.confidence_block())
 
 
 def merge_policy(base: Mapping[str, Any], overlay: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -240,9 +240,15 @@ def policy_override(policy: Mapping[str, Any] | None) -> Iterator[dict[str, Any]
 
     _load_config.cache_clear = lambda: None  # type: ignore[attr-defined]
     cfg.load_config = _load_config  # type: ignore[assignment]
+    # The candidate replaces the `confidence` block, so no named profile may shadow it.
+    import os
+
+    saved_profile = os.environ.pop(cfg.CONFIDENCE_PROFILE_ENV, None)
     try:
         yield effective
     finally:
+        if saved_profile is not None:
+            os.environ[cfg.CONFIDENCE_PROFILE_ENV] = saved_profile
         cfg.load_config = original  # type: ignore[assignment]
         cfg.clear_config_cache()
 

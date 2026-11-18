@@ -126,7 +126,8 @@ def confidence_profile_name() -> str:
     return raw
 
 
-def _confidence_block() -> dict:
+def confidence_block() -> dict:
+    """The ``confidence`` block of the profile in force (a copy; ``by_class`` included)."""
     cfg = load_config()
     name = confidence_profile_name()
     if name == DEFAULT_CONFIDENCE_PROFILE:
@@ -143,7 +144,7 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
     ``judge_max_passes``) stay global unless a class entry sets them. The block
     comes from the profile :func:`confidence_profile_name` selects.
     """
-    base = _confidence_block()
+    base = confidence_block()
     by_class = base.pop("by_class", None) or {}
     if doc_type:
         resolved = resolve_extract_class(doc_type) or doc_type
@@ -153,6 +154,18 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
                 if value is not None:
                     base[key] = value
     return base
+
+
+def policy_expected_stage(doc_class: str | None, expected_stage: str | None) -> str | None:
+    """The terminal stage a healthy run reaches under the profile in force.
+
+    Ground truth says ``archived`` for every clean document, but a class with
+    ``auto_archive: false`` parks by design, so ``review`` is its correct outcome.
+    Any other expectation is returned unchanged.
+    """
+    if expected_stage == "archived" and not class_auto_archives(doc_class):
+        return "review"
+    return expected_stage
 
 
 def class_auto_archives(doc_type: str | None) -> bool:
