@@ -129,6 +129,11 @@ class DocumentState(TypedDict, total=False):
     judge_score: float | None
     judge_findings: list[str]
     judge_source_verified: bool
+    # Windows of the source the judge / arbiters read and what it cost (#277):
+    # {windows_total, windows_checked, calls, prompt_tokens, completion_tokens}.
+    judge_coverage: dict[str, Any] | None
+    arbiter_coverage: dict[str, Any] | None
+    classification_arbiter_coverage: dict[str, Any] | None
     arbiter_decision: str | None
     arbiter_reasoning: str | None
     arbiter_handoff: str | None

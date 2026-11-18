@@ -466,11 +466,11 @@ def test_a_complete_but_inaccurate_extraction_is_not_complete(monkeypatch):
     assert "wrong date" in result["judge_findings"]
 
 
-def test_a_judge_that_saw_part_of_the_document_verifies_nothing(monkeypatch):
-    from agents.judge import JUDGE_SOURCE_CHARS
-
-    result, _ = _judged(monkeypatch, "accurate", text="x" * (JUDGE_SOURCE_CHARS + 1))
+def test_a_judge_that_reports_no_coverage_verifies_nothing(monkeypatch):
+    """The fake judge reads no windows, so even a clean verdict does not clear a long document."""
+    result, _ = _judged(monkeypatch, "accurate", text="x" * 50_000)
     assert result["judge_verdict"] == "complete" and result["judge_source_verified"] is False
+    assert result["judge_coverage"]["windows_checked"] == 0
 
 
 def test_the_arbiter_is_shown_the_source(monkeypatch):

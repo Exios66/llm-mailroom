@@ -171,9 +171,11 @@ def test_long_document_is_never_truncated(ctx, mocked):
     assert rec.diagnostics["sorter_windows"] > 1  # the sorter slid windows over all of it
     assert max(e.n_chunks for e in rec.extraction) > 1  # so did extraction
     assert rec.diagnostics["intake"]["chars"] > 0.9 * len(body)
-    # live behaviour the sweep must surface, not hide: these lanes cap their input
+    # live behaviour the sweep must surface, not hide: the reviewer caps its input, the judge
+    # reads every window (#277)
     assert rec.diagnostics["downstream_truncation"]["reviewer"] is True
-    assert rec.diagnostics["downstream_truncation"]["judge"] is True
+    assert rec.diagnostics["downstream_truncation"]["judge"] is False
+    assert rec.diagnostics["downstream_truncation"]["judge_windows"] > 1
 
 
 # ── offline scoring ──────────────────────────────────────────────────────

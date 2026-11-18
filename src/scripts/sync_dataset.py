@@ -158,7 +158,12 @@ def _load_hf_rows(*, live: bool) -> list[dict]:
 
         frame, provenance = load_corpus()
         raw = [
-            {"role": rec.get("expected"), "doc_text": rec.get("doc_text"), "labels": rec}
+            # ``content_verified`` is load-time integrity bookkeeping (#258), not a label.
+            {
+                "role": rec.get("expected"),
+                "doc_text": rec.get("doc_text"),
+                "labels": {k: v for k, v in rec.items() if k != "content_verified"},
+            }
             for rec in frame.to_dict("records")
         ]
     else:

@@ -202,6 +202,23 @@ def call_cost_usd(call: dict) -> float | None:
     ) * float(price.get("output_per_million", 0))
 
 
+def usage_mark() -> int:
+    """Position in the current run's usage log; pair with :func:`usage_since`."""
+    return len(run_calls())
+
+
+def usage_since(mark: int, agent: str | None = None) -> dict:
+    """Calls and tokens recorded since ``usage_mark`` (one agent's, or all when ``agent`` is None).
+
+    Lets a multi-call step (the judge's windows) report what it alone cost without
+    resetting the run-wide accumulator the token budget reads.
+    """
+    items = [i for i in run_calls()[mark:] if agent is None or i.get("agent") == agent]
+    prompt = sum(i["prompt_tokens"] for i in items)
+    completion = sum(i["completion_tokens"] for i in items)
+    return {"calls": len(items), "prompt_tokens": prompt, "completion_tokens": completion}
+
+
 def usage_summary() -> dict:
     """Aggregate the current run's recorded usage.
 
