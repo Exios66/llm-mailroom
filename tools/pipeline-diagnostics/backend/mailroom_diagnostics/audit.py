@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import math
 import os
 import re
 import sqlite3
@@ -64,6 +65,11 @@ MAX_FOREIGN_ATTEMPTS = 50
 MAX_ADDENDA = 200
 MAX_DECISION_FIELDS = 40
 MAX_FIELD_NAME = 64
+# Upper bound, in seconds, a lookup waits on a locked or slow store (SQLite
+# connect + busy timeout, Postgres connect + statement timeout). When it fires
+# the reader reports reason ``timeout`` and ``unverified``; it never hangs the
+# request and never reports a verdict it could not reach.
+LOOKUP_TIMEOUT_SECONDS = 2.0
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,127}$")
 _STAGE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -161,14 +167,14 @@ def _sqlite_creator(path: Path):
     uri = path.resolve().as_uri() + "?mode=ro"
 
     def connect() -> sqlite3.Connection:
-        conn = sqlite3.connect(uri, uri=True, timeout=5)
+        conn = sqlite3.connect(uri, uri=True, timeout=LOOKUP_TIMEOUT_SECONDS)
         # Autocommit: this module issues its own BEGIN (see _connection) so one
         # snapshot spans every SELECT. pysqlite's legacy mode never begins a
         # transaction for SELECTs, which would let a writer commit between the
         # main-row and addenda reads and look like a broken chain.
         conn.isolation_level = None
         conn.execute("PRAGMA query_only=ON")
-        conn.execute("PRAGMA busy_timeout=3000")
+        conn.execute(f"PRAGMA busy_timeout={int(LOOKUP_TIMEOUT_SECONDS * 1000)}")
         return conn
 
     return connect
@@ -233,7 +239,13 @@ def _connection() -> Iterator[Connection]:
             store.url,
             poolclass=NullPool,
             isolation_level="REPEATABLE READ",
-            connect_args={"options": "-c default_transaction_read_only=on"},
+            connect_args={
+                "connect_timeout": max(1, math.ceil(LOOKUP_TIMEOUT_SECONDS)),
+                "options": (
+                    "-c default_transaction_read_only=on "
+                    f"-c statement_timeout={int(LOOKUP_TIMEOUT_SECONDS * 1000)}"
+                ),
+            },
         )
     try:
         with engine.connect() as conn:
@@ -245,6 +257,50 @@ def _connection() -> Iterator[Connection]:
                 _end_snapshot(conn, tx, store.engine)
     finally:
         engine.dispose()
+
+
+_TIMEOUT_MARKERS = (
+    "database is locked",
+    "database table is locked",
+    "database schema is locked",
+    "statement timeout",
+    "canceling statement",
+    "timeout expired",
+    "timed out",
+)
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    """True when a driver error means the store was locked or too slow to answer."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, TimeoutError):
+            return True
+        message = str(current).lower()
+        if any(marker in message for marker in _TIMEOUT_MARKERS):
+            return True
+        current = getattr(current, "orig", None) or current.__cause__ or current.__context__
+    return False
+
+
+def _timeout_note() -> str:
+    return (
+        f"the audit store did not answer within {LOOKUP_TIMEOUT_SECONDS:g}s "
+        "(locked or slow); nothing was verified"
+    )
+
+
+def _timeout_store() -> dict[str, Any]:
+    return {
+        "state": "unavailable",
+        "reason": "timeout",
+        "engine": None,
+        "schema": None,
+        "tables": [],
+        "migration": None,
+    }
 
 
 def valid_doc_id(doc_id: str) -> bool:
@@ -1339,7 +1395,11 @@ def list_documents(limit: int = DEFAULT_LIST_LIMIT, offset: int = 0) -> dict[str
             "migration": None,
         }
         return payload
-    except Exception:
+    except Exception as exc:
+        if _is_timeout(exc):
+            payload["store"] = _timeout_store()
+            payload["notes"].append(_timeout_note())
+            return payload
         payload["store"] = {
             "state": "unavailable",
             "reason": "query-failed",
@@ -1434,7 +1494,13 @@ def document_audit(doc_id: str) -> dict[str, Any]:
         payload["record"] = {"state": "unavailable", "reason": exc.code}
         payload["verification"]["notes"].append("the audit store is unavailable")
         return payload
-    except Exception:
+    except Exception as exc:
+        if _is_timeout(exc):
+            payload["store"] = _timeout_store()
+            payload["record"] = {"state": "unavailable", "reason": "timeout"}
+            payload["verification"]["status"] = "unverified"
+            payload["verification"]["notes"].append(_timeout_note())
+            return payload
         payload["store"] = {
             "state": "unavailable",
             "reason": "query-failed",

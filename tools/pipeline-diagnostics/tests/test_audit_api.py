@@ -2077,3 +2077,53 @@ def test_attempt_naming_the_trimmed_parent_id_is_an_orphan_not_a_match(client, t
     # The projection must not attach the attempt to the row either.
     assert payload["record"]["attempts"] == []
     assert payload["record"]["attempts_total"] == 0
+
+
+@pytest.fixture
+def locked_store(make_store, monkeypatch):
+    """A seeded store that a second connection holds under an exclusive lock."""
+    from mailroom_diagnostics import audit
+
+    db = make_store("unified")
+    # Small bound so the test is fast; the module default is asserted separately.
+    monkeypatch.setattr(audit, "LOOKUP_TIMEOUT_SECONDS", 0.3, raising=False)
+    locker = sqlite3.connect(db, isolation_level=None)
+    locker.execute("PRAGMA journal_mode=DELETE")
+    locker.execute("BEGIN EXCLUSIVE")
+    try:
+        yield db
+    finally:
+        locker.execute("ROLLBACK")
+        locker.close()
+
+
+def test_locked_store_times_out_as_unverified_with_a_reason(client, locked_store):
+    import time
+
+    started = time.monotonic()
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 2.0, f"the lookup was not bounded ({elapsed:.1f}s)"
+    assert payload["verification"]["status"] == "unverified"
+    assert payload["record"] == {"state": "unavailable", "reason": "timeout"}
+    assert payload["store"]["reason"] == "timeout"
+    assert any("did not answer" in note for note in payload["verification"]["notes"])
+    assert not payload["verification"]["failures"]
+
+
+def test_locked_store_listing_reports_the_timeout(client, locked_store):
+    import time
+
+    started = time.monotonic()
+    payload = client.get("/v1/diagnostics/audit/documents").json()
+    assert time.monotonic() - started < 2.0
+    assert payload["store"]["state"] == "unavailable"
+    assert payload["store"]["reason"] == "timeout"
+    assert payload["documents"] == []
+
+
+def test_lookup_timeout_default_is_small_and_bounded():
+    from mailroom_diagnostics import audit
+
+    assert 0 < audit.LOOKUP_TIMEOUT_SECONDS <= 5
