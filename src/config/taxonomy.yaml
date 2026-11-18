@@ -395,6 +395,7 @@ review_queue:
     sorter_low_confidence: 1.2
     reviewer_low_confidence: 1.2
     reporting_incomplete: 1.2
+    out_of_vocabulary: 3.0         # a closed label the Dojo scores wrong: deterministic, like schema_invalid
   class_tier_weight:               # cost of a wrong answer per class
     contract: 1.3
     merger_agreement: 1.4
@@ -511,6 +512,17 @@ doc_classes:
       territory: free_text
       cuad_family: label
       cuad_clauses: entity_list:free_text
+    # Closed-label vocabularies (#285). Single source of truth: each `label` field below
+    # that names a closed set lists its values here. After extraction a value off its list
+    # (as the Dojo's canonical_label folds it) routes the document to review with cause
+    # `out_of_vocabulary`; absence is valid. Values match the Dojo's scored vocabulary
+    # (llm_dojo_scoring.schemas.scored_enums.SCORED_ENUM_FIELDS; a test pins the match).
+    label_vocabularies:
+      cuad_family: [affiliate, agency, collaboration, co_branding, consulting, development,
+                    distributor, endorsement, franchise, hosting, ip, joint_venture, license,
+                    maintenance, manufacturing, marketing, non_compete_no_solicit, outsourcing,
+                    promotion, reseller, service, sponsorship, strategic_alliance, supply,
+                    transportation, other]
 
   - key: merger_agreement
     label: "Merger Agreement"
@@ -539,6 +551,9 @@ doc_classes:
       intent: label
       subject_matter: free_text
       keywords: entity_list:name
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      merger_consideration: [all_cash, all_stock, mixed_cash_stock, mixed_cash_stock_election, other]
+      intent: [effect_merger, amend_merger, other]
 
   - key: corporate_record
     label: "Corporate Record"
@@ -555,6 +570,9 @@ doc_classes:
       intent: label
       subject_matter: free_text
       keywords: entity_list:name
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      intent: [governance_rules, corporate_action_approval, entity_formation, authority_delegation,
+               investor_rights, other]
 
   - key: correspondence
     label: "Correspondence"
@@ -573,6 +591,12 @@ doc_classes:
       intent: label
       subject_matter: free_text
       keywords: entity_list:name
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      communication_type: [email, letter, memo, notice, demand, attorney_demand, press_release,
+                           meeting_request, other]
+      urgency: [routine, time-sensitive, urgent, critical]
+      intent: [payment_demand, notice, analysis, request, update, meeting_invite,
+               press_communication, other]
 
   - key: insurance_claim
     label: "Insurance Claim"
@@ -597,6 +621,12 @@ doc_classes:
       subject_matter: free_text
       keywords: entity_list:name
       claim_checklist: entity_list:free_text
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      # Product lines only. A CMS table token (pde, inpatient, outpatient, carrier) is not a
+      # product line: #280 folds it onto `health`, and one that reaches the check is off-list.
+      claim_type: [auto, property, liability, health, life, workers_comp, other]
+      coverage_determination: [approved, denied, partial, pending]
+      intent: [claim_filing, coverage_determination, loss_report, claim_data_record, other]
 
 file_extensions:
   - .txt
@@ -724,6 +754,8 @@ agents:
 
   # KANBAN-063 (Lane B): judgment arbitration on failed judge verdicts.
   # Sees the specialist extraction + judge findings; bounded decisions only.
+  # max_input_chars is the window size: a longer document is read in overlapping windows
+  # (#277), human_review from any window wins, and the read stops at the first one.
   arbiter:
     provider: openrouter
     model: qwen/qwen3.7-flash
@@ -821,7 +853,9 @@ agents:
     max_input_chars: 20000
     reasoning_effort: none
 
-  # Offline LLM-as-a-judge used by scripts/run_quality_judges.py.
+  # LLM-as-a-judge: in-pipeline (judge_verify) and offline (scripts/run_quality_judges.py).
+  # max_input_chars is the window size: the judge reads a longer document in overlapping
+  # windows (overlap: chunking.overlap_chars), one call per window, never an excerpt (#277).
   judge:
     provider: openrouter
     model: qwen/qwen3.7-flash

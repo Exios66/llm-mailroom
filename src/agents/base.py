@@ -305,6 +305,7 @@ class BaseAgent(ABC):
             _SpecialistBase,
             finalize_chunked_merge,
             merge_chunk_windows,
+            window_confidence,
         )
         from llm.retry import is_transient_error
 
@@ -317,6 +318,7 @@ class BaseAgent(ABC):
                 doc_text, pages=pages, handoff_context=handoff_context
             )
         windows: list[tuple[dict, str | None]] = []
+        window_confidences: list[float | None] = []
         failed = 0
         for index, chunk in enumerate(chunks, start=1):
             header = (
@@ -335,6 +337,7 @@ class BaseAgent(ABC):
                 if is_transient_error(exc):
                     raise
                 failed += 1
+                window_confidences.append(None)
                 logger.warning(
                     "chunk_call_failed",
                     agent=self.agent_name,
@@ -345,7 +348,9 @@ class BaseAgent(ABC):
                 continue
             if result.get("_parse_error"):
                 failed += 1
+                window_confidences.append(None)
                 continue
+            window_confidences.append(window_confidence(result))
             windows.append((result, chunk))
         # Merge policy (taxonomy ``chunking.merge``): ``union`` (default) or ``evidence``.
         merged = merge_chunk_windows(windows, agent_name=self.agent_name)
@@ -359,9 +364,14 @@ class BaseAgent(ABC):
                 "confidence": 0.0,
                 "_n_chunks": len(chunks),
                 "_failed_chunks": failed,
+                "_chunk_confidences": window_confidences,
             }
         return finalize_chunked_merge(
-            merged, agent_name=self.agent_name, n_chunks=len(chunks), failed=failed
+            merged,
+            agent_name=self.agent_name,
+            n_chunks=len(chunks),
+            failed=failed,
+            window_confidences=window_confidences,
         )
 
 

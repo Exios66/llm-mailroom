@@ -542,7 +542,11 @@ def _samples_base_dir() -> Path:
 
 
 def build_hf_manifest(
-    split: str = "train", per_class: int = 3, seed: int = 0, base_dir: Path | None = None
+    split: str = "train",
+    per_class: int = 3,
+    seed: int = 0,
+    base_dir: Path | None = None,
+    strict: bool = False,
 ) -> tuple[list[dict], dict]:
     """Manifest rows for a seeded per-class draw of the pinned HF corpus.
 
@@ -557,7 +561,9 @@ def build_hf_manifest(
 
     if per_class < 1:
         raise SystemExit("--per-class must be at least 1")
-    docs, provenance = load_hf_docs(split, per_class, seed)
+    # strict (--strict-integrity) raises on any content_sha256 mismatch; the default scores every
+    # row, flags it ``content_verified`` and records the integrity block (#258).
+    docs, provenance = load_hf_docs(split, per_class, seed, **({"strict": True} if strict else {}))
     out_dir = Path(base_dir if base_dir is not None else _samples_base_dir()) / "samples" / "hf"
     out_dir.mkdir(parents=True, exist_ok=True)
     trace_source = hp._trace_source()
@@ -591,6 +597,7 @@ def build_hf_manifest(
             "mock_subclass": mock_expectation(doc)["subclass"] or "",
             "size_tier": "hf",
             "chars": str(len(doc.text)),
+            **({} if doc.content_verified is None else {"content_verified": "1" if doc.content_verified else "0"}),
         })
     return rows, provenance
 
@@ -841,6 +848,25 @@ def summarize(rows: list[dict]) -> dict:
     }
 
 
+VERIFIED_SUBSET_KEYS = ("samples", "errors", "class_accuracy", "review_rate", "avg_extraction_overall_score")
+
+
+def verified_subset_summary(rows: list[dict], manifest: list[dict], integrity: dict | None) -> dict | None:
+    """Headline scores over the rows whose text matched ``content_sha256`` (#258).
+
+    ``None`` unless the corpus has a row that is not content-verified (a mismatch, a row without
+    text, or no hash to check). Every row is scored either way; this is reported NEXT TO the
+    all-rows summary, never instead of it. ``rows`` and ``manifest`` are index-aligned.
+    """
+    if not integrity or not (
+        integrity.get("mismatched") or integrity.get("missing_text") or integrity.get("unverifiable")
+    ):
+        return None
+    kept = [r for m, r in zip(manifest, rows) if m.get("content_verified") == "1"]
+    full = summarize(kept)
+    return {k: full[k] for k in VERIFIED_SUBSET_KEYS}
+
+
 def misfile_candidates(rows: list[dict], report: dict | None = None) -> list[dict]:
     """Docs that sailed through when they shouldn't have: archived (or later
     staged) docs with a wrong class, schema-invalid extraction, or (when a
@@ -934,6 +960,11 @@ def print_summary(summary: dict) -> None:
     for cls, s in summary["per_class"].items():
         print(f"  {cls:<20} n={s['n']:<2} acc={s['class_accuracy']:<6} "
               f"avg_time_s={s['avg_time_s']:<8} avg_calls={s['avg_llm_calls']:<4} avg_cost_usd={s['avg_cost_usd']}")
+    vs = summary.get("verified_subset")
+    if vs:
+        print(f"verified subset (content_sha256 matches the pin): samples: {vs['samples']} | "
+              f"class_accuracy: {vs['class_accuracy']} | review_rate: {vs['review_rate']} | "
+              f"field_score_overall: {vs['avg_extraction_overall_score']}  (all rows above)")
 
 
 def _page_progress(run_id: str, label: str, total: int, rows: list[dict], finished: bool = False) -> None:
@@ -975,6 +1006,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--per-class", type=int, default=3, help="--dataset hf: documents drawn per class (default 3).")
     parser.add_argument("--seed", type=int, default=0, help="--dataset hf: sampling seed (default 0).")
     parser.add_argument("--split", default="train", help="--dataset hf: corpus split (default train).")
+    parser.add_argument(
+        "--strict-integrity",
+        action="store_true",
+        help="--dataset hf: refuse to run if any row's text fails its pinned content_sha256 (tamper check). "
+        "Default: score every row, flag it content_verified and report the verified subset.",
+    )
     parser.add_argument(
         "--scores",
         action=argparse.BooleanOptionalAction,
@@ -1030,7 +1067,9 @@ def main(argv: list[str] | None = None) -> int:
 
     hf_provenance = None
     if dataset == "hf":
-        manifest, hf_provenance = build_hf_manifest(args.split, args.per_class, args.seed)
+        manifest, hf_provenance = build_hf_manifest(
+            args.split, args.per_class, args.seed, strict=args.strict_integrity
+        )
         print(
             f"dataset: hf ({hf_provenance['dataset_id']} revision={hf_provenance['dataset_revision']} "
             f"split={args.split} per_class={args.per_class} seed={args.seed}) -> {len(manifest)} documents"
@@ -1096,6 +1135,9 @@ def main(argv: list[str] | None = None) -> int:
         flush()
 
     summary = summarize(rows)
+    verified = verified_subset_summary(rows, manifest, (hf_provenance or {}).get("integrity"))
+    if verified is not None:
+        summary["verified_subset"] = verified
     print_rows(rows)
     print_summary(summary)
 
