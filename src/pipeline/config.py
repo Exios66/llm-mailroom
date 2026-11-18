@@ -126,13 +126,15 @@ def confidence_profile_name() -> str:
     return raw
 
 
-def confidence_block() -> dict:
-    """The ``confidence`` block of the profile in force (a copy; ``by_class`` included)."""
+def confidence_block():
+    """The ``confidence`` block of the profile in force (a shallow copy; ``by_class`` included).
+
+    A malformed (non-mapping) block is returned as it is, so validating callers can reject it.
+    """
     cfg = load_config()
     name = confidence_profile_name()
-    if name == DEFAULT_CONFIDENCE_PROFILE:
-        return dict(cfg.get("confidence", {}) or {})
-    return dict(cfg["confidence_profiles"][name])
+    block = cfg.get("confidence", {}) if name == DEFAULT_CONFIDENCE_PROFILE else cfg["confidence_profiles"][name]
+    return dict(block) if isinstance(block, dict) else block
 
 
 def get_confidence_thresholds(doc_type: str | None = None) -> dict:
@@ -144,7 +146,8 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
     ``judge_max_passes``) stay global unless a class entry sets them. The block
     comes from the profile :func:`confidence_profile_name` selects.
     """
-    base = confidence_block()
+    block = confidence_block()
+    base = dict(block) if isinstance(block, dict) else {}
     by_class = base.pop("by_class", None) or {}
     if doc_type:
         resolved = resolve_extract_class(doc_type) or doc_type

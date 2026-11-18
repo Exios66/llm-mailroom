@@ -1018,7 +1018,7 @@ def thresholds_snapshot() -> dict:
     from pipeline.config import confidence_block, confidence_profile_name, load_config
 
     cfg = load_config()
-    snap = {"confidence": confidence_block(), "confidence_profile": confidence_profile_name(),
+    snap = {"confidence": confidence_block() or {}, "confidence_profile": confidence_profile_name(),
             "reviewer": cfg.get("reviewer") or {},
             "judge_verify": os.environ.get("MAILROOM_JUDGE_VERIFY", "on")}
     return json.loads(json.dumps(snap, default=str))

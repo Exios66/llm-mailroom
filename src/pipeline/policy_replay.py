@@ -179,7 +179,8 @@ def current_policy() -> dict[str, Any]:
     """The ``confidence:`` block in force right now (the selected profile, or an active override)."""
     import pipeline.config as cfg
 
-    return copy.deepcopy(cfg.confidence_block())
+    block = cfg.confidence_block()
+    return copy.deepcopy(block if isinstance(block, dict) else {})
 
 
 def merge_policy(base: Mapping[str, Any], overlay: Mapping[str, Any] | None) -> dict[str, Any]:
