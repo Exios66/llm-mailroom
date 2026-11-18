@@ -128,6 +128,13 @@ Work landed on `main` since the last tagged release.
 - Run accounting keeps a call whose usage reports `input_tokens=0` with positive `output_tokens` (a fully cached prompt); the `or` fallback treated the zero as missing and dropped the whole call, completion count included (`pipeline/limits.py:record_usage`).
 - Ground-truth workbook: a cell is clipped by UTF-16 units, as Excel counts them, not by code points, so a value of many emoji can no longer exceed Excel's 32,767-character cell limit.
 - The sorter reviewer's hard-fail `escalation_reason` no longer carries the exception text in the part the Gmail completion echo shows: it names the exception type and puts the text behind `[cause: ...]`, which the echo cuts, so provider error text (for example a 401 body) is not sent to the document's sender (`graph/build_graph.py:review_classify_node`, #260). Our own `MAILROOM_LLM_FREE_ONLY` guardrail text (a plain `RuntimeError` that starts with that name) stays visible so the free-only explanation (HUB-043) still reaches the sender. The manifest and audit log keep the full cause.
+- **Diagnostics audit reader follow-ups from #236 (#238).** `tools/pipeline-diagnostics/backend/mailroom_diagnostics/audit.py` and the audit panel:
+  - Attempt sub-rows are matched to their parent row or addendum by the stored id, type-equal and untrimmed, not through the display trim (`_as_str`); a padded `entry_id` now verifies against its own attempts and an attempt naming the trimmed id is an orphan. No other id comparison goes through `_as_str`.
+  - A locked or slow store ends the lookup after `LOOKUP_TIMEOUT_SECONDS` (2 s; SQLite connect and busy timeout, Postgres connect and statement timeout) with reason `timeout` and verification `unverified`, for both the document lookup and the listing.
+  - When `MAX_EVENTS` cuts an event chain the record carries `truncated` and `events_shown` and a note names the cap (`N of M events read`); `last_event`, `status` and `updated_at` describe the last event read.
+  - The panel lists at most 10 verification failures with a "N more failures not shown" row, and every failure row has a stable id (`scope|id|reason`).
+  - `src/audit/verify.py` is unchanged: its `stage` / `attempt_no` reference comparison stays an open owner decision (#238). The `run_calibration_sweep.py` items of #238 are not part of this entry.
+  - Tests: `test_audit_api.py`, `auditFailures.test.ts` and `App.test.tsx`.
 
 ### Fixed
 
