@@ -100,7 +100,8 @@ def test_union_output_is_exactly_the_pairwise_fold(mock_openai_client, monkeypat
         w = normalize_extraction(copy.deepcopy(w), agent.schema)
         expected = w if expected is None else _SpecialistBase._merge_extractions(expected, w)
     expected = finalize_chunked_merge(
-        expected, agent_name="contracts_specialist", n_chunks=3, failed=0
+        expected, agent_name="contracts_specialist", n_chunks=3, failed=0,
+        window_confidences=[0.8, 0.6, 0.9],  # #255: each window's own confidence
     )
     assert _run(agent) == expected
 

@@ -90,10 +90,11 @@ storage-scope-limited M4 verifier. It is a foundation, not the stage:
 - **"Bounded M4" means storage-scope-limited, not memory-bounded.** The offline verifier
   covers only this layer's storage surface and it materializes the audit tables in memory
   for one consistent snapshot; memory cost grows with the rows it checks.
-- **Not delivered:** M4's full gate (full-suite evidence, pending/sink checks), M5–M15
-  (trace collection, scoring nodes, terminal writers, sinks, reconciliation, readers,
-  warehouse/report, rescore, one scoring path, docs gate). The roadmap table below is not a
-  claim that the stage is finished.
+- **Later delivered by merging PR #160 (M4–M12)** into this stack: the full M4 gate,
+  trace collection, the scoring node family, the terminal row writers, review paths,
+  trace sinks, write-failure fallback/`audit-reconcile`, the unified-row readers with
+  `audit_row_metrics`, and the warehouse/report/Langfuse scoring block. **Still not
+  delivered:** M13 (docs and branch gate), M14 (rescore CLI) and M15 (one scoring path).
 
 **Integration status.** PR #203's storage changes are already in `main`; this branch keeps
 their `run_write_with_retry` wrapper with the `event_log_model()`/legacy-bridge selection
@@ -116,7 +117,7 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 ## Status
 
 <!-- roadmap:status:begin -->
-**14/33 tasks done.**
+**23/33 tasks done.**
 
 | Stage | Task | Name | Repo | Steps | State |
 |---|---|---|---|---|---|
@@ -133,17 +134,17 @@ The roadmap task R1 and Stage 0 live in [stage-0-roadmap.md](stage-0-roadmap.md)
 | 2 | M1 | Adopt dojo 0.27.0 | llm-mailroom | 4/4 | done |
 | 2 | M2 | Audit tables and migration | llm-mailroom | 5/5 | done |
 | 2 | M3 | Row and addendum writers | llm-mailroom | 5/5 | done |
-| 2 | M4 | Verification | llm-mailroom | 0/5 | ready |
-| 2 | M5 | Trace collection in state | llm-mailroom | 0/5 | ready |
-| 2 | M6 | Scoring node family | llm-mailroom | 0/5 | blocked |
-| 2 | M7 | Row builder and terminal nodes | llm-mailroom | 0/5 | blocked |
-| 2 | M8 | Human review paths and pre-row events | llm-mailroom | 0/5 | blocked |
-| 2 | M9 | Trace sinks | llm-mailroom | 0/5 | blocked |
-| 2 | M10 | Write-failure fallback and `audit-reconcile` | llm-mailroom | 0/5 | blocked |
-| 2 | M11 | Readers and `audit_row_metrics` | llm-mailroom | 0/5 | blocked |
-| 2 | M12 | Warehouse, `audit-report` and Langfuse scores | llm-mailroom | 0/5 | blocked |
-| 2 | M14 | Rescore CLI | llm-mailroom | 0/5 | blocked |
-| 2 | M15 | One scoring path (retire the legacy scorers) | llm-mailroom | 0/5 | blocked |
+| 2 | M4 | Verification | llm-mailroom | 5/5 | done |
+| 2 | M5 | Trace collection in state | llm-mailroom | 5/5 | done |
+| 2 | M6 | Scoring node family | llm-mailroom | 5/5 | done |
+| 2 | M7 | Row builder and terminal nodes | llm-mailroom | 5/5 | done |
+| 2 | M8 | Human review paths and pre-row events | llm-mailroom | 5/5 | done |
+| 2 | M9 | Trace sinks | llm-mailroom | 5/5 | done |
+| 2 | M10 | Write-failure fallback and `audit-reconcile` | llm-mailroom | 5/5 | done |
+| 2 | M11 | Readers and `audit_row_metrics` | llm-mailroom | 5/5 | done |
+| 2 | M12 | Warehouse, `audit-report` and Langfuse scores | llm-mailroom | 5/5 | done |
+| 2 | M14 | Rescore CLI | llm-mailroom | 0/5 | ready |
+| 2 | M15 | One scoring path (retire the legacy scorers) | llm-mailroom | 0/5 | ready |
 | 2 | M13 | Docs and branch gate | llm-mailroom | 0/3 | blocked |
 | 3 | S0 | Capture sandbox output goldens | local-mailroom-sandbox | 3/3 | done |
 | 3 | S1 | Vendor refresh and thin wrapper | local-mailroom-sandbox | 0/5 | blocked |
@@ -190,7 +191,7 @@ and where it now lives. Fixes that changed the design were also written back int
 | A3 | Documents parked before the upgrade resume from an old LangGraph checkpoint with no `audit_trace` and old node names. | Row builder tolerates a missing or partial trace and sets `trace_incomplete: true`; test resumes a recorded pre-upgrade checkpoint. | spec §5.2, M5, M7 |
 | A4 | Migration said "back up the DB file", which only exists on SQLite; `DATABASE_URL` can be Postgres, and several workers may start at once. | SQLite: file backup. Postgres: migration runs only with `MAILROOM_AUDIT_MIGRATE=1`, in one transaction, after the operator's `pg_dump`. Both run under the `audit_log:chain` lock and check `audit_meta` first, so a second worker is a no-op. | spec §6, M2 |
 | A5 | No rollback: after migration, the previous mailroom release would write per-stage rows into a table with a unique `doc_id` and fail. | `audit_migrate.py --rollback` moves new tables to `*_v2_<timestamp>` and restores `audit_log` from `audit_log_legacy`; documented in the deploy notes. | spec §6, M2 |
-| A6 | The pending spool (`audit_spool.db`) sits on ephemeral disk on Railway and is lost on redeploy. | `MAILROOM_AUDIT_SPOOL_PATH` (default next to the DB file); startup logs `audit_spool_ephemeral` when the path is not under `MAILROOM_DATA_DIR`; Phoenix (when enabled) is the durable copy. | spec §5.6, M10 |
+| A6 | The pending spool (`audit_spool.db`) sits on ephemeral disk on Railway and is lost on redeploy. | `MAILROOM_AUDIT_SPOOL_PATH` (default next to the DB file); startup logs `audit_spool_ephemeral` when the path is not under `MAILROOM_DATA_DIR`. Phoenix and the other external sinks are write-only: they receive a copy, but `audit-reconcile` cannot read it back, so a row held only there is `pending_partial` and an operator fetches the copy by hand (the manifest names the refs). Point the spool at a persistent volume. | spec §5.6, M10 |
 | A7 | Golden parity needs recorded sandbox outputs, but tests are network-free and the dataset is remote. | D1 commits synthetic input rows covering every type, every subclass surface, MAUD/CUAD labels, no ground truth and prose payloads, and captures goldens with the current sandbox before any code moves. S0 captures sandbox output goldens before the vendor refresh. | D1, S0 |
 | A8 | Ordering: goldens must be captured from the sandbox before the dojo code moves, or parity proves nothing. | D1 is a dependency of every other dojo task; S0 runs before S1. | D1, S0 |
 | A9 | The dojo release fires `repository_dispatch` and `bump-dojo-scoring.yml` opens its own pin PR; hand-editing the pin would race it. | M1 adopts the workflow's PR rather than editing the pin. | M1 |

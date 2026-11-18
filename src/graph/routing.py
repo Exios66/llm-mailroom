@@ -398,6 +398,21 @@ def after_extraction(state: dict) -> Literal[
         )
         return "human_review"
 
+    # Closed labels (#285): a value off its taxonomy vocabulary is scored wrong and the judge
+    # does not reliably catch it, so it is a deterministic review, never an archive. No retry:
+    # a fresh pass has no reason to pick a different token, and a person can name the right one.
+    if isinstance(extracted, dict) and extracted:
+        from pipeline.label_vocab import out_of_vocabulary_fields
+
+        off_list = out_of_vocabulary_fields(state.get("doc_type"), extracted)
+        if off_list:
+            logger.info(
+                "extraction_out_of_vocabulary_review",
+                doc_id=state.get("doc_id"),
+                fields=sorted(off_list),
+            )
+            return "human_review"
+
     # Oracle routing only (#207): off by default, so a run that carries
     # `ground_truth` for scoring still routes on observed confidence alone.
     expected_fields, sources = routing_expected_fields(state)

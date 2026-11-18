@@ -8,7 +8,7 @@
 <br/>
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
-[![LangGraph 14 nodes](https://img.shields.io/badge/LangGraph-14_nodes-22C55E?style=for-the-badge)](src/graph/build_graph.py)
+[![LangGraph 22 nodes](https://img.shields.io/badge/LangGraph-22_nodes-22C55E?style=for-the-badge)](src/graph/build_graph.py)
 [![SQLite first](https://img.shields.io/badge/storage-SQLite_first-6C63FF?style=for-the-badge)](docs/pipeline-reference-llm-mailroom/configuration.md)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-F472B6?style=for-the-badge)](#api-endpoints)
 
@@ -90,7 +90,7 @@ and [documentation home](docs/README.md).
 <div align="center">
 <picture>
   <source media="(max-width: 640px)" srcset="docs/assets/readme/stats-mobile.svg"/>
-  <img src="docs/assets/readme/stats.svg" alt="By the numbers: 14 graph nodes, five document classes, a SQLite default catalog with no database server, a hash-chained audit trail and a FastAPI upload, status and audit API" width="100%"/>
+  <img src="docs/assets/readme/stats.svg" alt="By the numbers: 22 graph nodes, five document classes, a SQLite default catalog with no database server, a hash-chained audit trail and a FastAPI upload, status and audit API" width="100%"/>
 </picture>
 </div>
 
@@ -100,7 +100,7 @@ and [documentation home](docs/README.md).
 
 | ✅ Reach for it when… | ↪️ Look elsewhere when… |
 | :--- | :--- |
-| You need legal documents sorted into five classes and turned into validated, structured matter records | You want a free-form chat agent. Orchestration here is an explicit 14-node state machine, and agents do not negotiate |
+| You need legal documents sorted into five classes and turned into validated, structured matter records | You want a free-form chat agent. Orchestration here is an explicit 22-node state machine, and agents do not negotiate |
 | Every decision must be auditable: a trace per document and a SHA-256 hash-chained audit trail per archive | Your documents fall outside the five classes. Court opinions and due-diligence memos classify as `unknown` and go to human review |
 | You want to run on OpenRouter today and move agents to local models later with a config change | You only need scoring or a viewer. Use [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) or [The-Mailroom](https://github.com/Exios66/The-Mailroom) on their own |
 
@@ -122,9 +122,10 @@ and [documentation home](docs/README.md).
 | 🔍 | **Extract** | `extract-fields`, `(retry)` | The class specialist fills a Pydantic schema, gated on schema validity, confidence, factuality and completeness |
 | ⚖️ | **Quality** | `judge-verify`, `arbitrate-verdict`, `adjudicate-conflict` | The Judge checks ambiguous completeness. The Arbiter lets the verdict stand, orders a re-extraction or escalates. The Boss adjudicates matter conflicts |
 | 🧑‍⚖️ | **Human review** | `route-for-review` | The governance boundary: a person approves, rejects or requeues. A rejection ends in `FAILED` |
-| 🗂️ | **Compile → Catalog → Archive** | `compile-report`, `write-catalog`, `archive-document` | Procedural matter-record assembly, SQLite persistence, and a SHA-256 hash-chained audit archive |
+| 📏 | **Score** | `score_common`, `score_<type>` | Procedural scoring: `score_common` checks the payload against the schema, then one `score_<type>` node per Dojo scorer (`contract`, `corporate_record`, `correspondence`, `insurance_claim`, `merger_agreement`, `generic`) writes the scoring block |
+| 🗂️ | **Compile → Catalog → Archive** | `compile-report`, `write-catalog`, `archive-document`, `audit_failed` | Procedural matter-record assembly, SQLite persistence, and a SHA-256 hash-chained audit archive. A rejected or stopped run ends at `audit_failed`, which writes the document's `failed` audit row |
 
-That is **14 nodes** in all. Two auxiliary flows run outside the graph: the
+That is **22 nodes** in all (14 pipeline nodes, the 7 scoring nodes and `audit_failed`). Two auxiliary flows run outside the graph: the
 Gmail triage lane and the post-archive relations clerk (details below).
 
 <a id="at-a-glance"></a>
@@ -132,7 +133,7 @@ Gmail triage lane and the post-archive relations clerk (details below).
 ## 📟 At a glance
 
 <div align="center">
-<img src="docs/assets/readme/tui.svg" alt="Terminal dashboard: 14 graph nodes, MemorySaver checkpoints, SQLite first, a hash-chained audit trail and FastAPI, with routing notes: the review band 0.88 to 0.97 and unknown types go to the human review bin" width="90%"/>
+<img src="docs/assets/readme/tui.svg" alt="Terminal dashboard: 22 graph nodes, MemorySaver checkpoints, SQLite first, a hash-chained audit trail and FastAPI, with routing notes: the review band 0.88 to 0.97 and unknown types go to the human review bin" width="90%"/>
 </div>
 
 <a id="where-it-fits"></a>
@@ -273,14 +274,14 @@ when the extra is absent.
 
 <a id="architecture"></a>
 
-One **LangGraph state machine run per document** — 14 nodes, MemorySaver-checkpointed by default (opt-in `SqliteSaver` for resume-across-restart experiments), crash-safe via manifest-driven re-invocation. Files move through filesystem bins (`inbox → processing → archive | review | failed`); every decision is a named node with a deterministic trace in the configured observability backend.
+One **LangGraph state machine run per document** — 22 nodes, MemorySaver-checkpointed by default (opt-in `SqliteSaver` for resume-across-restart experiments), crash-safe via manifest-driven re-invocation. Files move through filesystem bins (`inbox → processing → archive | review | failed`); every decision is a named node with a deterministic trace in the configured observability backend.
 
 ### LangGraph state machine
 
-The core pipeline is a **14-node LangGraph state machine** executed once per document. Two auxiliary flows operate outside the graph: the **Gmail triage lane** (free model swarm for single-document emails) and the **relations clerk** (post-archive association scanning; the diagram below draws it after `archive` for orientation only, since it is dispatched on a daemon thread and is not one of the 14 nodes).
+The core pipeline is a **22-node LangGraph state machine** (14 pipeline nodes, 7 scoring nodes and the `audit_failed` terminal node) executed once per document. Two auxiliary flows operate outside the graph: the **Gmail triage lane** (free model swarm for single-document emails) and the **relations clerk** (post-archive association scanning; the diagram below draws it after `archive` for orientation only, since it is dispatched on a daemon thread and is not one of the 22 nodes).
 
 <details>
-<summary><b>🗺️ The full 14-node state machine (Mermaid)</b></summary>
+<summary><b>🗺️ The full 22-node state machine (Mermaid)</b></summary>
 
 ```mermaid
 %% Production routing with oracle routing off. Cutoffs shown are the global defaults; per-class overrides in taxonomy.yaml (for example corporate_record) shift them.
@@ -299,6 +300,9 @@ flowchart TD
     BOSS["adjudicate-conflict<br/>BossAgent"]
     REVIEW["route-for-review<br/>review bin (human)"]
     REPORT["compile-report<br/>(procedural)"]
+    SCORE_COMMON["score_common<br/>schema adherence, routes on doc_type"]
+    SCORE["score_&lt;type&gt;<br/>6 scorers: contract, corporate_record,<br/>correspondence, insurance_claim,<br/>merger_agreement, generic"]
+    AUDIT_FAILED["audit_failed<br/>writes the failed audit row"]
     CATALOG["write-catalog<br/>SQLite documents + matters"]
     ARCHIVE["archive-document<br/>archivist + hash-chained audit log"]
     RELATIONS["relations scan<br/>post-archive association clerk<br/>(outside the graph)"]
@@ -338,9 +342,9 @@ flowchart TD
     BOSS -- "approved" --> REPORT
     BOSS -- "review" --> REVIEW
     REVIEW -- "approved" --> REPORT
-    REVIEW -- "rejected" --> FAILED --> ENDX
+    REVIEW -- "rejected" --> AUDIT_FAILED --> FAILED --> ENDX
 
-    REPORT --> CATALOG --> ARCHIVE --> RELATIONS --> ENDX
+    REPORT --> SCORE_COMMON --> SCORE --> CATALOG --> ARCHIVE --> RELATIONS --> ENDX
 
     GMAIL([Gmail triage<br/>free model swarm]) -.->|single-doc emails| CLASSIFY
     GMAIL -.->|multi-doc or over-budget| INTAKE
@@ -350,7 +354,7 @@ flowchart TD
 
 Thresholds (`confidence.low`, `confidence.high`, `retry_max`) are config in `config/taxonomy.yaml`, never hardcoded.
 
-**Auxiliary flows (outside the 14-node graph):**
+**Auxiliary flows (outside the 22-node graph):**
 
 - **Gmail triage lane** (`agents/gmail_triage.py`): the free OpenRouter lane runs on the Free Models Router (`openrouter/free` — auto-selects the best free model per request) handling single-document Gmail uploads through classification + key extraction + auditable-hash archive without calling paid agents. Multi-document emails and documents exceeding the free budget route to the full pipeline.
 - **Relations clerk** (`pipeline/relations.py`): post-archive deterministic association scanning (same-matter, keyword Jaccard, party overlap, embedding cosine) with an optional LLM judgment pass for ambiguous near-misses. Dispatched off the document path at every terminal manifest.
@@ -948,7 +952,7 @@ The pipeline is assembled from these open-source projects:
 
 | Project | What it does here |
 | :--- | :--- |
-| [LangGraph](https://github.com/langchain-ai/langgraph) · [LangChain](https://github.com/langchain-ai/langchain) | The 14-node state machine, checkpoints and the vendored agents |
+| [LangGraph](https://github.com/langchain-ai/langgraph) · [LangChain](https://github.com/langchain-ai/langchain) | The 22-node state machine, checkpoints and the vendored agents |
 | [Pydantic](https://github.com/pydantic/pydantic) | Extraction schemas, manifests and matter records |
 | [FastAPI](https://github.com/fastapi/fastapi) · [Uvicorn](https://github.com/encode/uvicorn) · [watchdog](https://github.com/gorakhargosh/watchdog) | The upload, review, status and audit API and the inbox watcher |
 | [SQLAlchemy](https://www.sqlalchemy.org/) · SQLite | The async ORM over the default SQLite store: catalog, hash-chained audit log and the relations clerk |

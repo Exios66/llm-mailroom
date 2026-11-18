@@ -115,7 +115,9 @@ def test_load_corpus_join_and_integrity(temp_base_dir, monkeypatch):
     merged, prov = loader.load_corpus()
     assert prov["ground_truth"]["strategy"] == "hub_resolve"
     assert prov["revision_resolved"] == sha and "hub_tip_drift" not in prov
-    assert prov["integrity"] == {"checked": 2, "verified": 2, "mismatched": 0}
+    assert prov["integrity"] == {
+        "checked": 2, "verified": 2, "mismatched": 0, "missing_text": 0, "mismatched_filenames": [],
+    }
     assert list(merged["expected"]) == ["contract", "correspondence"]
     assert list(merged["doc_text"]) == [text_a, text_b]
 

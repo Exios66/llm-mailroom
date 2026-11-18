@@ -20,9 +20,18 @@ through which a route can be influenced without editing a router.
   :func:`remove_route_rule` / :func:`clear_route_rules`.
 
 Reach: rules apply only to the 12 conditional routes in :data:`ROUTE_SPECS` (START
-plus 11 nodes). ``intake``, ``catalog_write`` and ``archive`` are plain edges
-(:data:`PLAIN_EDGES`) with nothing to decide, and :func:`add_route_rule` refuses
+plus 11 nodes). ``intake``, ``catalog_write``, ``archive`` and ``audit_failed`` are plain
+edges (:data:`PLAIN_EDGES`) with nothing to decide, and :func:`add_route_rule` refuses
 them.
+
+The scoring family (``score_common`` and one ``score_<type>`` node per dojo scorer,
+``graph.scoring_nodes``) sits between ``compile_report`` and ``catalog_write``. Its node
+set follows the installed dojo's scorer registry, so its edges are not a static table:
+:func:`scoring_topology` derives them (``score_common``'s conditional route and one plain
+``score_<type> -> catalog_write`` edge per scorer) and :func:`wire_edges` validates and
+wires them with the rest by default. They are deliberately outside :data:`ROUTE_SPECS`:
+the scoring route is not a point a decision model or a route rule may refine, so
+:func:`add_route_rule` refuses ``score_common`` too.
 
 Rule semantics (the contract a decision model plugs into):
 
@@ -139,6 +148,10 @@ class RouteSpec:
 # ---------------------------------------------------------------------------
 
 
+#: First node of the scoring family; ``compile_report``'s ``catalog_write`` route lands here.
+SCORING_ENTRY = "score_common"
+
+
 def _same(*names: str) -> dict[str, str]:
     """A destination map whose router values are the node names themselves."""
     return {name: name for name in names}
@@ -203,13 +216,16 @@ ROUTE_SPECS: tuple[RouteSpec, ...] = (
     RouteSpec(
         "human_review",
         after_human_review,
-        # compile_report: reviewer's fields, no LLM; "failed" ends the run
-        {"extract": "extract", "compile_report": "compile_report", "failed": END},
+        # compile_report: reviewer's fields, no LLM; "failed" (rejected) writes the
+        # terminal audit row in audit_failed, which then ends the run
+        {"extract": "extract", "compile_report": "compile_report", "failed": "audit_failed"},
     ),
     RouteSpec(
         "compile_report",
         after_report,
-        _same("catalog_write", "human_review"),
+        # Unified audit row (spec 5.1): the report is scored before it is catalogued, so the
+        # router's "catalog_write" answer enters the scoring family at score_common.
+        {"catalog_write": SCORING_ENTRY, "human_review": "human_review"},
     ),
 )
 
@@ -218,7 +234,27 @@ PLAIN_EDGES: tuple[tuple[str, str], ...] = (
     ("intake", "classify"),
     ("catalog_write", "archive"),
     ("archive", END),
+    ("audit_failed", END),
 )
+
+
+def scoring_topology(
+    next_node: str = "catalog_write",
+) -> tuple[tuple[RouteSpec, ...], tuple[tuple[str, str], ...]]:
+    """The scoring family's edges, derived from the dojo's scorer registry.
+
+    Returns ``(specs, plain_edges)``: ``score_common``'s conditional route
+    (``graph.scoring_nodes.score_route``, one destination per ``score_<type>`` node) and a
+    plain edge from each ``score_<type>`` node to ``next_node``. The nodes themselves are
+    added by ``graph.scoring_nodes.add_scoring_nodes``.
+    """
+    from graph.scoring_nodes import score_route, scorer_types
+
+    names = tuple(f"score_{scorer}" for scorer in scorer_types())
+    return (
+        (RouteSpec(SCORING_ENTRY, score_route, _same(*names)),),
+        tuple((name, next_node) for name in names),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -492,11 +528,22 @@ def edge_router(spec: RouteSpec) -> Callable[[dict], str]:
 
 def wire_edges(
     workflow: Any,
-    specs: Iterable[RouteSpec] = ROUTE_SPECS,
-    plain_edges: Iterable[tuple[str, str]] = PLAIN_EDGES,
+    specs: "Iterable[RouteSpec] | None" = None,
+    plain_edges: "Iterable[tuple[str, str]] | None" = None,
 ) -> None:
     """Validate the topology against the nodes already added to ``workflow`` and
-    add every edge. Raises :class:`RouteSpecError` before adding any edge."""
+    add every edge. Raises :class:`RouteSpecError` before adding any edge.
+
+    With no ``specs`` / ``plain_edges`` the whole graph is wired: :data:`ROUTE_SPECS` and
+    :data:`PLAIN_EDGES` plus the scoring family's :func:`scoring_topology`. Passing either
+    argument wires exactly what was passed for it (the scoring edges are then the caller's).
+    """
+    if specs is None or plain_edges is None:
+        scoring_specs, scoring_edges = scoring_topology()
+        if specs is None:
+            specs = (*ROUTE_SPECS, *scoring_specs)
+        if plain_edges is None:
+            plain_edges = (*PLAIN_EDGES, *scoring_edges)
     specs = tuple(specs)
     plain_edges = tuple(plain_edges)
     validate_route_specs(specs, plain_edges, nodes=workflow.nodes)

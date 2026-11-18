@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 from enum import Enum
 import uuid
+from typing import Literal
 
 
 class PipelineStage(str, Enum):
@@ -42,6 +43,11 @@ class DocumentManifest(BaseModel):
     judge_verdict: str | None = None
     judge_score: float | None = None
     judge_findings: list[str] | None = None
+    # #277: windows of the source the judge and each arbiter read, with calls and tokens
+    # ({windows_total, windows_checked, calls, prompt_tokens, completion_tokens}).
+    judge_coverage: dict | None = None
+    arbiter_coverage: dict | None = None
+    classification_arbiter_coverage: dict | None = None
     # #254: every extraction attempt with its judge verdict (None on older
     # manifests), and which one the manifest's extraction came from.
     extraction_attempt_history: list[dict] | None = None
@@ -84,6 +90,14 @@ class DocumentManifest(BaseModel):
     # `source` (`gmail` / `upload`), plus channel metadata (message_id, sender,
     # subject, received_at / uploaded_at). None = a bare filesystem drop.
     intake: dict | None = None
+    # Unified audit row (spec §5.6): True once the row is committed; "pending"
+    # when a sink holds the complete record for ``audit-reconcile``,
+    # "pending_partial" when only decisions-only copies were kept, or only write-only
+    # sinks (which ``audit-reconcile`` cannot read) hold it; False when no sink took
+    # it (``audit_gap``). None until a terminal node wrote it.
+    # ``audit_pending_refs`` names the sink copies: [{sink, ref, complete, recoverable}].
+    audit_written: bool | Literal["pending", "pending_partial"] | None = None
+    audit_pending_refs: list[dict] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

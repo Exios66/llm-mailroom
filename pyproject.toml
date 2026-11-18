@@ -77,6 +77,15 @@ dependencies = [
     "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@025400f3d703531c5e1a76093e4b803ccc6fb576",
 ]
 
+# Trace sinks for the unified audit row (src/audit/sinks/). The built-ins are listed
+# for discovery; a third-party sink registered in this group is active once installed.
+[project.entry-points."mailroom.trace_sinks"]
+sql = "audit.sinks.sql:SqlSink"
+phoenix = "audit.sinks.phoenix:PhoenixSink"
+langfuse = "audit.sinks.langfuse:LangfuseSink"
+braintrust = "audit.sinks.braintrust:BraintrustSink"
+otlp = "audit.sinks.otlp:OtlpSink"
+
 [project.optional-dependencies]
 # Heavy embedding & numerical deps pulled OUT of the core install. They are
 # only used by the optional embedding cosine second signal and the scipy

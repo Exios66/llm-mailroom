@@ -1,0 +1,395 @@
+"""Roadmap M5: node visits collected in ``state["audit_trace"]`` (spec §4.4, §5.2)."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from copy import deepcopy
+from pathlib import Path
+
+import openai
+import pytest
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+
+from graph import build_graph as bg
+from graph.state import DocumentState
+
+FIXTURE = Path(__file__).parent / "fixtures" / "audit" / "sandbox_decision_schema.json"
+TEXT = "Service Agreement between Acme and Beta. Governing law: New York."
+FIELDS = {"document_name": "Service Agreement", "parties": ["Acme", "Beta"], "governing_law": "New York"}
+
+
+@pytest.fixture
+def run_graph(temp_base_dir, monkeypatch, mocker):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("MAILROOM_AUDIT_FULL_TRACE", raising=False)
+    monkeypatch.setenv("MAILROOM_MEMORY_DIR", str(temp_base_dir / "memory"))
+    sorter = mocker.patch("agents.sorter.SorterAgent.classify_json", return_value={
+        "doc_type": "contract", "contract_subtype": "other", "confidence": 0.99, "reasoning": "Agreement",
+    })
+    mocker.patch.object(bg, "_extract_contracts", side_effect=lambda *a: {**deepcopy(FIELDS), "confidence": 0.99})
+
+    def run():
+        source = temp_base_dir / "pipeline" / "inbox" / "agreement.txt"
+        source.write_text(TEXT)
+        graph = bg.build_graph(checkpointer=MemorySaver())
+        config = {"configurable": {"thread_id": "trace-test"}}
+        order = []
+        for event in graph.stream({"file_path": str(source), "matter_id": "TRACE", "messages": []}, config,
+                                  stream_mode="updates"):
+            order.extend(event)
+        return order, graph.get_state(config).values
+
+    run.sorter = sorter
+    return run
+
+
+def test_traced_node_appends_one_visit_per_call(run_graph):
+    order, final = run_graph()
+    assert [v["node"] for v in final["audit_trace"]] == order
+    assert len({v["visit_id"] for v in final["audit_trace"]}) == len(order)
+    assert "trace_incomplete" not in final
+
+
+def test_visit_fields_match_spec(run_graph, monkeypatch):
+    from audit.trace import FULL_TRACE_KEYS, OUTCOMES, STATUSES, VISIT_KEYS
+
+    _, final = run_graph()
+    for v in final["audit_trace"]:
+        assert tuple(v) == VISIT_KEYS
+        assert v["status"] in STATUSES and v["outcome"] in OUTCOMES
+        assert v["latency_ms"] >= 0 and v["ended_at"] >= v["started_at"]
+    # The mocked agents record no LLM call, so nothing is filled in.
+    classify = next(v for v in final["audit_trace"] if v["node"] == "classify")
+    assert classify["model"] is None and classify["prompt_tokens"] is None and classify["io_sha256"] is None
+    assert classify["decision"]["doc_type"] == "contract"
+    assert classify["decision"]["audit_event"]["event"] == "classified"
+
+    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "1")
+    _, full = run_graph()
+    for v in full["audit_trace"]:
+        assert tuple(v) == VISIT_KEYS + FULL_TRACE_KEYS
+
+
+def test_visit_reads_the_llm_calls_of_its_node(temp_base_dir, monkeypatch):
+    from audit.digests import io_sha256
+    from audit.trace import VISIT_KEYS
+    from observability.tracing import traced_node
+    from pipeline.limits import record_usage, reset_run_usage
+
+    class Usage:
+        prompt_tokens, completion_tokens = 120, 30
+
+    reset_run_usage()
+    record_usage(Usage(), "earlier-model", prompt="before", completion="the node")  # not this node's call
+
+    @traced_node("classify-document")
+    def classify_node(state):
+        record_usage(Usage(), "test-model", served_model="served", prompt="p1", completion="c1", prompt_version=4)
+        return {"doc_type": "contract", "classification_attempts": 1}
+
+    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "0")
+    monkeypatch.setenv("PHOENIX_TRACING", "disabled")
+    monkeypatch.delenv("MAILROOM_TRACE_SINKS", raising=False)
+    (v,) = classify_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})["audit_trace"]
+    assert tuple(v) == VISIT_KEYS
+    assert (v["node"], v["model"], v["prompt_version"]) == ("classify", "served", 4)
+    assert (v["prompt_tokens"], v["completion_tokens"]) == (120, 30)
+    # Full trace off: the digest is kept, but no sink stores the text (#239 review).
+    assert v["io_sha256"] == io_sha256("p1", "c1") and v["trace_sink"] is None and v["also_in"] == []
+    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "1")
+    (v,) = classify_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})["audit_trace"]
+    assert (v["prompt"], v["completion"]) == ("p1", "c1")
+    # Full trace on: the always-on sql sink keeps the I/O (M9); no other sink is active here.
+    assert v["trace_sink"] == "sql" and v["also_in"] == []
+
+
+def test_decisions_match_sandbox_schema(run_graph):
+    from audit.trace import DECISION_KEYS, DECISION_TYPES, decisions_for
+
+    schema = json.loads(FIXTURE.read_text())
+    assert tuple(schema["keys"]) == DECISION_KEYS and tuple(schema["types"]) == DECISION_TYPES
+    _, final = run_graph()
+    decisions = [d for v in final["audit_trace"] for d in v["decisions"]]
+    decisions += decisions_for("judge_verify", {}, {"judge_verdict": "pass", "judge_score": 0.9})
+    decisions += decisions_for("intake", {}, {"bert_triage": {"doc_type": "contract", "confidence": 0.8}})
+    assert {d["source"] for d in decisions} >= {"classify", "judge_verify", "bert_triage"}
+    for d in decisions:
+        assert list(d) == schema["keys"]
+        assert d["type"] in schema["types"]
+        for key in schema["string_keys"]:
+            assert isinstance(d[key], str)
+    (classified,) = [d for v in final["audit_trace"] if v["node"] == "classify" for d in v["decisions"]]
+    assert (classified["answer"], classified["p"]) == ("contract", 0.99)
+    assert "contract" in classified["options"]
+
+
+def test_fixture_matches_the_sandbox_node_trace_when_a_checkout_is_given():
+    """T28 (#229): re-check the fixture against the sandbox's own ``normalize_decision``.
+
+    Set ``MAILROOM_SANDBOX_CHECKOUT`` to a ``local-mailroom-sandbox`` checkout; without it the
+    test is skipped (the sandbox is a separate repository).
+    """
+    import importlib.util
+    import os
+
+    from audit.trace import decisions_for
+
+    root = os.environ.get("MAILROOM_SANDBOX_CHECKOUT")
+    path = Path(root) / "src" / "mailroom_sandbox" / "job" / "node_trace.py" if root else None
+    if path is None or not path.is_file():
+        pytest.skip("MAILROOM_SANDBOX_CHECKOUT does not point at a local-mailroom-sandbox checkout")
+    spec = importlib.util.spec_from_file_location("sandbox_node_trace_under_test", path)
+    sandbox = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sandbox)
+
+    schema = json.loads(FIXTURE.read_text())
+    assert tuple(schema["types"]) == tuple(sandbox.DECISION_TYPES)
+    probe = sandbox.normalize_decision({"question": "q", "type": "choice", "answer": "a"})
+    assert list(probe) == schema["keys"]
+    ours = decisions_for("classify", {"doc_id": "d"}, {"doc_type": "contract", "classification_confidence": 0.9})
+    ours += decisions_for("judge_verify", {}, {"judge_verdict": "pass", "judge_score": 0.9})
+    assert ours
+    for d in ours:  # the sandbox accepts every decision we write and keeps its identity
+        kept = sandbox.normalize_decision(d)
+        assert kept is not None and (kept["question"], kept["type"]) == (d["question"], d["type"])
+
+
+def test_attempt_ids_follow_retry_counters(run_graph):
+    from audit.trace import attempt_id_for
+
+    success = deepcopy(run_graph.sorter.return_value)
+    run_graph.sorter.side_effect = [openai.APIConnectionError(request=None), success]
+    order, final = run_graph()
+    assert order[:3] == ["intake", "classify", "classify"]
+    intake, first, second, extract = final["audit_trace"][:4]
+    doc = final["doc_id"]
+    assert intake["attempt_id"] is None
+    # A transient retry repeats the same attempt; its first visit is marked as a retry.
+    assert first["attempt_id"] == second["attempt_id"] == f"att-{doc}-classification-r0-1"
+    assert (first["outcome"], second["outcome"]) == ("retry", "ok")
+    assert extract["attempt_id"] == f"att-{doc}-extraction-r0-1"
+    state = {"doc_id": "d", "run_attempt": 2, "classification_attempts": 2, "extraction_attempts": 3}
+    assert attempt_id_for(state, "retry_classify") == "att-d-classification-r2-2"
+    assert attempt_id_for(state, "retry_extract") == "att-d-extraction-r2-3"
+    assert attempt_id_for({**state, "judge_pass_count": 1}, "arbiter") == "att-d-judge-r2-1"
+    assert attempt_id_for(state, "compile_report") is None
+
+
+def test_intake_visit_carries_bert_triage(run_graph):
+    from audit.trace import visit
+    from datetime import datetime, timezone
+
+    _, final = run_graph()
+    intake = final["audit_trace"][0]
+    assert intake["node"] == "intake"
+    assert "bert_triage" in intake["decision"]
+    assert intake["decision"]["file_sha256"] == final["file_sha256"]
+    assert intake["decision"]["audit_event"] == {
+        "event": "ingested", "actor": "pipeline",
+        "detail": {"file_sha256": final["file_sha256"], "size_bytes": final["size_bytes"]},
+    }
+    now = datetime.now(timezone.utc)
+    triage = {"doc_type": "contract", "subclass": "nda", "confidence": 0.93, "route": "fast_path"}
+    v = visit("intake", {"doc_id": "d"}, {"bert_triage": triage}, started_at=now, ended_at=now)
+    assert v["decision"]["bert_triage"] == triage
+    assert v["decisions"][0]["source"] == "bert_triage" and v["decisions"][0]["answer"] == "contract"
+
+
+def _two_step_graph(*, trace_first: bool):
+    from observability.tracing import traced_node
+
+    def intake_node(state):
+        return {"doc_id": "d-resume", "stage": "processing"}
+
+    def classify_node(state):
+        return {"doc_type": "contract", "classification_attempts": 1}
+
+    g = StateGraph(DocumentState)
+    g.add_node("intake", traced_node("intake-document")(intake_node) if trace_first else intake_node)
+    g.add_node("classify", traced_node("classify-document")(classify_node))
+    g.add_edge(START, "intake")
+    g.add_edge("intake", "classify")
+    g.add_edge("classify", END)
+    return g
+
+
+def test_trace_survives_checkpoint_resume():
+    saver = MemorySaver()
+    graph = _two_step_graph(trace_first=True).compile(checkpointer=saver, interrupt_before=["classify"])
+    config = {"configurable": {"thread_id": "resume"}}
+    graph.invoke({"messages": []}, config)
+    assert [v["node"] for v in graph.get_state(config).values["audit_trace"]] == ["intake"]
+    # A new graph object on the same saver: the trace comes back from the checkpoint.
+    resumed = _two_step_graph(trace_first=True).compile(checkpointer=saver, interrupt_before=["classify"])
+    final = resumed.invoke(None, config)
+    assert [v["node"] for v in final["audit_trace"]] == ["intake", "classify"]
+    assert "trace_incomplete" not in final
+
+
+def test_old_checkpoint_without_trace_resumes():
+    """A checkpoint written before the trace existed (no traced intake) resumes with a partial trace."""
+    saver = MemorySaver()
+    old = _two_step_graph(trace_first=False).compile(checkpointer=saver, interrupt_before=["classify"])
+    config = {"configurable": {"thread_id": "old"}}
+    old.invoke({"messages": []}, config)
+    assert not old.get_state(config).values.get("audit_trace")
+    final = _two_step_graph(trace_first=True).compile(checkpointer=saver).invoke(None, config)
+    assert [v["node"] for v in final["audit_trace"]] == ["classify"]
+    assert final["trace_incomplete"] is True
+    assert final["doc_type"] == "contract"
+
+
+def test_no_stage_rows_written_once_migrated(run_graph, migrated_audit_db):
+    from storage.audit_log import get_audit_chain
+
+    _, final = run_graph()
+    events = [e["event"] for e in asyncio.run(get_audit_chain(final["doc_id"]))]
+    # Only the terminal write is a row; the stage events are visits in the trace.
+    assert events == ["archived"]
+    assert not hasattr(bg, "_emit_stage_audit")
+    noted = [v["decision"].get("audit_event", {}).get("event") for v in final["audit_trace"]]
+    assert [e for e in noted if e] == ["ingested", "classified", "extracted"]
+
+
+def test_unmigrated_database_keeps_its_stage_by_stage_trail(run_graph):
+    """#239 review: until the opt-in migration runs the unified row is parked, so the per-event
+    entries the pipeline always wrote must not vanish (no worse than before the unified audit)."""
+    from schemas.audit import verify_legacy_chain
+    from storage.audit_log import get_audit_chain
+
+    _, final = run_graph()
+    chain = asyncio.run(get_audit_chain(final["doc_id"]))
+    assert [e["event"] for e in chain] == ["ingested", "classified", "extracted", "archived"]
+    ingested = chain[0]["detail"]
+    assert ingested["file_sha256"] and ingested["size_bytes"]  # the A-7 substitution check survives
+    assert chain[1]["detail"]["doc_type"] == "contract"
+    assert chain[1]["actor"] == "sorter"
+    # The visit notes are still on the trace, the same as after migration.
+    noted = [v["decision"].get("audit_event", {}).get("event") for v in final["audit_trace"]]
+    assert [e for e in noted if e] == ["ingested", "classified", "extracted"]
+
+
+def test_legacy_stage_event_is_a_noop_once_migrated(temp_base_dir, migrated_audit_db):
+    from audit.legacy_events import emit_stage_event
+
+    assert emit_stage_event({"doc_id": "d-1", "matter_id": "M"}, "classified") is False
+
+
+def test_legacy_stage_event_needs_a_doc_and_a_known_event(temp_base_dir):
+    from audit.legacy_events import emit_stage_event
+
+    assert emit_stage_event({"matter_id": "M"}, "classified") is False
+    assert emit_stage_event({"doc_id": "d-1"}, "not_a_stage_event") is False
+
+
+def test_aborted_run_keeps_run_aborted_entry_while_unmigrated(temp_base_dir):
+    from storage.audit_log import get_audit_chain
+
+    out = bg._finalize_aborted({"doc_id": "d-abort", "matter_id": "M", "original_filename": "x.txt"}, "boom",
+                               failure_class="timeout")
+    assert out["run_aborted"] is True
+    events = [(e["event"], e["detail"].get("failure_class")) for e in asyncio.run(get_audit_chain("d-abort"))]
+    assert ("run_aborted", "timeout") in events
+
+
+def test_record_visit_outside_a_node_is_dropped():
+    from audit.trace import record_visit
+
+    record_visit("orphan", detail={"x": 1})  # no traced node is running: nothing to attach to, no error
+
+
+def test_failed_node_visit_is_kept_with_its_llm_calls(monkeypatch):
+    """A node that raises never applies an update, so its visit is handed to the run's collector (T11)."""
+    from observability.tracing import collect_unapplied_visits, traced_node
+    from pipeline.limits import record_usage, reset_run_usage
+
+    class Usage:
+        prompt_tokens, completion_tokens = 50, 5
+
+    reset_run_usage()
+    monkeypatch.setenv("MAILROOM_AUDIT_FULL_TRACE", "0")
+    monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+
+    @traced_node("classify-document")
+    def classify_node(state):
+        record_usage(Usage(), "test-model", served_model="served", prompt="p", completion="c")
+        raise RuntimeError("boom")
+
+    with collect_unapplied_visits() as unapplied:
+        with pytest.raises(RuntimeError, match="boom"):  # the node's exception still propagates
+            classify_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})
+    (v,) = unapplied
+    assert (v["node"], v["status"], v["outcome"]) == ("classify", "error", "fail")
+    assert (v["model"], v["prompt_tokens"], v["completion_tokens"]) == ("served", 50, 5)
+
+
+def test_interrupt_visit_is_paused_and_keeps_its_note(monkeypatch):
+    """A node that parks and calls ``interrupt()`` leaves a paused visit with the note it recorded (T24)."""
+    from langgraph.errors import GraphInterrupt
+
+    from audit.trace import record_visit
+    from observability.tracing import collect_unapplied_visits, traced_node
+
+    monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+
+    @traced_node("route-for-review")
+    def human_review_node(state):
+        record_visit("routed_to_review", detail={"reason": "low confidence"})
+        raise GraphInterrupt()
+
+    with collect_unapplied_visits() as unapplied:
+        with pytest.raises(GraphInterrupt):
+            human_review_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})
+    (v,) = unapplied
+    assert (v["node"], v["status"], v["outcome"]) == ("human_review", "paused", "ok")
+    assert v["decision"]["audit_event"]["event"] == "routed_to_review"
+    assert v["decision"]["audit_event"]["detail"] == {"reason": "low confidence"}
+
+
+def test_no_collector_outside_a_run_is_harmless(monkeypatch):
+    from observability.tracing import traced_node
+
+    monkeypatch.setenv("OBSERVABILITY_PROVIDER", "none")
+
+    @traced_node("classify-document")
+    def classify_node(state):
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        classify_node({"doc_id": "d-1", "audit_trace": [{"node": "intake"}]})
+
+
+def test_unmigrated_park_keeps_its_routed_to_review_entry(run_graph):
+    """#239 pre-PR review: ``human_review`` parks through ``interrupt()`` and never returns, so the
+    per-event ``routed_to_review`` entry must be written on the paused path too."""
+    from storage.audit_log import get_audit_chain
+
+    run_graph.sorter.return_value = {
+        "doc_type": "contract", "contract_subtype": "other", "confidence": 0.05, "reasoning": "unsure",
+    }
+    order, final = run_graph()
+    assert order[-1] == "__interrupt__" or "human_review" in order
+    events = [e["event"] for e in asyncio.run(get_audit_chain(final["doc_id"]))]
+    assert events.count("routed_to_review") == 1, events
+
+
+def test_decisions_come_from_the_nodes_own_update_not_carried_state():
+    """Review (PR #298): a transient retry_classify returns no result and must not record the carried doc_type."""
+    from audit.trace import decisions_for
+
+    state = {"doc_type": "contract", "classification_confidence": 0.9}
+    assert decisions_for("retry_classify", state, {"transient_error": True}) == []
+    out = decisions_for("retry_classify", state, {"doc_type": "invoice", "classification_confidence": 0.8})
+    assert [(d["question"], d["answer"], d["p"]) for d in out] == [("doc_type", "invoice", 0.8)]
+
+
+def test_attempt_id_is_stable_across_transient_retries_for_non_advancing_nodes():
+    """Review (PR #298): only nodes that advance their counter on completion take the transient +1."""
+    from audit.trace import attempt_id_for
+
+    base = {"doc_id": "d", "classification_attempts": 1, "run_attempt": 0}
+    for node in ("review_classify", "classification_arbiter"):
+        assert attempt_id_for({**base, "transient_error": True}, node) == attempt_id_for(base, node)
+    assert attempt_id_for({**base, "transient_error": True}, "retry_classify") != attempt_id_for(base, "retry_classify")

@@ -25,12 +25,38 @@ Two integration points:
   when tracing is disabled.
 """
 
+import contextvars
 import functools
 import os
+from datetime import datetime, timezone
 import structlog
 from contextlib import contextmanager
 
 logger = structlog.get_logger(__name__)
+
+# Visits of node calls that never returned an update: a node that raised, or one
+# that paused in ``interrupt()``. LangGraph drops such a node's update, so its
+# visit cannot travel through the ``audit_trace`` reducer; ``_execute_run`` opens
+# this collector around the invoke and applies what it holds itself.
+_unapplied_visits: contextvars.ContextVar[list | None] = contextvars.ContextVar(
+    "audit_unapplied_visits", default=None
+)
+
+
+@contextmanager
+def collect_unapplied_visits():
+    """Collect the audit visits of node calls that raised or paused instead of returning.
+
+    Yields the list the visits are appended to, in call order. Outside this
+    block such visits are dropped. LangGraph runs nodes in copies of the calling
+    context, so the list (a shared object) is what carries them out.
+    """
+    bucket: list[dict] = []
+    token = _unapplied_visits.set(bucket)
+    try:
+        yield bucket
+    finally:
+        _unapplied_visits.reset(token)
 
 
 def resolve_provider_name() -> str:
@@ -191,8 +217,16 @@ NODE_OBSERVATION_TYPES = {
     "route-for-review": "span",
     "adjudicate-conflict": "agent",
     "compile-report": "agent",
+    "score-common": "evaluator",
+    "score-contract": "evaluator",
+    "score-corporate-record": "evaluator",
+    "score-correspondence": "evaluator",
+    "score-insurance-claim": "evaluator",
+    "score-merger-agreement": "evaluator",
+    "score-generic": "evaluator",
     "write-catalog": "span",
     "archive-document": "span",
+    "audit-failed": "span",
     "pipeline-result": "generation",
     "answer-question": "generation",
 }
@@ -200,6 +234,20 @@ NODE_OBSERVATION_TYPES = {
 
 def observation_type_for(name: str, default: str = "span") -> str:
     return NODE_OBSERVATION_TYPES.get(name, default)
+
+
+def _unapplied_status(exc: BaseException) -> str | None:
+    """Visit status for a node that raised ``exc``: ``paused`` for ``interrupt()``, ``error`` for a failure.
+
+    Other LangGraph control-flow signals are not failures and leave no visit.
+    """
+    from langgraph.errors import GraphBubbleUp, GraphInterrupt
+
+    if isinstance(exc, GraphInterrupt):
+        return "paused"
+    if isinstance(exc, GraphBubbleUp):
+        return None
+    return "error"
 
 
 def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=None):
@@ -213,28 +261,113 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
     backend is ``flush()``ed so The-Mailroom's live floor can move the
     envelope on the next poll tick instead of waiting for
     ``LANGFUSE_FLUSH_INTERVAL`` or process exit.
+
+    For dict results, appends an audit visit with timing, LLM usage, and any
+    event recorded by the node. Visit construction failures are logged without
+    changing the node result; exceptions from the node still propagate. A node
+    that raises or pauses in ``interrupt()`` returns no update, so its visit
+    (``status`` ``error`` or ``paused``) goes to the open
+    :func:`collect_unapplied_visits` block instead.
     """
 
     obs_type = as_type or observation_type_for(name)
 
     def deco(fn):
-        """Wrap ``fn`` so each call opens the ``name`` observation."""
+        """Wrap ``fn`` with the observation and audit-visit capture."""
+
+        from audit.trace import node_name
+
+        node = node_name(fn)
+
+        def keep_unapplied(node, state, started, calls_before, scope, event, status):
+            """Hand the visit of a node that raised or paused to the run's collector, if one is open."""
+            from audit import trace
+
+            bucket = _unapplied_visits.get()
+            if bucket is None:
+                return
+            try:
+                bucket.append(trace.visit(
+                    node, state, {}, started_at=started, ended_at=datetime.now(timezone.utc),
+                    status=status, llm=trace.llm_info_since(calls_before, scope), event=event,
+                ))
+            except Exception:
+                logger.warning("audit_visit_failed", node=node, exc_info=True)
+
+        def run(state):
+            """Call ``fn`` and return its result and visit, if one can be built."""
+            from audit import trace
+
+            started = datetime.now(timezone.utc)
+            calls_before = trace.run_calls_count()
+            token = trace.begin_visit()
+            scope = trace.current_visit_scope()
+            unapplied_status = None
+            try:
+                result = fn(state)
+            except Exception as exc:
+                unapplied_status = _unapplied_status(exc)
+                raise
+            finally:
+                event = trace.end_visit(token)
+                if unapplied_status:
+                    keep_unapplied(node, state, started, calls_before, scope, event, unapplied_status)
+                if unapplied_status == "paused" and event:
+                    # A node that parks (``human_review`` -> ``interrupt()``) never returns, so
+                    # its stage event goes to the per-event log here while the audit migration
+                    # is pending (no-op once migrated); emit_stage_event never raises.
+                    from audit.legacy_events import emit_stage_event
+
+                    emit_stage_event(dict(state), event.get("event"), actor=event.get("actor") or "pipeline",
+                                     detail=event.get("detail"))
+            if not isinstance(result, dict):
+                return result, None
+            if event:
+                # While the audit migration is pending the unified row cannot be written, so the
+                # stage event also goes to the per-event log (no-op once migrated).
+                from audit.legacy_events import emit_stage_event
+
+                emit_stage_event({**state, **result}, event.get("event"), actor=event.get("actor") or "pipeline",
+                                 detail=event.get("detail"))
+            try:
+                visit = trace.visit(
+                    node, state, result, started_at=started, ended_at=datetime.now(timezone.utc),
+                    llm=trace.llm_info_since(calls_before, scope), event=event,
+                )
+            except Exception:
+                logger.warning("audit_visit_failed", node=node, exc_info=True)
+                return result, None
+            return result, visit
+
+        def with_visit(state, result, visit, span=None):
+            """Add the visit to a dict update, flagging a non-intake run with no prior trace."""
+            if visit is None:
+                return result
+            if span is not None and visit.get("span_id") is None:
+                span_id = getattr(span, "id", None)
+                visit["span_id"] = span_id if isinstance(span_id, str) else None
+            extra = {"audit_trace": [visit]}
+            if not (state or {}).get("audit_trace") and node != "intake":
+                # The run did not start at intake under this code: a checkpoint written
+                # before the trace existed (spec §5.2). The row records the gap.
+                extra["trace_incomplete"] = True
+            return {**result, **extra}
 
         @functools.wraps(fn)
         def wrapper(state):
-            """Run the node inside its span, then flush for the live floor."""
+            """Run the node inside its span, append its audit visit, then flush for the live floor."""
             provider = resolve_provider_name()
             if provider != "langfuse":
-                result = fn(state)
+                result, visit = run(state)
                 if provider != "none":
                     flush()
-                return result
+                return with_visit(state, result, visit)
 
             from .langfuse_setup import observation
 
             inp = summarize_input(state) if summarize_input else _state_summary(state)
             with observation(name, as_type=obs_type, input=inp) as span:
-                result = fn(state)
+                result, visit = run(state)
                 if span is not None:
                     if summarize_output:
                         out = summarize_output(result)
@@ -246,7 +379,7 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
                         out = _result_summary(result, state)
                     span.update(output=out)
                 flush()
-                return result
+                return with_visit(state, result, visit, span)
 
         # Read by src/scripts/export_contract.py to map graph nodes to spans,
         # with the type the span is actually opened as (``as_type`` wins).
@@ -329,6 +462,22 @@ def install_on_dropped() -> None:
         _install()
     except Exception:
         logger.warning("on_dropped_install_failed")
+
+
+def set_trace_metadata(metadata: dict) -> None:
+    """Add key/value metadata to the active trace (Langfuse only; a no-op elsewhere).
+
+    Called from inside a node, so it lands on that node's observation and the trace it
+    belongs to. Never raises: tracing must not change what a document run does.
+    """
+    if resolve_provider_name() != "langfuse":
+        return
+    try:
+        from .langfuse_setup import set_current_trace_metadata
+
+        set_current_trace_metadata(metadata)
+    except Exception:
+        logger.warning("trace_metadata_failed", exc_info=True)
 
 
 def get_trace_id():

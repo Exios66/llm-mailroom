@@ -478,6 +478,14 @@ def _rows_ladder(
 # Corpus join + integrity
 
 
+#: How many mismatched filenames ``provenance["integrity"]`` lists (#258).
+INTEGRITY_FILENAMES_CAP = 20
+
+
+class CorpusIntegrityError(RuntimeError):
+    """``load_corpus(strict=True)`` found rows that do not match the pin's ``content_sha256``."""
+
+
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -492,6 +500,7 @@ def load_corpus(
     revision: str | None = FULL_CORPUS_REVISION,
     join: bool = True,
     verify: bool = True,
+    strict: bool = False,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """The mailroom-corpus split, labels joined to text on ``filename``.
 
@@ -499,7 +508,19 @@ def load_corpus(
     (``doc_text``); ``verify=True`` checks ``content_sha256`` against the
     sha256 of every joined ``doc_text`` (the 2979/2979 exact proof (v9 train) — a
     mismatch counts are RECORDED, not silent). Returns (frame, provenance).
+
+    Integrity (#258). Every row is returned; a mismatch never drops or blocks one by default,
+    so an experiment can score the whole pin. Instead the frame gets a boolean
+    ``content_verified`` column (the row has text and its sha256 equals ``content_sha256``),
+    and ``provenance["integrity"]`` records ``checked`` / ``verified`` / ``mismatched`` /
+    ``missing_text`` plus ``mismatched_filenames`` (the first ``INTEGRITY_FILENAMES_CAP``,
+    with ``mismatched_filenames_truncated`` when there are more), so a runner can report
+    scores for the verified subset next to the all-rows scores. ``strict=True`` is the opt-in
+    tamper check: any mismatch, any row without text, or a corpus with no ``content_sha256``
+    raises :class:`CorpusIntegrityError`. ``strict`` needs ``verify`` and ``join``.
     """
+    if strict and not (verify and join):
+        raise ValueError("strict integrity needs verify=True and join=True")
     gt, gt_prov = load_config_frame(repo_id, GT_CONFIG, split=split, revision=revision)
     provenance: dict[str, Any] = {
         "dataset": repo_id,
@@ -563,29 +584,53 @@ def load_corpus(
         )
     if verify and "doc_text" in merged.columns:
         texts = merged["doc_text"].fillna("").astype(str)
+        has_text = texts.str.strip().str.len() > 0  # whitespace-only text is unreadable, not present
         expected = merged.get("content_sha256")
         if expected is not None:
             computed = texts.map(_sha256_text)
-            verified = (computed == expected.fillna("").astype(str)) & (texts.str.len() > 0)
-            provenance["integrity"] = {
-                "checked": int((texts.str.len() > 0).sum()),
-                "verified": int(verified.sum()),
-                "mismatched": int(((~verified) & (texts.str.len() > 0)).sum()),
-            }
-            if provenance["integrity"]["mismatched"]:
-                # A decode-corrupted row must never flow into GT-joined scoring
-                # silently (#195): say it loudly, name the count.
-                _log.warning(
-                    "content_sha256 mismatch for %s/%s[%s@%s]: %d of %d rows "
-                    "failed the integrity check — scores computed on mutated "
-                    "text are suspect; re-pin or re-download",
-                    repo_id,
-                    GT_CONFIG,
-                    split,
-                    revision,
-                    provenance["integrity"]["mismatched"],
-                    provenance["integrity"]["checked"],
-                )
+            verified = (computed == expected.fillna("").astype(str)) & has_text
+        else:
+            verified = pd.Series(False, index=merged.index)
+        merged["content_verified"] = verified.astype(bool)
+        mismatched = (~verified) & has_text if expected is not None else pd.Series(False, index=merged.index)
+        bad_names = [str(n) for n in merged.loc[mismatched, JOIN_KEY].tolist()]
+        integrity: dict[str, Any] = {
+            "checked": int(has_text.sum()),
+            "verified": int(verified.sum()),
+            "mismatched": int(mismatched.sum()),
+            "missing_text": int((~has_text).sum()),
+            "mismatched_filenames": bad_names[:INTEGRITY_FILENAMES_CAP],
+        }
+        if len(bad_names) > INTEGRITY_FILENAMES_CAP:
+            integrity["mismatched_filenames_truncated"] = True
+        if expected is None:
+            integrity["unverifiable"] = True  # no content_sha256 column to check against
+        provenance["integrity"] = integrity
+        if integrity["mismatched"]:
+            # Scored rows whose bytes differ from the pin are suspect (#195): say it loudly,
+            # name the count, and let the runner report the verified subset next to the rest.
+            _log.warning(
+                "content_sha256 mismatch for %s/%s[%s@%s]: %d of %d rows "
+                "failed the integrity check — scores computed on mutated "
+                "text are suspect; re-pin or re-download (rows are kept and flagged "
+                "content_verified=False)",
+                repo_id,
+                GT_CONFIG,
+                split,
+                revision,
+                integrity["mismatched"],
+                integrity["checked"],
+            )
+        if strict and (integrity["mismatched"] or integrity["missing_text"] or expected is None):
+            raise CorpusIntegrityError(
+                f"strict integrity failed for {repo_id}[{split}@{revision}]: "
+                f"{integrity['mismatched']} content_sha256 mismatch(es), "
+                f"{integrity['missing_text']} row(s) without text"
+                + (", no content_sha256 column" if expected is None else "")
+                + (f"; first mismatches: {bad_names[:5]}" if bad_names else "")
+            )
+    elif strict:
+        raise CorpusIntegrityError(f"strict integrity needs doc_text for {repo_id}[{split}@{revision}]")
     provenance["num_rows"] = int(len(merged))
     return merged, provenance
 

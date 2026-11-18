@@ -346,22 +346,26 @@ def test_requeue_from_review_stamps_claim_time(temp_base_dir):
     assert bins.list_stale_processing_files(60) == []
 
 
-def test_reconcile_leaves_active_document_in_processing(temp_base_dir):
+def test_reconcile_leaves_active_document_in_processing(temp_base_dir, monkeypatch):
     import pipeline.watcher as watcher
     from pipeline import bins
+
+    monkeypatch.setattr(watcher, "_claims_open", True)  # an earlier Watcher.stop() closes the gate
 
     upload = bins.inbox_dir() / "backlogged.txt"
     upload.write_text("hello")
     _age(upload, 2 * 3600)
-    claimed = bins.claim_file(upload, "worker-A")
+    assert watcher._mark_active("backlogged.txt")
+    # In flight is decided by the claimed path (#219), so claim the way the handlers do.
+    claimed = watcher._claim_if_open(upload, "worker-A")
     # Even if the claim looks old (clock skew, utime unsupported), a document
     # this process is running must not be moved back to the inbox.
     _age(claimed, 2 * 3600)
 
-    assert watcher._mark_active("backlogged.txt")
     try:
         watcher.Watcher()._reconcile_stale_claims()
     finally:
+        watcher._release_claim(claimed)
         watcher._unmark_active("backlogged.txt")
 
     assert claimed.exists()
