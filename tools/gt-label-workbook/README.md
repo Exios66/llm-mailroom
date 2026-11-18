@@ -3,7 +3,11 @@
 Builds an editable Excel workbook of the ground truth the Dojo scores against, so missing
 labels can be found and filled in.
 
+Prerequisite: the builder imports `openpyxl`, which ships only in the `dev` extra, so install it first
+(`.venv/bin/pip install -e ".[dev]"`, as in the repository's setup).
+
 ```bash
+.venv/bin/pip install -e ".[dev]"
 PYTHONPATH=src .venv/bin/python tools/gt-label-workbook/build_gt_workbook.py --revision v9.3 --out ~/gt_label_workbook.xlsx
 ```
 
@@ -71,8 +75,11 @@ the workbook properties.
   (`SUMPRODUCT` with a column mask), use only functions Excel, LibreOffice and Google Sheets share, and follow edits.
   `fields needing labels (as built)` and `still missing (live)` agree at build time. Filter, do not sort: links between
   sheets point at fixed rows.
-- **Derived fields:** `communication_type`, `cuad_family` and `merger_consideration` are derived from the subclass (the
-  Dojo's own rule) and shown as populated, never as gaps. Corporate records include `filing_number` for the subclasses
+- **Derived fields:** `communication_type` and `cuad_family` are derived from the subclass, and `merger_consideration`
+  from the row's MAUD `Type of Consideration` answer first and the subclass as the fallback (the Dojo's own rules). They
+  are shown as populated, never as gaps. MAUD answers follow the Dojo's answer rules: a blank or `nan` answer is
+  `UNLABELED`, the Hub class `None` is a label, and a record still `pending_annotation` is not counted as populated.
+  Corporate records include `filing_number` for the subclasses
   that carry it; the per-row missing set equals the Dojo's `unlabeled_fields`.
 - **Columns follow the Dojo:**
   - `extraction_schema(doc_type).field_types`;
