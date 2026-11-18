@@ -461,6 +461,7 @@ def test_an_int_too_large_for_a_float_does_not_break_the_run_listing(dirs):
     assert run is not None
     assert "duration_ms" not in run["events"][0]
     assert run["outcome"]["node_count"] is None
-    assert runs.list_runs() is not None
+    listed = runs.list_runs()
+    assert [r["execution_id"] for r in listed] == [run["execution_id"]]
     assert runs._leaf_number(10**400) is None
     assert runs._leaf_number(10**15) == 10**15
