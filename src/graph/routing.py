@@ -97,11 +97,9 @@ def retry_after_judge_doubt(state: Mapping[str, Any]) -> bool:
     own (``judge_complete_archives``), it goes to a person instead of archiving unjudged
     (cause ``retry_unjudged``); ``judge_rejudge_retry`` re-judges it first while passes remain.
     """
-    return (
-        str(state.get("judge_verdict") or "") in ("incomplete", "partial")
-        and state.get("arbiter_decision") == "retry_extraction"
-        and not judge_complete_archives(state)
-    )
+    from pipeline.reconsideration import retry_unjudged
+
+    return retry_unjudged(state, _thresholds_for(state))
 
 
 def _after_confident_sorter(state: dict) -> Literal["review_classify", "extract"]:

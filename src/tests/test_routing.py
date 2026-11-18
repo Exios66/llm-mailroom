@@ -1,3 +1,5 @@
+import pytest
+
 from graph.routing import (
     after_classify,
     after_extraction,
@@ -453,14 +455,30 @@ class TestArchiveChecks:
         assert after_arbiter(state) == "human_review"
         assert "arbiter_accept_unconfirmed" in collect_review_causes(state)
 
+    _RETRY = {"doc_type": "contract", "extraction_confidence": 0.99, "extraction_attempts": 2,
+              "judge_pass_count": 1, "arbiter_decision": "retry_extraction", "arbiter_retry_count": 1,
+              "gate_ok": True, "schema_valid": True}
+
     def test_a_retry_the_judge_doubted_never_archives_unjudged(self):
         """#241 hole: the arbiter orders a retry after incomplete/partial and the retry says 0.99."""
         for verdict in ("incomplete", "partial"):
-            state = {"doc_type": "contract", "extraction_confidence": 0.99, "extraction_attempts": 2,
-                     "judge_pass_count": 1, "judge_verdict": verdict, "arbiter_decision": "retry_extraction",
-                     "gate_ok": True, "schema_valid": True}
+            state = {**self._RETRY, "judge_verdict": verdict}
             assert after_retry_extraction_gated(state) == "human_review"
             assert "retry_unjudged" in collect_review_causes(state)
+
+    def test_the_old_route_is_one_flag_away(self, approvals_archive):
+        assert after_retry_extraction_gated({**self._RETRY, "judge_verdict": "incomplete"}) == "compile_report"
+
+    @pytest.mark.parametrize("extra", [
+        {"arbiter_retry_count": 3},                                 # arbiter past its cap: no retry ran
+        {"arbiter_retry_count": 0},                                 # a review resume resets the count
+        {"extraction_attempts": 1},                                 # no retry yet
+        {"conflict_detected": True, "review_decision": None},       # parked for the matter conflict
+        {"extraction_confidence": 0.2, "extraction_attempts": 3},   # parked for low confidence
+    ])
+    def test_retry_unjudged_names_only_a_retry_that_would_have_archived(self, extra):
+        state = {**self._RETRY, "judge_verdict": "incomplete", **extra}
+        assert "retry_unjudged" not in collect_review_causes(state)
 
     def test_a_retry_with_no_judge_doubt_still_archives(self):
         state = {"doc_type": "contract", "extraction_confidence": 0.99, "extraction_attempts": 2,

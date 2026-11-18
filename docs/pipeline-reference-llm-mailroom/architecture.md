@@ -51,6 +51,7 @@ flowchart TD
     EXTRACT -- "still low confidence" --> REVIEW
     EXTRACT -. "transient error, per-node budget left" .-> EXTRACT
     RETRY_EXTRACT -- "confidence >= low, judge gate off/skip" --> REPORT
+    RETRY_EXTRACT -- "judge doubted, no re-judge due (retry_unjudged)" --> REVIEW
     RETRY_EXTRACT -- "conflict detected" --> BOSS
     RETRY_EXTRACT -- "judge gate fires (ambiguous band)" --> JUDGE
     RETRY_EXTRACT -- "still failing, attempts <= retry_max" --> RETRY_EXTRACT

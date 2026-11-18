@@ -337,6 +337,32 @@ def _is_falsey_flag(value: Any) -> bool:
     return value in _TRUTHY_ZERO
 
 
+def retry_unjudged(data: Mapping[str, Any], thresholds: Mapping[str, Any]) -> bool:
+    """A retry the arbiter ordered after the judge found the extraction lacking, with no new verdict.
+
+    The one predicate behind the ``retry_unjudged`` park (``graph/routing.py``
+    ``retry_after_judge_doubt``) and its review cause: the judge said ``incomplete`` or
+    ``partial``, the arbiter approved a re-extraction within ``arbiter_retry_max`` and it ran
+    (``extraction_attempts`` >= 2), there is no matter conflict, and the class does not let a
+    judge verdict archive on its own (``judge_complete_archives``). A re-judged retry replaces
+    the verdict, so it never matches; a review resume resets ``arbiter_retry_count`` to 0.
+    """
+    if thresholds.get("judge_complete_archives", False):
+        return False
+    if str(data.get("judge_verdict") or "") not in ("incomplete", "partial"):
+        return False
+    if data.get("arbiter_decision") != "retry_extraction" or _is_true_flag(data.get("conflict_detected")):
+        return False
+    try:
+        attempts = int(data.get("extraction_attempts") or 0)
+        retries = int(data.get("arbiter_retry_count") or 0)
+        raw_max = thresholds.get("arbiter_retry_max")
+        retry_max = int(raw_max) if raw_max is not None else 2
+    except (TypeError, ValueError):
+        return False
+    return attempts >= 2 and 1 <= retries <= retry_max
+
+
 def _is_true_flag(value: Any) -> bool:
     if value is None:
         return False
@@ -541,9 +567,8 @@ def _state_derived_causes(
 
     if str(data.get("judge_verdict") or "") == "complete" and not thresholds.get("judge_complete_archives", False):
         add(JUDGE_COMPLETE_UNCONFIRMED)
-    if (str(data.get("judge_verdict") or "") in ("incomplete", "partial")
-            and data.get("arbiter_decision") == "retry_extraction"
-            and not thresholds.get("judge_complete_archives", False)):
+    # Only a retry that would otherwise have archived: a low-confidence retry parks for that.
+    if retry_unjudged(data, thresholds) and LOW_EXTRACTION_CONFIDENCE not in out and LOW_EXTRACTION_CONFIDENCE not in known:
         add(RETRY_UNJUDGED)
     if data.get("boss_context_records") is not None and data.get("review_decision") == "approved":
         try:

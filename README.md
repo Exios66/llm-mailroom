@@ -332,6 +332,7 @@ flowchart TD
     EXTRACT -- "judge gate fires (ambiguous band)" --> JUDGE
     EXTRACT -- "still low confidence" --> REVIEW
     RETRY_EXTRACT -- "confidence >= low" --> REPORT
+    RETRY_EXTRACT -- "judge doubted, no re-judge due (retry_unjudged)" --> REVIEW
     RETRY_EXTRACT -- "still low confidence" --> REVIEW
 
     JUDGE -- "skipped" --> REPORT
