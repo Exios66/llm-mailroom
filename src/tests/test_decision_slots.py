@@ -142,6 +142,8 @@ class TestConfig:
         ({"field_review": {"max_fields": 0}}, "max_fields"),
         ({"closed_field_resolver": {"mode": "auto"}}, "must be one of"),
         ([], "mapping"),
+        ({"archive_gate": []}, "archive_gate must be a mapping"),
+        ({"archive_gate": False}, "archive_gate must be a mapping"),
     ])
     def test_malformed_blocks_raise(self, raw, needle):
         with pytest.raises(ds.DecisionSlotConfigError, match=needle):
@@ -180,6 +182,7 @@ class TestGateView:
         (gate({}, attempt=2), "no_field_support"),
         (gate({"parties": True}, attempt=2), "malformed_field_support"),
         (gate({"parties": 1.2}, attempt=2), "malformed_field_support"),
+        (gate({"parties": 10 ** 400}, attempt=2), "malformed_field_support"),
     ])
     def test_unusable_answers(self, record, reason):
         view = ds.gate_view({"extraction_attempts": 2, "extraction_gate": record}, 0.5)
@@ -415,6 +418,12 @@ class TestJudgeReplacement:
         assert out["judge_verdict"] == "incomplete"
         assert out["judge_findings"] == ["governing_law: not supported by the source (p=0.30)"]
         assert out["decision_slot_outcomes"]["judge_replacement"]["action"] == "replaced"
+
+    def test_gate_support_is_not_reported_as_a_judge_score(self, slots, no_llm_judge):
+        slots({"judge_replacement": {"mode": "gate"}})
+        out = bg.judge_verify_node(self._band(extraction_gate=gate({"parties": 0.9, "governing_law": 0.3})))
+        assert out["judge_score"] is None
+        assert out["decision_slot_outcomes"]["judge_replacement"]["min_support"] == 0.3
 
     def test_a_class_without_key_fields_keeps_the_llm_judge(self, slots, monkeypatch):
         slots({"gate_key_fields": {}, "judge_replacement": {"mode": "gate"}})

@@ -197,7 +197,10 @@ class SlotsConfig:
 
 
 def _unit(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and 0 <= value <= 1
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    # An int is compared exactly: math.isfinite() overflows on one too large for a float.
+    return (isinstance(value, int) or math.isfinite(value)) and 0 <= value <= 1
 
 
 def _cap(where: str, value: Any) -> float | None:
@@ -272,7 +275,9 @@ def parse_slots(raw: Any) -> SlotsConfig:
         raise DecisionSlotConfigError(f"decision_slots: unknown keys {unknown} (known: {list(_TOP_KEYS)})")
     blocks: dict[str, Mapping[str, Any]] = {}
     for slot in SLOTS:
-        block = raw.get(slot) or {}
+        block = raw.get(slot)
+        if block is None:
+            block = {}
         if not isinstance(block, Mapping):
             raise DecisionSlotConfigError(f"decision_slots.{slot} must be a mapping")
         bad = sorted(set(map(str, block)) - set(_KEYS[slot]))
@@ -770,7 +775,9 @@ def gate_judge_update(state: Mapping[str, Any]) -> tuple[dict[str, Any] | None, 
 
     label = "complete" if view.accepts else "incomplete"
     findings = [f"{name}: not supported by the source (p={view.field_support[name]:.2f})" for name in view.unsupported]
-    score = float(view.min_support or 0.0)
+    # The gate's support numbers stay in the outcome; they are not a judge score, so the
+    # arbiter and the audit trail never read them as one.
+    score = None
     update: dict[str, Any] = {
         "judge_verdict": label,
         "judge_score": score,

@@ -4,8 +4,8 @@ Eight places in the graph where a decision model may change what happens to a do
 They are configured in `src/config/taxonomy.yaml` under `decision_slots:` and implemented
 in `src/graph/decision_slots.py`. Every slot ships `mode: baseline`: the pipeline then runs
 exactly as it would without the block (no node is wrapped, no route rule is registered,
-no slot state key is written, no model is called). A registered extraction gate's record
-carries the `attempt` it judged either way.
+no slot state key is written, no slot calls a model). A registered extraction gate still
+answers on each extraction attempt either way, and its record carries the `attempt` it judged.
 
 The mailroom never builds a decision model. The host registers one per role:
 

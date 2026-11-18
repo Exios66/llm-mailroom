@@ -997,6 +997,9 @@
     "judge_max_passes": 3,
     "judge_rejudge_retry": false,
     "keep_best_attempt": false,
+    "judge_complete_archives": false,
+    "arbiter_accept_archives": false,
+    "judge_clears_low_confidence": false,
     "conflict_threshold": 0.3,
     "by_class": {
       "contract": {
