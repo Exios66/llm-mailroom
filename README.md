@@ -334,9 +334,10 @@ flowchart TD
     RETRY_EXTRACT -- "confidence >= low" --> REPORT
     RETRY_EXTRACT -- "still low confidence" --> REVIEW
 
-    JUDGE -- "complete or skipped" --> REPORT
+    JUDGE -- "skipped" --> REPORT
+    JUDGE -- "complete (judge_complete_archives false)" --> REVIEW
     JUDGE -- "partial / incomplete" --> ARBITER
-    ARBITER -- "verdict stands" --> REPORT
+    ARBITER -- "accept_with_caveats (arbiter_accept_archives false)" --> REVIEW
     ARBITER -- "re-extraction ordered" --> RETRY_EXTRACT
     ARBITER -- "unresolvable" --> REVIEW
     BOSS -- "approved" --> REPORT
@@ -416,7 +417,7 @@ flowchart TB
     JUDGE -. "Lane B: partial" .-> ARBITER
     SPECIALISTS -- "conflict" --> BOSS
     SPECIALISTS --> REPORTER
-    JUDGE -- "complete/skipped" --> REPORTER
+    JUDGE -- "skipped (complete only with judge_complete_archives)" --> REPORTER
     REPORTER --> ARCHIVIST
     ARCHIVIST --> RELATIONS
 ```

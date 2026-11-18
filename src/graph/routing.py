@@ -89,6 +89,21 @@ def judge_clears_low_confidence(state: Mapping[str, Any]) -> bool:
     return bool(_thresholds_for(state).get("judge_clears_low_confidence", False))
 
 
+def retry_after_judge_doubt(state: Mapping[str, Any]) -> bool:
+    """True for a retry the arbiter ordered after the judge found the extraction lacking.
+
+    Such a retry reaches ``compile_report`` on its own self-reported confidence only, which
+    does not predict its score (#241). Unless the class lets a judge verdict archive on its
+    own (``judge_complete_archives``), it goes to a person instead of archiving unjudged
+    (cause ``retry_unjudged``); ``judge_rejudge_retry`` re-judges it first while passes remain.
+    """
+    return (
+        str(state.get("judge_verdict") or "") in ("incomplete", "partial")
+        and state.get("arbiter_decision") == "retry_extraction"
+        and not judge_complete_archives(state)
+    )
+
+
 def _after_confident_sorter(state: dict) -> Literal["review_classify", "extract"]:
     """A ``decision_only`` class always gets its second opinion.
 
@@ -540,8 +555,9 @@ def retry_rejudge_due(state: Mapping[str, Any]) -> bool:
     (``judge_pass_count >= 1``) and the pass budget (``judge_max_passes``) is not
     spent. Off by default until the judge is calibrated (#242): opt in with
     ``judge_rejudge_retry: true`` (taxonomy, per class overridable).
-    The judge lane's own limits apply: the ``MAILROOM_JUDGE_VERIFY`` kill switch, a guardrail failure or an empty extraction. When the passes are
-    spent the retry archives as before; it does not escalate.
+    The judge lane's own limits apply: the ``MAILROOM_JUDGE_VERIFY`` kill switch, a guardrail failure or an empty extraction. When no
+    re-judge is due, a retry the judge doubted goes to a person (``retry_after_judge_doubt``)
+    unless ``judge_complete_archives`` lets it archive as before.
     """
     thresholds = _thresholds_for(state)
     if not thresholds.get("judge_rejudge_retry", False):
@@ -619,6 +635,14 @@ def after_retry_extraction_gated(state: dict) -> Literal[
                 judge_pass_count=state.get("judge_pass_count"),
             )
             return "judge_verify"
+        if retry_after_judge_doubt(state):
+            logger.info(
+                "retry_unjudged_needs_review",
+                doc_id=state.get("doc_id"),
+                judge_verdict=state.get("judge_verdict"),
+                extraction_attempts=state.get("extraction_attempts"),
+            )
+            return "human_review"
     return dest
 
 

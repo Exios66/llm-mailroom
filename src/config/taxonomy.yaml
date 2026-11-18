@@ -288,6 +288,9 @@ confidence:
   # (judge_complete_unconfirmed, arbiter_accept_unconfirmed); an enforcing decision slot
   # (decision_slots.archive_gate release) may still archive a capped share the gate backs.
   # judge_clears_low_confidence false: a judge never clears an extraction below `low`.
+  # judge_complete_archives false also parks an arbiter-ordered retry of an extraction the
+  # judge found lacking when no re-judge is due (retry_unjudged), instead of archiving it
+  # on its own confidence.
   # Per-class overridable under by_class; true restores the old route.
   judge_complete_archives: false
   arbiter_accept_archives: false
@@ -467,6 +470,7 @@ review_queue:
     judge_complete_unconfirmed: 1.2  # a doubted extraction the judge called complete (judge_complete_archives false)
     arbiter_accept_unconfirmed: 1.5  # accept_with_caveats over a judge that found problems
     boss_ungrounded: 3.0           # the boss approved a conflict without seeing the matter record
+    retry_unjudged: 2.0            # a retry the judge doubted would have archived unjudged (#241)
     archive_gate_unsupported: 2.0  # decision slot: the gate found values the source does not support
     arbiter_veto_gate: 2.0         # decision slot: the gate disagreed with accept_with_caveats
     gate_incomplete: 2.0           # decision slot: the arbiter accepted a gate "incomplete"

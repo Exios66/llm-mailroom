@@ -68,7 +68,8 @@ place, and an accept is never released) or a Boss approval (`boss_check`'s place
 ### The default archive checks and the slots
 
 Without any slot, taxonomy `confidence` keeps a judge `complete`, an arbiter
-`accept_with_caveats` and a blind Boss approval from archiving (see the configuration
+`accept_with_caveats`, an unjudged retry of an extraction the judge doubted
+(`retry_unjudged`) and a blind Boss approval from archiving (see the configuration
 reference). The slots work on top of that: `archive_gate.release` is the capped way a
 decision model may archive a judge `complete` it backs on every key field, and
 `judge_check` / `arbiter_veto` matter for a class that sets `judge_complete_archives` or

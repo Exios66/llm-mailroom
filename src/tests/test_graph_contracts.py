@@ -224,7 +224,7 @@ def test_reviewer_winning_class_controls_specialist_and_report(run_graph, mocker
     assert final.values["extracted_data"]["_report"]["doc_type"] == "contract"
 
 
-def test_judge_findings_and_arbiter_fix_list_reach_reextraction(run_graph, mocker):
+def test_judge_findings_and_arbiter_fix_list_reach_reextraction(approvals_archive, run_graph, mocker):
     first = {**deepcopy(FIELDS), "governing_law": "New Jersey"}
     run_graph.extractor.side_effect = [
         {**first, "confidence": 0.95}, {**deepcopy(FIELDS), "confidence": 0.99},

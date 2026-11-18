@@ -8,6 +8,7 @@ from graph.routing import (
     after_review_classify,
     after_arbiter,
     after_judge,
+    after_retry_extraction_gated,
 )
 from pipeline.reconsideration import collect_review_causes
 
@@ -451,6 +452,20 @@ class TestArchiveChecks:
                  "arbiter_decision": "accept_with_caveats"}
         assert after_arbiter(state) == "human_review"
         assert "arbiter_accept_unconfirmed" in collect_review_causes(state)
+
+    def test_a_retry_the_judge_doubted_never_archives_unjudged(self):
+        """#241 hole: the arbiter orders a retry after incomplete/partial and the retry says 0.99."""
+        for verdict in ("incomplete", "partial"):
+            state = {"doc_type": "contract", "extraction_confidence": 0.99, "extraction_attempts": 2,
+                     "judge_pass_count": 1, "judge_verdict": verdict, "arbiter_decision": "retry_extraction",
+                     "gate_ok": True, "schema_valid": True}
+            assert after_retry_extraction_gated(state) == "human_review"
+            assert "retry_unjudged" in collect_review_causes(state)
+
+    def test_a_retry_with_no_judge_doubt_still_archives(self):
+        state = {"doc_type": "contract", "extraction_confidence": 0.99, "extraction_attempts": 2,
+                 "gate_ok": True, "schema_valid": True}
+        assert after_retry_extraction_gated(state) == "compile_report"
 
     def test_a_class_can_opt_back_in(self, monkeypatch):
         import copy

@@ -57,9 +57,10 @@ flowchart TD
     RETRY_EXTRACT -- "retry budget spent" --> REVIEW
     RETRY_EXTRACT -. "transient error, per-node budget left" .-> RETRY_EXTRACT
 
-    JUDGE -- "complete or skipped" --> REPORT
+    JUDGE -- "skipped" --> REPORT
+    JUDGE -- "complete (judge_complete_archives false)" --> REVIEW
     JUDGE -- "partial / incomplete" --> ARBITER
-    ARBITER -- "verdict stands" --> REPORT
+    ARBITER -- "accept_with_caveats (arbiter_accept_archives false)" --> REVIEW
     ARBITER -- "re-extraction ordered" --> RETRY_EXTRACT
     ARBITER -- "unresolvable" --> REVIEW
     BOSS -- "approved" --> REPORT
@@ -221,7 +222,7 @@ Same three-way branch as classification, plus:
 * **Schema invalid**: retry (`retry_extract`) while `attempts <= retry_max` (2), then human review
 * **Low confidence**: retry → still low → human review
 * **High confidence**: proceed to report compilation (via `judge_verify` when the judge gate fires)
-* **Archive checks** (taxonomy `confidence`, all off by default): a judge `complete` and an arbiter `accept_with_caveats` go to a person instead of archiving (`judge_complete_archives`, `arbiter_accept_archives`), a judge never clears an extraction below `low` (`judge_clears_low_confidence`), and a Boss approval made without any archived matter record (`boss_context_records` 0) parks with cause `boss_ungrounded`
+* **Archive checks** (taxonomy `confidence`; the knobs default to `false`, which keeps the checks on): a judge `complete` and an arbiter `accept_with_caveats` go to a person instead of archiving (`judge_complete_archives`, `arbiter_accept_archives`), so does an arbiter-ordered retry of an extraction the judge doubted when no re-judge is due (`retry_unjudged`), a judge never clears an extraction below `low` (`judge_clears_low_confidence`), and a Boss approval made without any archived matter record (`boss_context_records` 0) parks with cause `boss_ungrounded`
 * `retry_extract` uses the same router: it can loop on itself (transient errors or another quality retry), or go to `judge_verify`, `boss_escalation`, `compile_report` or human review
 
 ### 6. Compile Report (Reporter)
@@ -285,14 +286,16 @@ extract ─┬─ unsupported / non-taxonomy type ─▶ human_review (no retry)
          └─ otherwise ─────────────────────────▶ human_review
 
 retry_extract ─┬─ transient (budget left) ──▶ retry_extract
+               ├─ a retry the judge doubted, no re-judge due ─▶ human_review (retry_unjudged; compile_report if judge_complete_archives)
                └─ otherwise: same branches as extract (incl. another retry_extract)
 
-judge_verify ─┬─ complete or skipped ────▶ compile_report
+judge_verify ─┬─ skipped ────────────────▶ compile_report
+              ├─ complete ───────────────▶ human_review (compile_report if judge_complete_archives)
               ├─ partial / incomplete ───▶ arbiter
               └─ hard failure ───────────▶ human_review
 
 arbiter ─┬─ transient (budget left) ─▶ arbiter
-         ├─ verdict stands ─────────▶ compile_report
+         ├─ accept_with_caveats ────▶ human_review (compile_report if arbiter_accept_archives)
          ├─ re-extraction ordered ──▶ retry_extract
          └─ unresolvable ───────────▶ human_review
 

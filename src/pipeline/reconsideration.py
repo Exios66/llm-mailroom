@@ -54,6 +54,7 @@ OUT_OF_VOCABULARY = "out_of_vocabulary"
 JUDGE_COMPLETE_UNCONFIRMED = "judge_complete_unconfirmed"
 ARBITER_ACCEPT_UNCONFIRMED = "arbiter_accept_unconfirmed"
 BOSS_UNGROUNDED = "boss_ungrounded"
+RETRY_UNJUDGED = "retry_unjudged"
 # Decision-model slots (graph/decision_slots.py), each parking a document the router would archive.
 ARCHIVE_GATE_UNSUPPORTED = "archive_gate_unsupported"
 ARBITER_VETO_GATE = "arbiter_veto_gate"
@@ -101,6 +102,7 @@ CAUSE_LABELS: dict[str, str] = {
     JUDGE_COMPLETE_UNCONFIRMED: "the judge called a doubted extraction complete; a judge verdict alone does not archive",
     ARBITER_ACCEPT_UNCONFIRMED: "the arbiter accepted with caveats what the judge found lacking",
     BOSS_UNGROUNDED: "the boss approved a matter conflict without seeing any matter record",
+    RETRY_UNJUDGED: "a retry of an extraction the judge found lacking was not judged again",
     ARCHIVE_GATE_UNSUPPORTED: "the archive gate found extracted values the source does not support",
     ARBITER_VETO_GATE: "the archive gate disagreed with the arbiter's accept_with_caveats",
     GATE_INCOMPLETE: "the arbiter accepted an extraction the gate (as judge) called incomplete",
@@ -539,6 +541,10 @@ def _state_derived_causes(
 
     if str(data.get("judge_verdict") or "") == "complete" and not thresholds.get("judge_complete_archives", False):
         add(JUDGE_COMPLETE_UNCONFIRMED)
+    if (str(data.get("judge_verdict") or "") in ("incomplete", "partial")
+            and data.get("arbiter_decision") == "retry_extraction"
+            and not thresholds.get("judge_complete_archives", False)):
+        add(RETRY_UNJUDGED)
     if data.get("boss_context_records") is not None and data.get("review_decision") == "approved":
         try:
             blind = int(data.get("boss_context_records")) <= 0

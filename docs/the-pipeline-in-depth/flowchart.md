@@ -122,12 +122,14 @@ flowchart TD
     end
 
     N_JUDGE -. "transient" .-> N_JUDGE
-    N_JUDGE -- "complete, skipped, or no verdict" --> N_REPORT
+    N_JUDGE -- "skipped or no verdict<br/>(complete only with judge_complete_archives)" --> N_REPORT
+    N_JUDGE -- "complete (default)" --> N_HUMAN
     N_JUDGE -- "partial or incomplete,<br/>judge_pass_count below judge_max_passes" --> N_ARBITER
     N_JUDGE -- "judge_error, or partial/incomplete<br/>with judge_max_passes reached" --> N_HUMAN
 
     N_ARBITER -. "transient" .-> N_ARBITER
-    N_ARBITER -- "accept_with_caveats" --> N_REPORT
+    N_ARBITER -- "accept_with_caveats<br/>(only with arbiter_accept_archives)" --> N_REPORT
+    N_ARBITER -- "accept_with_caveats (default)" --> N_HUMAN
     N_ARBITER -- "retry_extraction and<br/>arbiter_retry_count within arbiter_retry_max" --> N_RETRY_EXTRACT
     N_ARBITER -- "human_review, arbiter failure,<br/>or retry bound exceeded" --> N_HUMAN
 
