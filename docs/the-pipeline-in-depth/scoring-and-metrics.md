@@ -218,7 +218,7 @@ The sorter and specialists report their own confidence (0 to 1). Thresholds come
 | Scope | `high` | `low` | `judge_band_high` |
 |---|---:|---:|---:|
 | Global fallback | 0.97 | 0.88 | 0.95 |
-| `contract` | 0.95 | 0.90 | 0.97 |
+| `contract` | 0.98 | 0.90 | 0.97 |
 | `merger_agreement` | 0.98 | 0.90 | 0.90 |
 | `insurance_claim` | 0.95 | 0.90 | 0.97 |
 | `corporate_record` | 0.95 | 0.86 | 0.94 |

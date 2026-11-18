@@ -82,6 +82,8 @@ import observability.scoring_wiring  # noqa: F401,E402
 
 from scripts.prepare_samples import is_real_sample, prepare_samples  # noqa: E402
 from pipeline.config import confidence_profile_name, oracle_routing_enabled  # noqa: E402
+from llm.prompt_sets import active_prompt_set, prompt_ids  # noqa: E402
+from llm.prompts import prompt_source  # noqa: E402
 from schemas.documents import get_extraction_schema  # noqa: E402
 
 MANIFEST = REPO_ROOT / "docs" / "examples" / "samples" / "manifest.csv"
@@ -1154,6 +1156,9 @@ def main(argv: list[str] | None = None) -> int:
         "mode": "mock" if mock_mode else "real",
         "oracle_routing": oracle_routing_enabled(),  # #207: True = routing read ground truth
         "confidence_profile": confidence_profile_name(),  # thresholds arm (MAILROOM_CONFIDENCE_PROFILE)
+        "prompt_set": active_prompt_set(),  # llm/prompt_sets/catalog.yaml
+        "prompt_source": prompt_source(),  # repo (default) or the langfuse opt-in
+        "prompt_ids": prompt_ids(),  # per-agent served prompt ids (by_agent A/B pins)
         "scores_enabled": scores_enabled,
         "prices": {"source": "openrouter_live" if _prices else "fallback_estimates"},
         "summary": summary,

@@ -256,6 +256,11 @@ def _judge_can_review(state: dict) -> bool:
     if _chunks_lost(state):
         return False
 
+    # A class that never auto-archives is parked for a person whatever the judge says:
+    # a judge/arbiter loop would only spend tokens before the same park.
+    if not class_auto_archives(state.get("doc_type")):
+        return False
+
     if os.environ.get("MAILROOM_JUDGE_VERIFY", "on").lower() in ("off", "false", "0", "no"):
         return False
     return bool(state.get("extracted_data")) and not state.get("extraction_guardrail")

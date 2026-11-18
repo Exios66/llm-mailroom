@@ -109,7 +109,7 @@ flowchart LR
     subgraph LLM["LLM layer (llm/)"]
         CLI["get_llm() — provider-agnostic client"]
         RETRY["retry + max_tokens caps"]
-        PROMPTS["Langfuse-managed prompts<br/>mailroom-* (with local fallback)"]
+        PROMPTS["Repo prompt sets<br/>llm/prompt_sets (Langfuse override opt-in)"]
         P["OpenRouter / Ollama / vLLM / generic"]
     end
 
@@ -160,7 +160,7 @@ flowchart LR
 * Global provider override via `DEFAULT_PROVIDER` env var
 * Every chat completion goes through `retry_chat_completion` (`llm/retry.py`): transient failures (connection errors, timeouts, 429, 5xx) are retried with exponential backoff + jitter from the `llm_retry:` config; 4xx client errors are never retried
 * Output generation is capped per agent by `max_tokens` in `taxonomy.yaml` (bounds runaway reasoning-token output)
-* Agent system prompts are **Langfuse-managed** (`llm/prompts.py`, `mailroom-<agent_name>`), fetched at runtime with the identical template shipped in code as fallback; `scripts/sync_prompts.py` pushes templates up
+* Agent system prompts **ship in the repo** (`llm/prompt_sets/`, default `deploy_v1`) and are served as is; a Langfuse `mailroom-<agent_name>` `production` prompt overrides them only under the opt-in `MAILROOM_PROMPT_SOURCE=langfuse`; `scripts/sync_prompts.py` pushes templates up
 * Structured calls (`_call_structured`) always send `response_format={"type": "json_object"}` and guarantee the literal token `json` in the messages — some providers (Qwen via Alibaba) reject requests without it
 
 ### SQLite (`storage/db.py`, `storage/catalog.py`, `storage/audit_log.py`)
@@ -202,7 +202,7 @@ LLM call: reads document text, determines `doc_type` and confidence. Live extrac
 Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `taxonomy.yaml`):
 
 * **Unknown / retired / empty `doc_type`**: human review immediately (never extract)
-* **Confidence >= `high` (0.97 global; per-class `by_class` overrides, profile `calibrated_v1`: contract, insurance, corporate and correspondence 0.95, merger 0.98)** on a live class: straight to extraction
+* **Confidence >= `high` (0.97 global; per-class `by_class` overrides, profile `calibrated_v1`: insurance, corporate and correspondence 0.95, contract and merger 0.98)** on a live class: straight to extraction
 * **Ground-truth class miss** (oracle routing only: pilot runs with labels **and** `routing.use_ground_truth` / `MAILROOM_ORACLE_ROUTING=1`; off by default, so a run that carries `ground_truth` for scoring routes like production, #207): Lane A (`review_classify`) even at high stated confidence
 * **`low` (0.88 global) <= Confidence < `high`**: `retry_classify` (while `attempts <= retry_max`), then Lane A (`review_classify`) if still medium
 * **Confidence < `low`**: retry (`retry_classify`) while `attempts <= retry_max`, then human review

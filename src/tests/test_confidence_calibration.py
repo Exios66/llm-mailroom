@@ -114,7 +114,7 @@ def test_legacy_profile_restores_old_thresholds(legacy, doc_type):
 def test_calibrated_values():
     t = {c: get_confidence_thresholds(c) for c in CLASSES}
     assert {c: t[c]["high"] for c in CLASSES} == {
-        "contract": 0.95,
+        "contract": 0.98,  # held back: 0.95 triples held-out wrong-class archives
         "merger_agreement": 0.98,
         "insurance_claim": 0.95,
         "corporate_record": 0.95,
@@ -141,7 +141,7 @@ def test_calibrated_values():
 @pytest.mark.parametrize(
     "doc_type, calibrated, old",
     [
-        ("contract", "extract", "retry_classify"),
+        ("contract", "retry_classify", "retry_classify"),  # held at 0.98: the sorter's 0.95 errs on contracts
         ("insurance_claim", "extract", "retry_classify"),
         ("corporate_record", "extract", "retry_classify"),
         ("correspondence", "extract", "extract"),
@@ -338,3 +338,72 @@ def test_policy_cause_does_not_hide_a_real_failure():
     causes = collect_review_causes(state)
     assert "arbiter_escalated" in causes
     assert CLASS_REQUIRES_REVIEW not in causes
+
+
+# --- review findings: merger judge loop, triage lane, scorers, causes ---------------
+
+
+def test_merger_never_reaches_the_judge_loop():
+    from graph.routing import after_extraction, judge_should_run
+
+    state = {
+        "doc_id": "d",
+        "doc_type": "merger_agreement",
+        "extracted_data": {"parties": ["A", "B"], "acquirer": "A"},
+        "extraction_confidence": 0.5,
+        "extraction_attempts": 3,
+    }
+    assert judge_should_run(state) is False
+    assert after_extraction(state) == "human_review"
+
+
+def test_other_classes_still_judge_an_unsure_extraction():
+    from graph.routing import after_extraction
+
+    state = {
+        "doc_id": "d",
+        "doc_type": "contract",
+        "extracted_data": {"document_name": "x", "parties": ["A", "B"]},
+        "extraction_confidence": 0.5,
+        "extraction_attempts": 3,
+    }
+    assert after_extraction(state) == "judge_verify"
+
+
+def test_policy_cause_survives_ground_truth_only_causes():
+    state = _report_state("merger_agreement")
+    state["ground_truth"] = {"expected_doc_class": "contract"}  # would add class_miss
+    causes = collect_review_causes(state)
+    assert "class_miss" in causes and CLASS_REQUIRES_REVIEW in causes
+
+
+def test_stage_correct_expects_review_for_a_policy_class():
+    from observability.scores import compute_pipeline_scores
+
+    def stage_score(stage):
+        state = {
+            "doc_type": "merger_agreement",
+            "stage": stage,
+            "ground_truth": {"expected_doc_class": "merger_agreement", "expected_stage": "archived"},
+        }
+        return compute_pipeline_scores(state).get("stage_correct")
+
+    assert stage_score("review") == 1
+    assert stage_score("archived") == 0
+
+
+def test_experiment_stage_evaluator_expects_review_for_a_policy_class():
+    from scripts.run_experiment import stage_correct_evaluator
+
+    expected = {"expected_doc_class": "merger_agreement", "expected_stage": "archived"}
+    assert stage_correct_evaluator(input=None, output={"stage": "review"}, expected_output=expected).value == 1
+    expected = {"expected_doc_class": "contract", "expected_stage": "archived"}
+    assert stage_correct_evaluator(input=None, output={"stage": "review"}, expected_output=expected).value == 0
+
+
+def test_unknown_profile_stops_the_watcher_before_it_starts(monkeypatch, temp_base_dir):
+    from pipeline.watcher import Watcher
+
+    monkeypatch.setenv(CONFIDENCE_PROFILE_ENV, "no_such_profile")
+    with pytest.raises(ValueError, match="not a confidence profile"):
+        Watcher().start()

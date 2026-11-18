@@ -52,6 +52,9 @@ CHUNK_FAILED = "chunk_failed"
 OUT_OF_VOCABULARY = "out_of_vocabulary"
 CLASS_REQUIRES_REVIEW = "class_requires_review"
 
+# Cause tokens that come from comparing against ground truth, not from a routing decision.
+_GROUND_TRUTH_ONLY_CAUSES = frozenset({CLASS_MISS, SUBCLASS_MISS, EXTRACTION_MISS})
+
 CAUSE_LABELS: dict[str, str] = {
     CLASS_MISS: "classification miss vs ground truth",
     SUBCLASS_MISS: "subclass miss vs ground truth",
@@ -523,21 +526,6 @@ def _state_derived_causes(
             add(ARBITER_ESCALATED)
             add(RETRIES_EXHAUSTED)
 
-    # The policy park (taxonomy `auto_archive: false`) names itself only when nothing
-    # else explains the park, so the label never hides a real failure.
-    if (
-        not out
-        and not known
-        and isinstance(doc_type, str)
-        and is_extractable_doc_type(doc_type)
-        and data.get("extracted_data")
-        and not (data.get("review_decision") == "human_applied" and data.get("extraction_source") == "human")
-    ):
-        from pipeline.config import class_auto_archives
-
-        if not class_auto_archives(doc_type):
-            add(CLASS_REQUIRES_REVIEW)
-
     return out
 
 
@@ -677,6 +665,24 @@ def collect_review_causes(
         if token not in seen:
             seen.add(token)
             ordered.append(token)
+
+    # The policy park (taxonomy `auto_archive: false`) names itself only when no real
+    # routing cause explains the park, so the label never hides a failure. Causes that
+    # only a ground-truth comparison can produce never reached the router: ignore them.
+    from pipeline.config import is_extractable_doc_type
+
+    doc_type = data.get("doc_type")
+    if (
+        not (set(ordered) - _GROUND_TRUTH_ONLY_CAUSES)
+        and isinstance(doc_type, str)
+        and is_extractable_doc_type(doc_type)
+        and data.get("extracted_data")
+        and not (data.get("review_decision") == "human_applied" and data.get("extraction_source") == "human")
+    ):
+        from pipeline.config import class_auto_archives
+
+        if not class_auto_archives(doc_type):
+            ordered.append(CLASS_REQUIRES_REVIEW)
     return ordered
 
 

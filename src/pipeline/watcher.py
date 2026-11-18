@@ -1110,7 +1110,7 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
     #   * confidence < the taxonomy's `low` threshold for the doc class.
     # Review-parked manifests keep the best-effort extracted entities (HUB-049
     # fallback) so the reviewer sees what the team found.
-    from pipeline.config import get_confidence_thresholds
+    from pipeline.config import class_auto_archives, get_confidence_thresholds
 
     doc_class = triage.get("primary_doc_class") or "unknown"
     conf = triage.get("confidence")
@@ -1126,6 +1126,14 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
         escalation_reason = (
             f"triage_low_confidence {conf} < {review_low} — the free triage "
             "team was not certain enough; parked for human review"
+        )
+    elif not class_auto_archives(doc_class):
+        # Same policy as graph.routing.after_report: a class with `auto_archive: false`
+        # never archives model output unseen, including on this free lane.
+        terminal_stage = PipelineStage.REVIEW
+        escalation_reason = (
+            f"class_requires_review — {doc_class} never archives without a person "
+            "(auto_archive: false); parked for human review"
         )
     else:
         terminal_stage = PipelineStage.ARCHIVED

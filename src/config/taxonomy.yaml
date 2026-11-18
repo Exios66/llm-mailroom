@@ -280,8 +280,11 @@ confidence:
   # attempt is always recorded in extraction_attempt_history; this only decides
   # which one compile_report and the review handoff use: ranked complete >
   # partial > incomplete, then extraction confidence, ties keep the latest, and
-  # only judged attempts that passed the schema/quality gate compete. Off by
-  # default for the same reason as judge_rejudge_retry (the ranking trusts the
+  # only judged attempts that passed the schema/quality gate compete. An
+  # unjudged latest retry that passed the gate is kept over any judged earlier
+  # attempt (latest_unjudged), and archiving keeps the latest when the selected
+  # earlier attempt is still unsure or below the coverage floor
+  # (earlier_attempt_requires_review). Off by default for the same reason as judge_rejudge_retry (the ranking trusts the
   # uncalibrated judge, #242). Per-class overridable under by_class. Routing
   # never reads it.
   keep_best_attempt: false
@@ -296,12 +299,13 @@ confidence:
   # re-extracts, so the new draft parks again (graph/routing.py:after_report).
   by_class:
     contract:
-      # Sorter `high` 0.98 -> 0.95: the sorter answers 0.95 on ~80% of contracts, so
-      # 0.98 sent most of them through retry_classify and Lane A, and the reviewer's
-      # own 0.95 then parked about a third of correct contracts for a person. The
-      # 0.95 errors it caught (indentures / rights instruments read as contracts)
-      # are fixed in the sorter prompt (sorter_condensed_v5). Moderate evidence.
-      high: 0.95
+      # Sorter `high` stays 0.98 on purpose. The sorter answers 0.95 on ~80% of contracts
+      # and 18% of those are indentures / rights instruments (wrong class), so 0.98 sends
+      # them through retry_classify and Lane A, which costs about a third of correct
+      # contracts a person. On the 323-document held-out test, 0.95 would triple wrong-class
+      # archives (3 -> 9); the prompt fix (sorter_condensed_v5) is not yet measured on
+      # held-out data. Revisit after a test-split sorter run on v5.
+      high: 0.98
       low: 0.90
       judge_band_high: 0.97
     merger_agreement:
@@ -381,6 +385,22 @@ routing:
   # transfer to production. MAILROOM_ORACLE_ROUTING=1|0 overrides this for one run.
   # Cause labelling (class_miss, subclass_miss) and scoring read GT either way.
   use_ground_truth: false
+
+# Prompt source: `repo` (default) serves the prompts shipped in this repository (the active
+# prompt set below) and never consults Langfuse. `langfuse` is an explicit opt-in where a
+# Langfuse prompt labelled `production` overrides the repo text. MAILROOM_PROMPT_SOURCE
+# overrides this for one process.
+prompt_source: repo
+
+# Prompt sets (llm/prompt_sets/catalog.yaml): which versioned system prompt each agent
+# serves. deploy_v1 = the condensed front-runners plus the label-guide fixes; frozen_v1 =
+# every agent's code default (the A/B baseline); deploy_v1_examples = deploy_v1 plus
+# synthetic correspondence examples. MAILROOM_PROMPT_SET overrides `active` for one process.
+# by_agent pins single agents to another set for a per-agent A/B arm
+# (e.g. {correspondence_specialist: frozen_v1}); the env var, when set, wins over it.
+prompt_set:
+  active: deploy_v1
+  by_agent: {}
 
 # Lane A reviewer mode (see pipeline/decision_review.py). Every class keeps
 # the LLM sorter_reviewer unless its by_class entry sets `mode: decision_only`

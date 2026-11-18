@@ -55,7 +55,8 @@ class BaseAgent(ABC):
 
     def __init__(self):
         self.client, self.model = get_llm(self.agent_name)
-        # Set by system_prompt() when a Langfuse-managed prompt is active;
+        # Set by system_prompt() when a Langfuse-managed prompt is active (only under
+        # MAILROOM_PROMPT_SOURCE=langfuse; None for the default repo source);
         # passed to the LLM call as `langfuse_prompt=` so generations link to
         # the exact prompt version used.
         self._langfuse_prompt = None

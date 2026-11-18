@@ -3766,8 +3766,8 @@ def _resolved_models(state: dict) -> str:
 
 
 def _prompt_versions(state: dict) -> str:
-    """Prompt versions bound during the run (best-effort; Langfuse-managed
-    prompts link generations; vendored agents use their versioned prompts)."""
+    """Prompt versions bound during the run (best-effort; under the Langfuse
+    opt-in managed prompts link generations; vendored agents use their versioned prompts)."""
     try:
         from llm.prompts import _bound_prompt_versions
 
@@ -4456,6 +4456,15 @@ def _execute_run(
     from pipeline.config import confidence_profile_name
 
     trace_metadata["confidence_profile"] = confidence_profile_name()
+    # Active prompt set (llm/prompt_sets/catalog.yaml), so an A/B result set says
+    # which prompts produced it.
+    from llm.prompt_sets import active_prompt_set, prompt_ids
+
+    from llm.prompts import prompt_source
+
+    trace_metadata["prompt_set"] = active_prompt_set()
+    trace_metadata["prompt_source"] = prompt_source()
+    trace_metadata["prompt_ids"] = prompt_ids()
     if oracle_routing and ground_truth:
         _warn_oracle_routing_once(run_id)
     public_gt = _public_ground_truth(ground_truth)

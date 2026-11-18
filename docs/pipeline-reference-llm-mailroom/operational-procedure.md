@@ -67,7 +67,7 @@ Profile `calibrated_v1` (2026-11-17; `MAILROOM_CONFIDENCE_PROFILE=legacy_v0` res
 
 | Class              | High |  Low | Judge-band high | Notes |
 | ------------------ | ---: | ---: | --------------: | :---- |
-| `contract`         | 0.95 | 0.90 |            0.97 | |
+| `contract`         | 0.98 | 0.90 |            0.97 | |
 | `merger_agreement` | 0.98 | 0.90 |            0.90 | empty judge band; `arbiter_retry_max` 1, `judge_max_passes` 2; `auto_archive: false` (every merger goes to a person) |
 | `insurance_claim`  | 0.95 | 0.90 |            0.97 | |
 | `corporate_record` | 0.95 | 0.86 |            0.94 | |

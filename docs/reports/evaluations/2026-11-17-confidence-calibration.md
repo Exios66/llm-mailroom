@@ -27,7 +27,7 @@ Changes (all in `confidence`, all per class):
 |:---|:---|--:|--:|:---|
 | insurance_claim | `high` | 0.98 | 0.95 | **solid**: 0 class errors in 1,100 predictions, 266 of them at 0.95 |
 | corporate_record | `high` | 0.96 | 0.95 | **solid**: 0 class errors in 353 predictions, 208 at 0.95 |
-| contract | `high` | 0.98 | 0.95 | **moderate**: see below; the one to watch |
+| contract | `high` | 0.98 | 0.98 (kept) | **tested and not adopted**: 0.95 would triple held-out wrong-class archives (3 → 9); see below |
 | merger_agreement | `auto_archive` | (true) | false | **solid**: 0 correct archives in 155 merger document-runs |
 | merger_agreement | `judge_band_high` | 0.97 | 0.90 (= `low`, empty band) | follows from `auto_archive: false` |
 | merger_agreement | `arbiter_retry_max` / `judge_max_passes` | 2 / 3 | 1 / 2 | moderate; matches the sandbox production slice |
@@ -93,8 +93,8 @@ Pooled, 0.95 looks weak. Split by the class the sorter predicted, which is what 
 | merger_agreement | 152 | 9 (+2 at 0.96) | 0 | 0 |
 | unknown | 34 | | all wrong (routed to a person already) | |
 
-So the 0.95 errors are one pattern: indentures and rights instruments called contracts (89 of
-the 100; the rest are misfiled emails and articles). The sorter's `high` above 0.95 buys nothing for insurance and
+So the 0.95 errors are one pattern: indentures and rights instruments called contracts (96 of
+the 100 are corporate records; the other 4 are emails). The sorter's `high` above 0.95 buys nothing for insurance and
 corporate records, and costs a retry, a reviewer call and sometimes a person.
 
 **What the band costs, end to end.** Lane A was simulated on the 323-document held-out test set by
@@ -107,20 +107,20 @@ same answer, which the quantisation makes likely):
 |:---|--:|--:|--:|--:|
 | legacy_v0 | 280 | 3 | 8 | 32 |
 | insurance + corporate at 0.95 | 294 | 3 | 8 | 18 |
-| calibrated_v1 (contract at 0.95 too) | 310 | 9 | 4 | 0 |
+| contract at 0.95 too (tested, not adopted) | 310 | 9 | 4 | 0 |
 
-**Contract is the judgement call.** On the old sorter prompt, contract at 0.95 lets 6 more
-indentures through as contracts (3 → 9 wrong of 323). The current sorter prompt
-(`sorter_condensed_v5`, the vendored default) fixes that pattern: on the 275-document prime sample
-it fixed all 87 corporate→contract errors and broke none
-(`reports/sorter-handoff/sorter-condensed-v1-qwen-train-prime-sample.compare.json`; v5 adds one
-corporate rule). The studies that ran on condensed v5 with contract at 0.95 (autoresearch v1 and
-v2, 100 documents, each run twice, and the ladder's E3 hold-out, 45 documents) archived no document
-under a wrong class. Against that: the old threshold sent about a third of correct contracts to a
-person (18 of 59 in the simulation), with the reviewer's own 0.95 as the only reason. So 0.95 is
-adopted, rated moderate, and the next real run must report the contract wrong-class rate. If an
-indenture slips through, put contract back to 0.98 (or use the legacy profile) until the sorter or
-a Decisions reviewer handles it.
+**Contract stays at 0.98.** The simulation says what moving it to 0.95 buys and costs: it removes
+the person-not-needed reviews (18 → 0, about a third of correct contracts) but lets 6 more
+indentures through as contracts (3 → 9 wrong of 323 held-out documents). The one mitigating fact is
+that the current sorter prompt (`sorter_condensed_v5`) fixed that pattern on the 275-document prime
+sample (all 87 corporate→contract errors fixed, none broken;
+`reports/sorter-handoff/sorter-condensed-v1-qwen-train-prime-sample.compare.json`), but that
+evidence is in-sample for the prompt (v1 measured, v5 adds one corporate rule) and the held-out test
+split has not been re-run on v5. The autoresearch and ladder studies that archived no wrong class
+ran at 0.95 on small samples (100 and 45 documents) and cannot rule out a few percent. A wrong-class
+archive is worse than an unneeded review, so the cost of keeping 0.98 is accepted until a v5 run on
+the test split shows no indenture slipping through; then contract `high` can move to 0.95 in one
+line (`legacy_v0` is not needed for that).
 
 **Merger `high` stays 0.98** (thin: 11 predictions below 0.98, none wrong). It matters little now:
 every merger reaches a person anyway (§3).
@@ -210,5 +210,5 @@ merger is not scored as a stage miss.
   on judge calibration, #242); review-queue weights (no reviewer outcome data yet).
 - **Stage metrics from earlier runs** counted a parked merger as a stage miss; they are not comparable
   with runs scored after this change for that class.
-- **First real run must report:** contract wrong-class archives (the moderate change), review rate
+- **First real run must report:** review rate
   per class against legacy_v0 on the same draw, and merger tokens per document.

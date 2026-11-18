@@ -453,7 +453,7 @@ mailroom/
 │   ├── agents/          # Specialist agents (Sorter, Contract, Corp Records, Judge, …)
 │   ├── langchain_agents/# Vendored LangChain agents (Sorter, Contracts Specialist) originally from llm-entity-extraction (now standalone)
 │   ├── graph/           # LangGraph state machine: nodes, routing, state
-│   ├── llm/             # Provider-agnostic LLM client, retry, Langfuse-managed prompts
+│   ├── llm/             # Provider-agnostic LLM client, retry, repo prompt sets (Langfuse opt-in)
 │   ├── schemas/         # Pydantic models: manifest, matter, documents, audit
 │   ├── pipeline/        # Watcher, filesystem bins, ops monitor
 │   ├── storage/         # SQLite/Postgres: catalog CRUD, audit log
@@ -558,7 +558,7 @@ All LLM calls go through `retry_chat_completion` (`llm/retry.py`): transient fai
 
 ### Prompt Management
 
-Every agent's system prompt is a **Langfuse-managed prompt** (`mailroom-<agent_name>`, type `text`, `production` label) — versioned, editable without a deploy, and linked to every generation in the trace UI.
+Every agent's system prompt ships in the repo (`src/llm/prompt_sets/catalog.yaml`, default set `deploy_v1`), and that is what production serves: the mailroom does not depend on Langfuse or any other service for its prompts. Langfuse prompt management (`mailroom-<agent_name>`, type `text`, `production` label) is an explicit opt-in with `MAILROOM_PROMPT_SOURCE=langfuse`, which lets a managed copy override the repo text and links it to every generation in the trace UI.
 
 ```bash
 # Push the local prompt templates to Langfuse (idempotent: only new versions on change)
@@ -569,7 +569,7 @@ PYTHONPATH=src python src/scripts/sync_prompts.py --agent sorter
 
 The code ships the same templates as fallbacks (`llm/prompts.py`): if Langfuse is disabled or unreachable, the pipeline runs identically on the local defaults. The `json_object` response-format boilerplate stays hardcoded — some providers require the literal token `json` in the messages.
 
-Vendored LangChain prompt *history* stays in `PROMPT_VERSIONS` (`sorter_v0…v14`, `contracts_specialist_v1…v33`) so eval loops can pin one version per experiment. Production is different: **sorter_condensed_v5** for classify (the token-budgeted condensed sorter), and sandbox / eval-environment **frozen v1** stems for every extract specialist (`llm/frozen_v1/`, `_bound_prompt_versions`). Mailroom wrappers resolve both through `get_managed_prompt` (`mailroom-<agent>`, `production` label) so LangGraph classify/extract nodes share the Langfuse surface.
+Vendored LangChain prompt *history* stays in `PROMPT_VERSIONS` (`sorter_v0…v14`, `contracts_specialist_v1…v33`) so eval loops can pin one version per experiment. Production is different: **sorter_condensed_v5** for classify (the token-budgeted condensed sorter), and sandbox / eval-environment **frozen v1** stems for every extract specialist (`llm/frozen_v1/`, `_bound_prompt_versions`). Mailroom wrappers resolve both through `get_managed_prompt`, which serves the repo prompt unless `MAILROOM_PROMPT_SOURCE=langfuse` opts in to the Langfuse `mailroom-<agent>` `production` override.
 
 ### Observability
 
@@ -628,7 +628,7 @@ Field scoring fires before any LLM judge — cheap, reproducible, zero API cost.
 
 1. **Deterministic field scoring** fires on every grounded extraction — no LLM call, instant.
 2. **Classification + extraction guards** clamp bad output below routing thresholds.
-3. **Lane B judge** (`judge_verify`) fires on the ambiguous band (`low ≤ confidence < judge_band_high`) — most documents skip it. With the opt-in `judge_rejudge_retry: true` (off by default), a retry whose earlier attempt was judged is also judged again while `judge_pass_count < judge_max_passes`. Every extraction attempt is recorded with its verdict in `extraction_attempt_history` (result and manifest); the opt-in `keep_best_attempt: true` (off by default) makes `compile_report` and the review handoff select the best-judged attempt. Archive selection retains the latest attempt when the selected earlier payload is still unsure or below the coverage floor (`earlier_attempt_requires_review`).
+3. **Lane B judge** (`judge_verify`) fires on the ambiguous band (`low ≤ confidence < judge_band_high`) — most documents skip it. With the opt-in `judge_rejudge_retry: true` (off by default), a retry whose earlier attempt was judged is also judged again while `judge_pass_count < judge_max_passes`. Every extraction attempt is recorded with its verdict in `extraction_attempt_history` (result and manifest); the opt-in `keep_best_attempt: true` (off by default) makes `compile_report` and the review handoff select the best-judged attempt. An unjudged latest retry that passed the gate is kept over any judged earlier attempt, even a `complete` one, and archive selection retains the latest attempt when the selected earlier payload is still unsure or below the coverage floor (`earlier_attempt_requires_review`).
 4. **Pipeline-result generation** emits the `pipeline-result` output consumed by two independent Langfuse evaluators.
 5. **Two live evaluators** score the trace independently: `mailroom-pipeline-judge` (verdict) and `mailroom-pipeline-quality` (numeric).
 
@@ -868,7 +868,7 @@ PYTHONPATH=src python src/scripts/sync_langfuse_logs.py --since 24h
 
 </details>
 
-The-Mailroom Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)) needs this API reachable as `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` + `MAILROOM_PIPELINE_API_PREFIX=/v1` (Inbox **Queue a document** → `POST /v1/upload`; REVIEW → `POST /v1/review/{doc_id}/resolve`). Local: `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build`. Hosted pair (producer Space + Observatory floor): [`deploy/space/PAIRING.md`](deploy/space/PAIRING.md). Live Observatory: [`Lucius-Morningstar/mailroom-observatory`](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory). A Space floor cannot use `127.0.0.1`.
+The-Mailroom Observatory ([PR #30](https://github.com/Exios66/The-Mailroom/pull/30)) needs this API reachable as `MAILROOM_PIPELINE_URL` + `MAILROOM_PIPELINE_TOKEN` + `MAILROOM_PIPELINE_API_PREFIX=/v1` (Inbox **Queue a document** → `POST /v1/upload`; REVIEW → `POST /v1/review/{doc_id}/resolve`). Local: `docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build`. That producer refuses uploads with `503` until the sorter's LLM provider resolves and passes the spend guardrail (`GET /health` names the failing check); set `MAILROOM_UPLOAD_REQUIRE_PROVIDER=0` to queue anyway (see [configuration](docs/pipeline-reference-llm-mailroom/configuration.md)). Hosted pair (producer Space + Observatory floor): [`deploy/space/PAIRING.md`](deploy/space/PAIRING.md). Live Observatory: [`Lucius-Morningstar/mailroom-observatory`](https://huggingface.co/spaces/Lucius-Morningstar/mailroom-observatory). A Space floor cannot use `127.0.0.1`.
 
 For fully local/offline serving, see [Docker deployment](docs/pipeline-reference-llm-mailroom/deployment/docker-deployment.md), [Modal + vLLM](docs/pipeline-reference-llm-mailroom/deployment/modal-vllm.md), and [Local Model Cutover](#local-model-cutover).
 

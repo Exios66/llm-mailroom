@@ -1000,7 +1000,7 @@
     "conflict_threshold": 0.3,
     "by_class": {
       "contract": {
-        "high": 0.95,
+        "high": 0.98,
         "low": 0.9,
         "judge_band_high": 0.97
       },

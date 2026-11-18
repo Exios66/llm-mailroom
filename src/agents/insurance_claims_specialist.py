@@ -2,6 +2,7 @@ import structlog
 from agents.base import BaseAgent
 from langchain_agents.specialist_agents import INSURANCE_CLAIMS_SCHEMA
 from llm.frozen_v1 import load_specialist_v1
+from llm.prompt_sets import served_prompt
 from llm.prompts import get_managed_prompt
 
 logger = structlog.get_logger(__name__)
@@ -46,7 +47,7 @@ class InsuranceClaimsSpecialist(BaseAgent):
     agent_name = "insurance_claims_specialist"
 
     def system_prompt(self) -> str:
-        text, self._langfuse_prompt = get_managed_prompt(self.agent_name, SYSTEM_PROMPT)
+        text, self._langfuse_prompt = get_managed_prompt(*served_prompt(self.agent_name, SYSTEM_PROMPT))
         return text
 
     def extract(
