@@ -745,6 +745,9 @@ def manifest_lock():
     Fail-safe where ``fcntl`` is missing (Windows) or the lock file cannot be opened: the update still
     runs under the in-process RLock, with one ``manifest_file_lock_unavailable`` warning, because
     manifest marks are best-effort bookkeeping and must never stop a pipeline run. Re-entrant per thread.
+
+    Only callers that go through this lock (``update_manifest``) are serialized against each other. Code
+    that still does a plain ``load_manifest``/``save_manifest`` can overwrite a locked update.
     """
     global _manifest_lock_depth
     with _manifest_rlock:
