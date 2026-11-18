@@ -33,7 +33,7 @@ sets:
       corporate_records_specialist:
         file: deploy_v1/corporate_records_specialist.txt
         parent: sandbox corporate_records_specialist_condensed_v1 (adopted, mean +0.075 vs frozen)
-        fixes: effective-date fallback to adoption/filing date; jurisdiction of organisation; execution-block signatories; long-document anchors
+        fixes: effective-date fallback to adoption/filing date; jurisdiction of organisation; execution-block signatories; long-document anchors; filing_number read when printed on powers of attorney, resolutions and officer certificates (interim labels carry a printed number for 11 of them; still null for rights, indenture, subsidiary list)
         status: candidate
       insurance_claims_specialist:
         file: deploy_v1/insurance_claims_specialist.txt

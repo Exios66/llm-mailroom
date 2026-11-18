@@ -230,3 +230,29 @@ def test_invalid_by_agent_pin_warns(monkeypatch):
     _taxonomy(monkeypatch, {"active": "deploy_v1", "by_agent": {"judge": "nope"}})
     assert PS.prompt_id("judge") == "judge@deploy_v1"
     assert "prompt_set_by_agent_ignored" in calls
+
+
+def _corporate_record_line(text: str, prefix: str) -> str:
+    return next(line for line in text.splitlines() if line.startswith(prefix))
+
+
+def test_corporate_filing_number_is_read_when_printed_on_poa_resolution_and_officer_certificate():
+    # Interim corporate_record labels: a printed file/filing/document number is labelled for
+    # powers_of_attorney (2 of 11 with a filing_number entry), board_resolution (4 of 22) and
+    # officer_certificate (5 of 22), so those lines defer to the printed-number rule.
+    text = PS.resolve("corporate_records_specialist", "deploy_v1")[1]
+    for prefix in ("- power of attorney", "- board/shareholder resolution", "- officer's/secretary's certificate"):
+        assert "filing_number null" not in _corporate_record_line(text, prefix), prefix
+    assert "filing_number only when an official filing/document number is printed" in text
+
+
+def test_corporate_filing_number_stays_null_where_labels_never_carry_one():
+    # rights_instrument 0 of 18, indenture 0 of 22, subsidiary_list 0 of 21 labelled values.
+    text = PS.resolve("corporate_records_specialist", "deploy_v1")[1]
+    for prefix in ("- rights plan", "- indenture", "- subsidiary list"):
+        assert "filing_number null" in _corporate_record_line(text, prefix), prefix
+
+
+def test_corporate_catalog_fixes_name_the_filing_number_change():
+    fixes = PS.catalog()["sets"]["deploy_v1"]["agents"]["corporate_records_specialist"]["fixes"]
+    assert "filing_number" in fixes

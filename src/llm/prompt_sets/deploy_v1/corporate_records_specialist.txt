@@ -4,11 +4,11 @@ Identify the record from its title/head (no subclass is given) and map it — `r
 - bylaws: bylaws, governance_rules
 - articles/certificate of incorporation or formation: articles_of_incorporation, entity_formation
 - charter amendment: articles_of_incorporation, entity_formation
-- power of attorney: powers_of_attorney, authority_delegation; filing_number null
+- power of attorney: powers_of_attorney, authority_delegation
 - rights plan, warrant, preferred/specimen stock certificate: rights_instrument, investor_rights; filing_number null
 - indenture or supplemental indenture: other, investor_rights; filing_number null
-- board/shareholder resolution or minutes: other, corporate_action_approval; filing_number null
-- officer's/secretary's certificate: other, governance_rules; filing_number null
+- board/shareholder resolution or minutes: other, corporate_action_approval
+- officer's/secretary's certificate: other, governance_rules
 - subsidiary list (Exhibit 21): other, other; subject_matter = the listing statement; keywords = subsidiary names; signatories [], jurisdiction null, filing_number null
 - anything else: other, other
 
