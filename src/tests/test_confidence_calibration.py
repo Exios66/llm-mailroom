@@ -407,3 +407,59 @@ def test_unknown_profile_stops_the_watcher_before_it_starts(monkeypatch, temp_ba
     monkeypatch.setenv(CONFIDENCE_PROFILE_ENV, "no_such_profile")
     with pytest.raises(ValueError, match="not a confidence profile"):
         Watcher().start()
+
+
+# ── review resolution of a parked policy-class document ───────────────────
+
+
+def _parked_merger(extracted):
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    before = DocumentManifest(
+        doc_id="merger-plan-1", matter_id="M", original_filename="m.txt",
+        stage=PipelineStage.REVIEW, doc_type="merger_agreement", extracted_data=extracted,
+    )
+    return before, before.model_copy(deep=True)
+
+
+def test_legacy_plain_approval_of_a_parked_merger_is_refused_not_looped():
+    """approved+resume re-extracts, `after_report` parks the merger again, and every click
+    would cost a full extraction. The request is refused and names the archiving ways."""
+    from pipeline.review_resolve import plan_resolution
+
+    before, manifest = _parked_merger({"parties": ["Acme"], "confidence": 0.9})
+    with pytest.raises(ValueError, match="never archived by a plain approval"):
+        plan_resolution(before=before, manifest=manifest, class_override={}, decision="approved")
+
+
+def test_structured_approval_of_a_parked_merger_archives_the_parked_fields():
+    from pipeline.review_resolve import plan_resolution
+
+    before, manifest = _parked_merger({"parties": ["Acme"], "confidence": 0.9})
+    plan = plan_resolution(
+        before=before, manifest=manifest, class_override={},
+        decision="approved", resolution="approve_as_is",
+    )
+    assert plan.route == "archive" and plan.extracted_data
+
+
+def test_legacy_approval_without_parked_fields_still_confirms_the_class():
+    from pipeline.review_resolve import plan_resolution
+
+    before, manifest = _parked_merger(None)
+    plan = plan_resolution(before=before, manifest=manifest, class_override={}, decision="approved")
+    assert plan.route == "reextract"
+
+
+def test_legacy_plain_approval_of_an_auto_archive_class_still_re_extracts():
+    from pipeline.review_resolve import plan_resolution
+    from schemas.manifest import DocumentManifest, PipelineStage
+
+    before = DocumentManifest(
+        doc_id="c-1", matter_id="M", original_filename="c.txt", stage=PipelineStage.REVIEW,
+        doc_type="contract", extracted_data={"parties": ["Acme"], "confidence": 0.9},
+    )
+    plan = plan_resolution(
+        before=before, manifest=before.model_copy(deep=True), class_override={}, decision="approved",
+    )
+    assert plan.route == "reextract"

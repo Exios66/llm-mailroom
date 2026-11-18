@@ -295,8 +295,10 @@ confidence:
   # `auto_archive` (per class, default true): false sends every document of the
   # class that would archive to a person instead (review cause
   # `class_requires_review`), after the report is compiled so the reviewer gets the
-  # draft. Fields a person applies or corrects archive; a plain class approval
-  # re-extracts, so the new draft parks again (graph/routing.py:after_report).
+  # draft. Fields a person applies or corrects archive; a class approval with no
+  # parked fields re-extracts, so the new draft parks again for review
+  # (graph/routing.py:after_report). A legacy approve+resume on parked fields is
+  # refused (pipeline/review_resolve.py:plan_resolution).
   by_class:
     contract:
       # Sorter `high` stays 0.98 on purpose. The sorter answers 0.95 on ~80% of contracts
@@ -314,7 +316,7 @@ confidence:
       # No merger extraction has met the quality bar in any study run (MAUD
       # accuracy ~0.10-0.15), so an archive is always a wrong archive. Park every
       # merger for a person and skip the judge loop (judge_band_high == low: empty
-      # band), which cost ~410k tokens per document without changing the outcome.
+      # band), which spent 23-50% of a merger run's tokens without changing the outcome.
       judge_band_high: 0.90
       arbiter_retry_max: 1
       judge_max_passes: 2

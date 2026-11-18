@@ -17,7 +17,7 @@ facts that decide everything else:
    two of those values is a switch, not a dial, so each threshold either sends a whole class
    one way or does nothing.
 2. **Within a class, the sorter's 0.95 is informative only for contracts.** Every other class
-   is 100% correct at 0.95, so `high` above 0.95 only adds a retry, a reviewer call and, when
+   is right at 0.95 (insurance and corporate 100%, correspondence 905 of 906), so `high` above 0.95 only adds a retry, a reviewer call and, when
    the reviewer also says 0.95, an unneeded human review. Extraction confidence does not
    predict extraction quality in any class.
 
@@ -28,9 +28,9 @@ Changes (all in `confidence`, all per class):
 | insurance_claim | `high` | 0.98 | 0.95 | **solid**: 0 class errors in 1,100 predictions, 266 of them at 0.95 |
 | corporate_record | `high` | 0.96 | 0.95 | **solid**: 0 class errors in 353 predictions, 208 at 0.95 |
 | contract | `high` | 0.98 | 0.98 (kept) | **tested and not adopted**: 0.95 would triple held-out wrong-class archives (3 → 9); see below |
-| merger_agreement | `auto_archive` | (true) | false | **solid**: 0 correct archives in 155 merger document-runs |
+| merger_agreement | `auto_archive` | (true) | false | **solid in direction, narrow in sample**: 0 correct archives in the 46 merger runs that archived (15 distinct documents; see §3) |
 | merger_agreement | `judge_band_high` | 0.97 | 0.90 (= `low`, empty band) | follows from `auto_archive: false` |
-| merger_agreement | `arbiter_retry_max` / `judge_max_passes` | 2 / 3 | 1 / 2 | moderate; matches the sandbox production slice |
+| merger_agreement | `arbiter_retry_max` / `judge_max_passes` | 2 / 3 | 1 / 2 | thin, and moot while mergers park; matches the sandbox production slice |
 
 Everything else is unchanged, and the report says why below. Nothing was fitted on fewer than
 about 100 documents per value, except where marked thin.
@@ -163,13 +163,19 @@ correspondence: moving them cannot be justified until the judge is calibrated, a
 was measured not to help.
 
 **Mergers always go to a person.** No merger extraction met the 0.90 bar in any run: 0 correct archives in
-155 merger document-runs across every v1/v2 round (46 wrong archives, 103 reviews, 6 crashes), MAUD
-accuracy about 0.10 to 0.15 (E3: 0.106 at about 410k tokens per document). An archive of a merger is therefore always a wrong archive (-1),
+155 merger document-runs across every v1/v2 round (46 wrong archives, 103 reviews, 6 crashes). Only
+15 distinct merger documents are behind them, and 75 of the 155 rows carry 0 tokens (v2 rounds 4 to 7
+never ran the merger specialist: 69 are tagged `wrong_class` reviews and 6 crashed), so the rows that
+really ran are 80 (46 wrong archives, 34 reviews). The conclusion needs only that none of the 46
+archives was correct; the per-run score files are on the sandbox branch
+`claude/project-thread-jvufxc`, not on its `main`. MAUD accuracy was about 0.10 to 0.15 (E3: 0.106 at
+about 410k tokens per document in total). An archive of a merger is therefore always a wrong archive (-1),
 a review costs -0.25. All 36 merger archives in the baseline table above were wrong, 22 of them never judged. With
-`auto_archive: false` a merger is extracted once, its report compiled, and the draft parked for a
+`auto_archive: false` a merger is extracted (a low-confidence or invalid extraction can still retry first, as for any class), its report compiled, and the draft parked for a
 person with the cause `class_requires_review`. Its judge band is emptied (band high = `low`), so
-the judge/arbiter loop that cost most of a run's tokens without changing the outcome no longer
-runs on confident extractions. Expected effect on the v2 draw: 14 wrong archives become reviews,
+the judge/arbiter loop (23% to 50% of a merger run's tokens in the autoresearch rounds, about 63k of
+192k tokens per document-run on average) no longer runs, and `_judge_can_review` skips it for any
+`auto_archive: false` class even if its band is widened. Expected effect on the v2 draw: 14 wrong archives become reviews,
 about +0.14 mean utility (the study's noise floor is 0.084). Mergers are the lowest-priority class,
 so a person handling them is the intended deploy behaviour until merger extraction improves.
 
@@ -184,22 +190,30 @@ the sample's confidence, so these checks prove wiring, not quality):
 
 | Check | calibrated_v1 | legacy_v0 |
 |:---|:---|:---|
-| `run_pilot.py --mock --dataset hf --per-class 2` (10 Hub documents) | 8 archived, 2 review (both mergers, cause `class_requires_review`), class accuracy 1.0 | 10 archived, 0 review |
+| `run_pilot.py --mock` (15 sample documents) | 12 archived, 3 review (the 3 mergers, cause `class_requires_review`), class accuracy 1.0 | 15 archived, 0 review, class accuracy 1.0 |
 | `run_experiment.py --dataset mailroom-fixtures --mock --baseline …` | pass, class accuracy 1.0 | pass, class accuracy 1.0 |
-| `src/tests/test_confidence_calibration.py` | 46 tests: profile selection, every changed value, legacy values verbatim, the sorter band per class, reviewer acceptance at 0.95, the merger judge band, the archive park, the cause, and a parked merger that a person approves archiving through `resume_from_review` (no loop) | covered by the same tests |
+| `src/tests/test_confidence_calibration.py` | 60 tests: profile selection, every changed value, legacy values verbatim, the sorter band per class, reviewer acceptance at 0.95, the merger judge band, the archive park, the cause, and a parked merger that a person approves archiving through `resume_from_review` (no loop) | covered by the same tests |
 
 Human-review interaction: a parked merger archives once a person applies or corrects its fields
 (`human_applied`). A plain class approval (`approved`) re-extracts, which is new model output, so it
 parks again for the person to approve the fields; it never loops without a person acting. The
-cost is that a person who only confirms the class reviews the merger twice. The `class_requires_review`
+cost is that a person who only confirms the class reviews the merger twice. The legacy
+`approved` + `resume` request on a merger that already has parked fields is refused (400) instead of
+re-extracting, because it would park the merger again on every click; the way to archive parked
+fields is `resolution=approve_as_is` (or `correct`, or `disposition=complete`). The-Mailroom's Approve
+button must use one of those for mergers (unverified; that repo is not in this checkout). The `class_requires_review`
 cause is added only when no other cause explains the park, so it never hides a failure. Pilot and
 experiment stage checks expect `review` for such a class (`policy_expected_stage`), so a parked
-merger is not scored as a stage miss.
+merger is not scored as a stage miss. The limitation: any merger that ends in `review` now scores
+as stage-correct, including one parked by a sorter-low or crash path; only the cause
+(`class_requires_review`) tells them apart, and the smoke script still requires `extract` to have
+run. Merger parks also accumulate in the review tray (cause weight 1.0 puts them in the low tier,
+72 h SLA, and a backlog of 20 trips the ops `review_backlog` rule), so deploy notes should expect it.
 
 ## 5. Not verified, and what to measure next
 
 - **No real-model run.** OpenRouter credits are exhausted, so every number is from runs made before
-  today. The sorter and reviewer data used the older sorter prompt; the studies used condensed v5.
+  today. The sorter and reviewer data used the older sorter prompt; the studies used the condensed prompts of their day (the contract evidence is for condensed v1, v5 adds one corporate rule).
 - **New prompts move confidence.** The deploy_v1 / prompt-alignment prompts may shift what the
   specialists and the sorter report. Refit after they land: re-run the sorter handoff export
   (`scripts/export_sorter_handoff.py` in the sandbox) and the routing audit

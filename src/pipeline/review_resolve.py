@@ -753,7 +753,9 @@ def plan_resolution(
 
     Legacy ``decision``/``disposition`` requests (no ``resolution``) map as:
     approved+resume -> re-extract (recorded ``reclassify`` if the class was
-    overridden, else ``approve_as_is``); rejected+resume -> ``reject``
+    overridden, else ``approve_as_is``; refused for a class with
+    ``auto_archive: false`` that has parked fields, since a re-extraction would
+    only park it again); rejected+resume -> ``reject``
     (``reject_reason`` optional); approved+complete -> archive the posted
     ``extracted_data`` (a FULL replacement, recorded ``correct`` with the changed
     keys as ``field_corrections``) or, with none posted, the parked fields
@@ -809,6 +811,20 @@ def plan_resolution(
             route = "archive"
         else:
             resolution = "reclassify" if classification_changed else "approve_as_is"
+            from pipeline.config import class_auto_archives
+
+            if (
+                resolution == "approve_as_is"
+                and parked
+                and not class_auto_archives(manifest.doc_type)
+            ):
+                # A re-extraction would only park the same class again
+                # (`after_report`), and every click would cost a full extraction.
+                raise ValueError(
+                    f"{manifest.doc_type} documents are never archived by a plain approval "
+                    "that re-extracts: send resolution=approve_as_is (archives the parked "
+                    "fields), resolution=correct, or disposition=complete"
+                )
     else:
         resolution = str(resolution).strip().lower()
         if resolution not in RESOLUTIONS:

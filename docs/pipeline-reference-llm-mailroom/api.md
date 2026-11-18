@@ -232,7 +232,7 @@ Resolve a document on the REVIEW / RECONSIDER siding. Accepts **JSON** (The-Mail
 
 #### Explicit resolutions
 
-A request with a `resolution` is checked before anything moves. Any violation below returns `400` with the reason. Without a `resolution` the legacy `decision` + `disposition` mapping applies (`approved` + `complete` is `correct` or `approve_as_is`, `approved` + `resume` re-extracts, `rejected` rejects).
+A request with a `resolution` is checked before anything moves. Any violation below returns `400` with the reason. Without a `resolution` the legacy `decision` + `disposition` mapping applies (`approved` + `complete` is `correct` or `approve_as_is`, `approved` + `resume` re-extracts, `rejected` rejects). A class with `auto_archive: false` (`merger_agreement`) refuses `approved` + `resume` once it has parked fields, because the re-extraction would park it again: use `resolution=approve_as_is`, `correct` or `disposition=complete`.
 
 | `resolution`    | Required                                                        | Refused                                                                                   | Effect |
 | --------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------ |

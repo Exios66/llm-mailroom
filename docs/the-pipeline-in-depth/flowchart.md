@@ -154,6 +154,7 @@ flowchart TD
     end
 
     N_REPORT -- "_report assembled" --> N_CATALOG
+    N_REPORT -- "auto_archive false (merger_agreement), no human-applied fields" --> N_HUMAN
     N_REPORT -- "report_error or no _report" --> N_HUMAN
     N_CATALOG --> N_ARCHIVE
     N_ARCHIVE --> END_OK
