@@ -367,6 +367,32 @@ _LATEST_ROW_RES: tuple[re.Pattern[str], ...] = (
 )
 
 
+#: The pyproject comment that describes an interim commit pin: ``Interim pin 93eedd8 (<what
+#: it carries>; untagged, not released)`` (the "untagged, not released" sentence may wrap onto
+#: the next comment line, and older blocks end ", unreleased"). Once a release is tagged on the
+#: pinned commit this claim is false, so the bump rewrites it (#240).
+_INTERIM_NOTE_RE = re.compile(
+    r"Interim pin (?P<sha>[0-9a-f]{7}) \((?P<body>[^()]*?)[;,]\s+"
+    r"(?:untagged,\s+(?:#\s+)?not released|unreleased)\)"
+)
+
+
+def _retire_interim_note(text: str, sha: str, release: str) -> str:
+    """Rewrite the interim-pin comment of commit ``sha`` once ``release`` is tagged on it.
+
+    ``Interim pin 93eedd8 (<body>; untagged, not released)`` becomes
+    ``v0.30.0 release commit 93eedd8 (<body>)``. Only the note for ``sha`` changes: other
+    interim blocks describe other commits and are history.
+    """
+
+    def repl(m: re.Match[str]) -> str:
+        if m.group("sha") != sha[:7]:
+            return m.group(0)
+        return f"{release} release commit {m.group('sha')} ({m.group('body')})"
+
+    return _INTERIM_NOTE_RE.sub(repl, text)
+
+
 def _advance_latest(text: str, tag: str, today: str) -> str:
     """Update recognized latest-release rows with ``tag`` and the supplied date.
 
@@ -405,8 +431,10 @@ def _rewrite_text(text: str, tag: str, *, today: str | None = None, release: str
     badge labels and commit links, leaving version assertions and test names
     unchanged; release tags also update those version references.
     ``release`` supplies a version label for release prose and latest-release
-    rows, including when ``tag`` is a commit. An invalid nonempty ``release``
-    raises ValueError. ``today`` supplies the date for advanced latest-release
+    rows, including when ``tag`` is a commit. When ``tag`` is a commit and
+    ``release`` is given, the ``pyproject.toml`` "Interim pin <sha> (... untagged,
+    not released)" comment for that commit is rewritten to a release-commit note.
+    An invalid nonempty ``release`` raises ValueError. ``today`` supplies the date for advanced latest-release
     rows; if omitted or empty, the current UTC date is used.
     Text without recognized patterns is returned unchanged. No files are written.
     """
@@ -471,6 +499,8 @@ def _rewrite_text(text: str, tag: str, *, today: str | None = None, release: str
     # ``release`` names the release a commit pin belongs to (``v0.28.0`` for its
     # commit); prose that states a version shows it instead of a bare SHA.
     version_label = _normalize_tag(release) if release else label
+    if is_sha(tag) and release:
+        out = _retire_interim_note(out, tag, version_label)
     note = f" (the Dojo {version_label} release commit)" if is_sha(tag) and release else ""
     # README: "Dojo pin, **1cd4aba** (the Dojo v0.27.2 release commit)." The short
     # SHA form and its parenthetical go stale on every bump; rewrite both.
