@@ -140,7 +140,8 @@ def test_live_prompts_omit_t0_t1_registry_ids():
     for agent, text in templates.items():
         priming = ()
         try:
-            priming = get_prompt(agent).priming
+            # A prompt-set file ("<agent>--<set>") carries its agent's allowed priming.
+            priming = get_prompt(agent.split("--", 1)[0]).priming
         except KeyError:
             pass
         for name in denylist:

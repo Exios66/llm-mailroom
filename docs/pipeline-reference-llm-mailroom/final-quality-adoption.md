@@ -20,7 +20,7 @@ corrected published `v0.23.1` through the normal pin workflow, from source
 `04ac152a611606e687faa8b78528f3373f4c43a2`. Source suites, isolated subprocesses
 and wheel-only scoring/import probes verify their named boundaries. They are
 not a complete installed-producer or live-provider readiness claim. A real
-wheel smoke test now verifies that its own taxonomy and all 18 frozen prompt
+wheel smoke test now verifies that its own taxonomy and all 18 agent prompt
 templates load without checkout fallbacks; source-only scripts and LegalBench
 workflows remain outside the wheel. Final packaging evidence must distinguish
 those limits.
