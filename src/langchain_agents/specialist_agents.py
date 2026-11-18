@@ -59,11 +59,29 @@ def failed_chunk_ceiling(agent_name: str) -> float:
         return _FAILED_CHUNK_FALLBACK_CEILING
 
 
-def finalize_chunked_merge(merged: dict, *, agent_name: str, n_chunks: int, failed: int) -> dict:
+def window_confidence(result: dict | None) -> float | None:
+    """A window's stated confidence for the ``_chunk_confidences`` record; ``None`` if it has none."""
+    value = (result or {}).get("confidence")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return round(float(value), 4)
+    return None
+
+
+def finalize_chunked_merge(
+    merged: dict,
+    *,
+    agent_name: str,
+    n_chunks: int,
+    failed: int,
+    window_confidences: list[float | None] | None = None,
+) -> dict:
     """Stamp chunk bookkeeping on a merged extraction and cap it on any loss.
 
-    ``_n_chunks`` / ``_failed_chunks`` are underscore (non-public) keys: field
-    scoring, the hollow check and reconsideration all ignore them. When at
+    ``_n_chunks`` / ``_failed_chunks`` / ``_chunk_confidences`` are underscore
+    (non-public) keys: field scoring, the hollow check and reconsideration all
+    ignore them. ``_chunk_confidences`` (#255) holds each window's own confidence
+    in document order (``None`` for a lost window), recorded before the merge
+    takes the minimum. When at
     least one window failed (parse error / non-transient exception), the
     merged confidence is capped strictly below the class ``low`` threshold so
     a partial extraction is retried or escalated, never auto-archived.
@@ -71,6 +89,8 @@ def finalize_chunked_merge(merged: dict, *, agent_name: str, n_chunks: int, fail
     """
     merged["_n_chunks"] = n_chunks
     merged["_failed_chunks"] = failed
+    if window_confidences is not None:
+        merged["_chunk_confidences"] = list(window_confidences)
     if failed:
         ceiling = failed_chunk_ceiling(agent_name)
         current = merged.get("confidence")
@@ -804,6 +824,7 @@ class _SpecialistBase(BaseAgent):
         if len(chunks) == 1:
             return self.extract(doc_text, pages=pages)
         windows: list[tuple[dict, str | None]] = []
+        window_confidences: list[float | None] = []
         total_usage: dict | None = None
         failed = 0
         for index, chunk in enumerate(chunks, start=1):
@@ -831,15 +852,18 @@ class _SpecialistBase(BaseAgent):
                 logger.warning("chunk_call_failed", agent=self.agent_name,
                                chunk=index, total=len(chunks), error=str(exc)[:200])
                 failed += 1
+                window_confidences.append(None)
                 continue
             if self._last_usage:
                 total_usage = self._sum_usage(total_usage, self._last_usage)
             if result.get("_parse_error"):
                 failed += 1
+                window_confidences.append(None)
                 continue
             if self._confidence_missing(result):
                 result["confidence"] = round(self._evidence_confidence(result), 4)
             result = normalize_extraction(result, self.schema)
+            window_confidences.append(window_confidence(result))
             windows.append((result, chunk))
         # Merge policy (taxonomy ``chunking.merge``): ``union`` (default) or ``evidence``.
         merged = merge_chunk_windows(windows, agent_name=self.agent_name)
@@ -850,9 +874,18 @@ class _SpecialistBase(BaseAgent):
         if merged is None:
             # Every window failed: keep the bookkeeping so routing and the
             # review causes still see a chunk failure (#249).
-            return {"_parse_error": True, "_n_chunks": len(chunks), "_failed_chunks": failed}
+            return {
+                "_parse_error": True,
+                "_n_chunks": len(chunks),
+                "_failed_chunks": failed,
+                "_chunk_confidences": window_confidences,
+            }
         return finalize_chunked_merge(
-            merged, agent_name=self.agent_name, n_chunks=len(chunks), failed=failed
+            merged,
+            agent_name=self.agent_name,
+            n_chunks=len(chunks),
+            failed=failed,
+            window_confidences=window_confidences,
         )
 
     @staticmethod
@@ -974,8 +1007,20 @@ class _SpecialistBase(BaseAgent):
         return normalize_extraction(result, self.schema)
 
     def _confidence_missing(self, result: dict) -> bool:
+        """True only when the model did not state a confidence (#279).
+
+        ``result`` is the raw model output, before ``normalize_extraction`` fills schema
+        defaults, so an absent key or a null means "not emitted". A stated 0.0 is the
+        model's answer and stays: replacing it with the evidence share would promote an
+        extraction the model called worthless, possibly above the judge band. A boolean is
+        not a confidence either way, so it is never promoted: ``False`` is read as a stated
+        0.0, and ``True`` as missing (the evidence share is the honest bound for it).
+        """
         value = result.get("confidence")
-        return value is None or (isinstance(value, (int, float)) and value == 0.0)
+        if value is False:
+            result["confidence"] = 0.0
+            return False
+        return value is None or value is True
 
     def _evidence_confidence(self, result: dict) -> float:
         """Share of schema fields actually found in the extraction (0.0-1.0).

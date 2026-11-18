@@ -46,7 +46,8 @@ class ContractExtraction(BaseModel):
     contract_value: str | None = None
     payment_terms: str | None = None
     territory: str | None = None
-    # Closed label: one of the 25 CUAD family keys or "other".
+    # Closed label: one of the 25 CUAD family keys or "other". Vocabulary: taxonomy.yaml
+    # doc_classes[contract].label_vocabularies (#285); an off-list value routes to review.
     cuad_family: str | None = None
     # Present CUAD categories as "<label>: <evidence>" lines.
     cuad_clauses: list[str] = Field(default_factory=list)
@@ -80,6 +81,7 @@ class MergerAgreementExtraction(BaseModel):
     financial_advisors: list[str] = Field(default_factory=list)
     legal_counsel: list[str] = Field(default_factory=list)
     # Closed label: all_cash | all_stock | mixed_cash_stock | mixed_cash_stock_election | other.
+    # Vocabulary: taxonomy.yaml doc_classes[merger_agreement].label_vocabularies (#285).
     merger_consideration: str | None = None
     maud_clauses: list[str] = Field(default_factory=list)
     # Closed label: effect_merger | amend_merger | other (plan_of_merger is effect_merger).
@@ -107,11 +109,11 @@ class CorrespondenceExtraction(BaseModel):
     sender: str | None = None
     recipient: str | None = None
     additional_recipients: list[str] = Field(default_factory=list)
-    communication_type: str | None = None  # closed label: email, letter, memo, notice, demand, attorney_demand, press_release, meeting_request, other
+    communication_type: str | None = None  # closed label: email, letter, memo, notice, demand, attorney_demand, press_release, meeting_request, other (taxonomy.yaml doc_classes[correspondence].label_vocabularies, #285)
     communication_date: str | None = None
     demand_amount: float | None = None
     action_items: list[str] = Field(default_factory=list)  # capped ≤3
-    urgency: str | None = None  # closed label: routine, time-sensitive, urgent, critical (never null)
+    urgency: str | None = None  # closed label: routine, time-sensitive, urgent, critical (never null) (taxonomy.yaml doc_classes[correspondence].label_vocabularies, #285)
     intent: str | None = None
     subject_matter: str | None = None
     keywords: list[str] = Field(default_factory=list)
@@ -129,7 +131,7 @@ class InsuranceClaimExtraction(BaseModel):
     # 26–34 % on SAND-042 (auto 0/81, carrier 0/30 over SAND-032).
     insurer: str | None = None
     insured_party: str | None = None
-    claim_type: str | None = None  # closed label (product line, Dojo INSURANCE_PRODUCT_LINES): auto, property, liability, health, life, workers_comp, other; a CMS row is health (its table token scores 0 here)
+    claim_type: str | None = None  # closed label (product line, Dojo INSURANCE_PRODUCT_LINES): auto, property, liability, health, life, workers_comp, other; a CMS row is health (its table token scores 0 here); vocabulary: taxonomy.yaml doc_classes[insurance_claim].label_vocabularies, #285
     date_of_loss: str | None = None
     date_filed: str | None = None
     claimed_amount: float | None = None
@@ -137,7 +139,7 @@ class InsuranceClaimExtraction(BaseModel):
     # (production HF pilot parked REVIEW when this field was a required str).
     adjuster: str | None = None
     damages_description: str | None = None
-    coverage_determination: str | None = None  # closed label: approved, denied, partial, pending
+    coverage_determination: str | None = None  # closed label: approved, denied, partial, pending (taxonomy.yaml doc_classes[insurance_claim].label_vocabularies, #285)
     denial_reasons: list[str] = Field(default_factory=list)
     # On a CMS row: identifier references ("provider NPI <npi>", "NDC <ndc>", ...), Dojo cms_doc_ref.
     supporting_documents: list[str] = Field(default_factory=list)

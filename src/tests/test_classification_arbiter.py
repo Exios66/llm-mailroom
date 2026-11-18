@@ -134,21 +134,76 @@ def test_reviewer_config_is_unchanged_by_default():
     assert "arbiter_cutoff" not in (get_reviewer_config()["by_class"].get("contract") or {})
 
 
-def test_long_document_is_never_arbitrated_from_an_excerpt(monkeypatch):
-    """Past the arbiter's input cap the document goes to a person without a model call."""
+def _agent_with(monkeypatch, replies, window_chars):
+    """An arbiter whose model answers ``replies`` in order, reading ``window_chars`` per call."""
     agent = arbiter_mod.ClassificationArbiterAgent.__new__(arbiter_mod.ClassificationArbiterAgent)
-    monkeypatch.setattr(agent, "_call_structured", lambda *a: pytest.fail("model called on an excerpt"),
-                        raising=False)
-    text = "x" * (arbiter_mod.CLASSIFICATION_SOURCE_CHARS + 1)
+    seen = []
+
+    def call(message, schema):
+        seen.append(message)
+        return dict(replies[len(seen) - 1])
+
+    monkeypatch.setattr(agent, "_call_structured", call, raising=False)
+    monkeypatch.setattr(agent, "_configured_max_input_chars", lambda: window_chars, raising=False)
+    return agent, seen
+
+
+def test_long_document_is_arbitrated_from_every_window(monkeypatch):
+    """Past one window the arbiter reads all of the text; it no longer hands a long document to a person unread."""
+    yes = {"decision": "accept_sorter", "confidence": 0.9, "reasoning": "FNOL"}
+    paragraphs = [f"Paragraph {i} " + "word " * 200 for i in range(20)]
+    text = "\n\n".join(paragraphs)
+    agent, seen = _agent_with(monkeypatch, [yes, {**yes, "confidence": 0.7}, yes, yes, yes, yes, yes, yes], 4000)
+    out = agent.arbitrate_classification(sorter={}, reviewer={}, causes=[], labels=["contract"], doc_text=text)
+    assert len(seen) > 1
+    assert all(p in "".join(seen) for p in paragraphs)  # every paragraph reached some window
+    assert out["decision"] == "accept_sorter"
+    assert out["confidence"] == 0.7  # the least confident window
+    assert out["coverage"]["windows_total"] == out["coverage"]["windows_checked"] == len(seen)
+
+
+def test_windows_that_disagree_go_to_a_person(monkeypatch):
+    text = "\n\n".join("Paragraph " + "word " * 300 for _ in range(10))
+    replies = [{"decision": "accept_sorter", "confidence": 0.99, "reasoning": "a"},
+               {"decision": "accept_reviewer", "confidence": 0.99, "reasoning": "b"}] * 5
+    agent, _ = _agent_with(monkeypatch, replies, 4000)
     out = agent.arbitrate_classification(sorter={}, reviewer={}, causes=[], labels=["contract"], doc_text=text)
     assert out["decision"] == "human_review" and out["confidence"] is None
-    seen = []
-    monkeypatch.setattr(agent, "_call_structured",
-                        lambda message, schema: seen.append(message) or {"decision": "human_review", "confidence": 0.1},
-                        raising=False)
-    full = "y" * arbiter_mod.CLASSIFICATION_SOURCE_CHARS
+
+
+def test_a_human_review_window_stops_the_read_and_wins(monkeypatch):
+    text = "\n\n".join("Paragraph " + "word " * 300 for _ in range(10))
+    replies = [{"decision": "accept_sorter", "confidence": 0.99, "reasoning": "a"},
+               {"decision": "human_review", "confidence": 0.1, "reasoning": "mixed"}] + [{}] * 10
+    agent, seen = _agent_with(monkeypatch, replies, 4000)
+    out = agent.arbitrate_classification(sorter={}, reviewer={}, causes=[], labels=["contract"], doc_text=text)
+    assert out["decision"] == "human_review"
+    assert len(seen) == 2 and out["coverage"]["windows_checked"] == 2 < out["coverage"]["windows_total"]
+
+
+def test_a_failing_window_is_not_swallowed(monkeypatch):
+    """A provider error in a later window propagates: the node's handler routes it to a person."""
+    agent = arbiter_mod.ClassificationArbiterAgent.__new__(arbiter_mod.ClassificationArbiterAgent)
+    calls = []
+
+    def call(message, schema):
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError("provider down")
+        return {"decision": "accept_sorter", "confidence": 0.9, "reasoning": "ok"}
+
+    monkeypatch.setattr(agent, "_call_structured", call, raising=False)
+    monkeypatch.setattr(agent, "_configured_max_input_chars", lambda: 4000, raising=False)
+    text = "\n\n".join("Paragraph " + "word " * 300 for _ in range(10))
+    with pytest.raises(RuntimeError):
+        agent.arbitrate_classification(sorter={}, reviewer={}, causes=[], labels=["contract"], doc_text=text)
+
+
+def test_a_document_that_fits_one_window_is_sent_whole(monkeypatch):
+    agent, seen = _agent_with(monkeypatch, [{"decision": "human_review", "confidence": 0.1, "reasoning": "x"}], 100_000)
+    full = "y" * 20_000  # over the old 16,000-character cap
     agent.arbitrate_classification(sorter={}, reviewer={}, causes=[], labels=["contract"], doc_text=full)
-    assert full in seen[0] and "truncated" not in seen[0]
+    assert len(seen) == 1 and full in seen[0] and "truncated" not in seen[0] and "WINDOW" not in seen[0]
 
 
 @pytest.mark.parametrize("subclass", [None, "", "  "])

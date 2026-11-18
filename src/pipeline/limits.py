@@ -40,8 +40,31 @@ class RunBudgetExceeded(Exception):
         super().__init__(f"run output-token budget exceeded: {used} >= {cap}")
 
 
-_run_usage: contextvars.ContextVar[list] = contextvars.ContextVar("run_usage", default=[])
+# No shared default: a call made outside an active run (Gmail triage, relations
+# scan threads, ad-hoc scripts) has no accumulator and records nothing, so the
+# prompts/completions kept for the audit visit can never pile up in a
+# module-level list. ``reset_run_usage()`` opens the accumulator for a run.
+_run_usage: contextvars.ContextVar[list | None] = contextvars.ContextVar("run_usage", default=None)
 _run_deadline: contextvars.ContextVar = contextvars.ContextVar("run_deadline", default=None)
+_run_started: contextvars.ContextVar = contextvars.ContextVar("run_started", default=None)
+
+
+#: Which traced-node visit the current context is running (set by ``audit.trace.begin_visit``). Calls are
+#: stamped with it, so usage that arrives late (an abandoned, timed-out call) is attributed to the visit
+#: that made it, not to whatever node runs when it lands. Run-level totals and budgets ignore it.
+_visit_scope: contextvars.ContextVar[str | None] = contextvars.ContextVar("visit_scope", default=None)
+
+
+def set_visit_scope(scope: str | None) -> contextvars.Token:
+    return _visit_scope.set(scope)
+
+
+def reset_visit_scope(token: contextvars.Token) -> None:
+    _visit_scope.reset(token)
+
+
+def get_visit_scope() -> str | None:
+    return _visit_scope.get()
 
 
 def reset_run_usage() -> None:
@@ -52,6 +75,16 @@ def reset_run_usage() -> None:
 def set_run_deadline(deadline: float | None) -> None:
     """Stamp the current run's wall-clock deadline (called per _execute_run)."""
     _run_deadline.set(deadline)
+
+
+def set_run_started(started_at: float | None) -> None:
+    """Wall-clock start of the current ``run_pipeline`` invocation (for the audit row's metrics)."""
+    _run_started.set(started_at)
+
+
+def get_run_started() -> float | None:
+    """Return the current run's wall-clock start, or ``None`` before it is set."""
+    return _run_started.get()
 
 
 def get_run_deadline() -> float | None:
@@ -77,7 +110,14 @@ def _token_count(value) -> int | None:
 
 
 def record_usage(
-    usage, model: str | None = None, agent: str | None = None, served_model: str | None = None
+    usage,
+    model: str | None = None,
+    agent: str | None = None,
+    served_model: str | None = None,
+    *,
+    prompt: str | None = None,
+    completion: str | None = None,
+    prompt_version: str | int | None = None,
 ) -> None:
     """Append an OpenAI-compatible usage object to the current run's
     accumulator. Tolerates mocks and odd shapes: only real non-negative integer
@@ -91,45 +131,92 @@ def record_usage(
     ``served_model`` is the model the provider reports having answered with
     (``response.model``) — it differs from ``model`` behind a router such as
     ``openrouter/free`` or a ``models`` fallback chain.
+
+    ``prompt``, ``completion`` and ``prompt_version`` are kept for the node's
+    audit visit (``audit.trace``, spec §4.4); callers that have them pass them.
     """
     if usage is None:
         return
     if isinstance(usage, dict):
-        # ``or`` would treat a real 0 as missing; fall back only when the key is absent/None.
-        prompt = usage.get("input_tokens")
-        if prompt is None:
-            prompt = usage.get("prompt_tokens")
-        completion = usage.get("output_tokens")
-        if completion is None:
-            completion = usage.get("completion_tokens")
+        # A real zero is valid; fall back only for absent/None counts.
+        prompt_tokens = usage.get("input_tokens")
+        if prompt_tokens is None:
+            prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("output_tokens")
+        if completion_tokens is None:
+            completion_tokens = usage.get("completion_tokens")
     else:
-        prompt = getattr(usage, "prompt_tokens", None)
-        completion = getattr(usage, "completion_tokens", None)
-    prompt_n = _token_count(prompt)
-    completion_n = _token_count(completion)
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+    prompt_n = _token_count(prompt_tokens)
+    completion_n = _token_count(completion_tokens)
     if prompt_n is None or completion_n is None:
         # Mocks, None and non-numeric shapes are expected and dropped quietly;
         # a real number that is not a valid count (1.5, NaN, -1, True) is a
         # provider/shape bug worth a log line (#188).
-        if any(isinstance(v, (int, float)) for v in (prompt, completion)):
+        if any(isinstance(v, (int, float)) for v in (prompt_tokens, completion_tokens)):
             logger.warning(
                 "usage_dropped_invalid_counts",
-                prompt_tokens=repr(prompt),
-                completion_tokens=repr(completion),
+                prompt_tokens=repr(prompt_tokens),
+                completion_tokens=repr(completion_tokens),
                 model=model,
                 agent=agent,
             )
         return
-    prompt, completion = prompt_n, completion_n
-    _run_usage.get().append(
+    accumulator = _run_usage.get()
+    if accumulator is None:
+        # Outside an active run: nothing reads this record, so keep nothing
+        # (and never retain prompt/completion text).
+        return
+    accumulator.append(
         {
-            "prompt_tokens": prompt,
-            "completion_tokens": completion,
+            "prompt_tokens": prompt_n,
+            "completion_tokens": completion_n,
             "model": model,
             "agent": agent,
             "served_model": served_model if isinstance(served_model, str) and served_model else None,
+            "prompt": prompt,
+            "completion": completion,
+            "prompt_version": prompt_version,
+            "visit_scope": _visit_scope.get(),
         }
     )
+
+
+def run_calls() -> list[dict]:
+    """Return the current run's mutable LLM-call accumulator, oldest first.
+
+    Outside an active run this is a fresh empty list (appending to it is lost).
+    """
+    accumulator = _run_usage.get()
+    return accumulator if accumulator is not None else []
+
+
+def call_cost_usd(call: dict) -> float | None:
+    """USD cost of one recorded call from ``cost_models``; ``None`` when the model has no price."""
+    price = _price_for(call.get("model"))
+    if not price:
+        return None
+    return (call["prompt_tokens"] / 1e6) * float(price.get("input_per_million", 0)) + (
+        call["completion_tokens"] / 1e6
+    ) * float(price.get("output_per_million", 0))
+
+
+def usage_mark() -> int:
+    """Position in the current run's usage log; pair with :func:`usage_since`."""
+    return len(run_calls())
+
+
+def usage_since(mark: int, agent: str | None = None) -> dict:
+    """Calls and tokens recorded since ``usage_mark`` (one agent's, or all when ``agent`` is None).
+
+    Lets a multi-call step (the judge's windows) report what it alone cost without
+    resetting the run-wide accumulator the token budget reads.
+    """
+    items = [i for i in run_calls()[mark:] if agent is None or i.get("agent") == agent]
+    prompt = sum(i["prompt_tokens"] for i in items)
+    completion = sum(i["completion_tokens"] for i in items)
+    return {"calls": len(items), "prompt_tokens": prompt, "completion_tokens": completion}
 
 
 def usage_summary() -> dict:
@@ -140,7 +227,7 @@ def usage_summary() -> dict:
     prompt_tokens, completion_tokens, total, models, served_models} (unattributed calls
     land under ``None`` → key ``"unattributed"``).
     """
-    items = _run_usage.get()
+    items = _run_usage.get() or []
     prompt = sum(i["prompt_tokens"] for i in items)
     completion = sum(i["completion_tokens"] for i in items)
     by_agent: dict[str, dict] = {}
@@ -236,7 +323,7 @@ def estimate_cost() -> float:
     """Estimate USD cost for the current run from recorded usage and the
     `cost_models` table. Unknown models contribute 0."""
     total = 0.0
-    for call in _run_usage.get():
+    for call in _run_usage.get() or []:
         price = _price_for(call.get("model"))
         if not price:
             continue

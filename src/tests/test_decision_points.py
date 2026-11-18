@@ -1529,7 +1529,11 @@ class TestCompiledRedirects:
 
     def test_default_path_for_comparison(self, temp_base_dir, mock_openai_client, mock_langchain_llm):
         visited, final = stream_doc(temp_base_dir, mock_langchain_llm)
-        assert visited == ["intake", "classify", "extract", "compile_report", "catalog_write", "archive"]
+        # the unified audit row scores the report (score_common, then the contract scorer) before it is catalogued
+        assert visited == [
+            "intake", "classify", "extract", "compile_report",
+            "score_common", "score_contract", "catalog_write", "archive",
+        ]
         assert final["stage"] == "archived"
 
     def test_classify_slot_redirects_to_retry_classify(

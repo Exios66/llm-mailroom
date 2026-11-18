@@ -606,6 +606,48 @@ async def test_io_sha_mismatch_fails_trace_io(audit_db):
     assert {f["kind"] for f in report.trace_io.failures} == {"io_sha_mismatch"}
 
 
+async def test_sql_sink_io_with_non_ascii_text_verifies(audit_db):
+    """T15 (#229): the sink and the verifier must hash non-ASCII I/O identically."""
+    from audit.sinks.sql import SqlSink
+    from audit.verify import verify_audit_db
+
+    prompt, completion = "Klägerin Müller \u2014 §12 \U0001f4c4", "Ergebnis: Zusage \u2713"
+    ref = await asyncio.to_thread(SqlSink().record_io, "visit-nonascii", "doc-v", prompt, completion)
+    assert ref == "visit-nonascii"
+
+    report = await verify_audit_db()
+
+    assert report.trace_io.checked == 1
+    assert report.trace_io.failures == []
+    assert report.ok is True
+
+
+async def test_trace_io_accepts_the_ascii_escaped_digest_stored_before_the_shared_helper(audit_db):
+    """Digests written by the unreleased #229 sink escaped non-ASCII; they still verify."""
+    from audit.digests import io_sha256_ascii_escaped
+    from audit.verify import verify_audit_db
+    from storage.audit_log import AuditTraceIORecord
+    from storage.db import async_session
+
+    async with async_session() as session:
+        session.add(AuditTraceIORecord(
+            visit_id="legacy-io", doc_id="doc-v", prompt="Müller", completion="ok",
+            sha256=io_sha256_ascii_escaped("Müller", "ok"),
+        ))
+        await session.commit()
+
+    assert (await verify_audit_db()).trace_io.ok is True
+
+
+def test_digest_helpers_are_shared_between_sink_and_verifier():
+    from audit import digests, verify
+
+    assert verify.io_sha256 is digests.io_sha256
+    assert verify.detail_sha256 is digests.detail_sha256
+    # A lone surrogate must not crash a node: the digest is total.
+    assert len(digests.io_sha256("\ud800", None)) == 64
+
+
 async def test_recovered_row_detail_sha_checked(audit_db):
     from audit.verify import detail_sha256, verify_audit_db
     from audit.writer import write_terminal_row

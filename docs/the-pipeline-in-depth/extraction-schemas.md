@@ -321,7 +321,7 @@ This differs by class.
 
 | Class | Missing `confidence` | Missing keys filled | Extra step |
 |---|---|---|---|
-| `contract`, `merger_agreement` (vendored `_SpecialistBase.extract`) | If `confidence` is missing or `0.0`, it is set to the share of schema fields found (`_evidence_confidence`). `confidence`, `reasoning`, `cuad_family`, `merger_consideration`, `cuad_clauses` and `maud_clauses` are left out of that count, because an empty inventory is a valid answer. | `normalize_extraction`: arrays to `[]`, numbers to `0.0`, other types to `null`. | None. |
+| `contract`, `merger_agreement` (vendored `_SpecialistBase.extract`) | If `confidence` is missing (key absent or null in the raw model output), it is set to the share of schema fields found (`_evidence_confidence`). A stated `0.0` is kept (#279). `confidence`, `reasoning`, `cuad_family`, `merger_consideration`, `cuad_clauses` and `maud_clauses` are left out of that count, because an empty inventory is a valid answer. | `normalize_extraction`: arrays to `[]`, numbers to `0.0`, other types to `null`. | None. |
 | `correspondence` | Not filled. | `normalize_specialist_extraction`: `normalize_extraction`, then `sender`, `recipient`, `communication_type` and `urgency` are set to `""` when null. | None. |
 | `insurance_claim` | Not filled. | `normalize_specialist_extraction`: `normalize_extraction`. | Empty fields are filled from the source text by conservative regexes (`observability/posthoc_gt.py:extract_insurance_fields`, which reads the first 4000 characters for labels such as `Claim No.`, `Notice ID`, `Policy Number`, `Insurer`, `Insured`, `Adjuster`). A value from the model is never overwritten. |
 | `corporate_record` | Not filled. | Not filled. | None. |
@@ -343,11 +343,13 @@ That is the default, `chunking.merge.policy: union`. It keeps every window's cla
 * scalar fields: a null is never chosen. A window whose `reasoning` quotes its own source text for the field wins over one without; then the higher window `confidence` (the whole window's, there is no per-field confidence); then document order. The winner's reasoning entry replaces the first-witness one;
 * `confidence` and the rest of the bookkeeping are unchanged.
 
+Under either policy the merged extraction carries `_n_chunks`, `_failed_chunks` and `_chunk_confidences`: each window's own confidence in document order (`null` for a lost window), recorded before the merge takes the minimum. They are `_` keys, so field scoring and the hollow check ignore them.
+
 This deviates from the proposal in #255, which was to keep an item whose quote is verbatim in the window and otherwise pass it to the judge. The filtered items are recorded in `_unsupported_chunk_claims` and are not shown to the judge, because `_clean_fields_for_judge` strips `_` keys and changing the judge prompt is out of scope (prompts are Langfuse-managed and need a matching fallback). The recall cost: a genuine clause that every window paraphrased is lost from the extraction, and the retry passes the same filter, so it is not recovered there. The field scope above limits that cost to clause-like lists; entity and label lists are never filtered by default.
 
 Only the contracts and merger specialists emit `reasoning`; the corporate, correspondence and insurance specialists have only the verbatim check and `min_windows`.
 
-A window that fails to parse is skipped. If every window fails, the result is `{"_parse_error": true}` plus `_n_chunks` and `_failed_chunks` (both the window count), so routing sees the lost windows and review records `chunk_failed`. Window sizes come from `chunking.chunk_chars` and `chunking.overlap_chars`, capped by the specialist's `max_input_chars`; see [Configuration](../pipeline-reference-llm-mailroom/configuration.md).
+A window that fails to parse is skipped. If every window fails, the result is `{"_parse_error": true}` plus `_n_chunks` (the window count), `_failed_chunks` (also the window count) and `_chunk_confidences` (all `null`), so routing sees the lost windows and review records `chunk_failed`. Window sizes come from `chunking.chunk_chars` and `chunking.overlap_chars`, capped by the specialist's `max_input_chars`; see [Configuration](../pipeline-reference-llm-mailroom/configuration.md).
 
 ### 3. Inventory enrichment
 
@@ -366,6 +368,14 @@ The token mappers compact the value to lowercase letters and digits, then try an
 `normalize_intent` maps a free-text `intent` onto the class's controlled vocabulary (`INTENT_LABELS`), including legacy aliases (`demand_payment` to `payment_demand`, `coverage_denial` to `coverage_determination`, `record_governance` to `governance_rules`). Its result is always a member of the class's own vocabulary — an alias never leaks another class's token — and an unmapped purpose is left exactly as the model returned it. The extract path therefore emits the canonical label rather than whatever label the model chose.
 
 The extract call also gets a matching instruction block in its handoff context (`specialist_handoff`), which lists the allowed tokens for the class, so the model is told the vocabulary before enrichment runs.
+
+### 3a. Closed-label vocabularies (#285)
+
+Closed labels are scored exactly by the Dojo: contract `cuad_family`, merger `merger_consideration`, correspondence `communication_type` and `urgency`, insurance `claim_type` and `coverage_determination`, and each class's `intent`. Their vocabularies live in `taxonomy.yaml` under `doc_classes[].label_vocabularies` (the single source of truth, pinned to the Dojo's scored vocabulary by `test_label_vocabularies.py`); `pipeline/label_vocab.py` reads them.
+
+* A value is matched the way the Dojo scorer matches it (`scored_enums.canonical_label`; a local case, whitespace, `_` and `-` fold if the Dojo does not fold it), so `License_Agreements`, `Approved.`, `covered` and `timesensitive` are on-list. The extract and retry nodes run inventory enrichment first (so #280 has already folded a CMS table token on `claim_type` onto `health`), then write each on-list value as its canonical token, even if enrichment raised.
+* A non-blank value that matches no token is left as the model wrote it. `after_extraction` (and so `after_retry_extraction`) sends the document straight to `human_review`, with no retry and no mapping to `other`, and `collect_review_causes` adds `out_of_vocabulary`.
+* A blank or missing value is not off-list. `cms_source_table` (derived from the sorter subclass) and `record_type` (a `name` field) are not covered, and the reviewer's own `correct` fields are not checked. An `approved` review re-extracts; if that is still off-list it parks again with its fields, and approving those applies them without a re-check.
 
 ### 4. Guardrail
 

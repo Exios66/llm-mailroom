@@ -998,6 +998,15 @@ NODE_SPAN_NAMES = {
     "compile_report": "compile-report",
     "catalog_write": "write-catalog",
     "archive": "archive-document",
+    "audit_failed": "audit-failed",
+    # Scoring node family (unified audit row M6): graph.scoring_nodes.span_name.
+    "score_common": "score-common",
+    "score_contract": "score-contract",
+    "score_corporate_record": "score-corporate-record",
+    "score_correspondence": "score-correspondence",
+    "score_insurance_claim": "score-insurance-claim",
+    "score_merger_agreement": "score-merger-agreement",
+    "score_generic": "score-generic",
 }
 
 

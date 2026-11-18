@@ -8,9 +8,9 @@ One LangGraph state machine per document. Specialist LLM agents per document cla
 
 <figure><img src=".gitbook/assets/banner.png" alt="Mailroom — a great horned owl postal worker sorting wax-sealed legal documents into bins by lamplight"><figcaption><p>The LLM-Mailroom masthead: the night-shift owl at the sorting desk.</p></figcaption></figure>
 
-[**release** · v0.9.3](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md) · [**LangGraph** · 14-node state machine](https://github.com/Exios66/llm-mailroom#langgraph-state-machine) · [**audit** · hash-chained log](pipeline-reference-llm-mailroom/architecture.md) · [**storage** · SQLite-first](https://github.com/Exios66/llm-mailroom#quick-start) · [**tracing** · Langfuse · Braintrust · Phoenix](https://github.com/Exios66/llm-mailroom#observability) · [**LLM** · OpenRouter · Ollama · vLLM](https://github.com/Exios66/llm-mailroom#llm-providers)
+[**release** · v0.9.3](https://github.com/Exios66/llm-mailroom/blob/main/CHANGELOG.md) · [**LangGraph** · 22-node state machine](https://github.com/Exios66/llm-mailroom#langgraph-state-machine) · [**audit** · hash-chained log](pipeline-reference-llm-mailroom/architecture.md) · [**storage** · SQLite-first](https://github.com/Exios66/llm-mailroom#quick-start) · [**tracing** · Langfuse · Braintrust · Phoenix](https://github.com/Exios66/llm-mailroom#observability) · [**LLM** · OpenRouter · Ollama · vLLM](https://github.com/Exios66/llm-mailroom#llm-providers)
 
-<table data-header-hidden><thead><tr><th valign="middle"></th><th valign="middle"></th></tr></thead><tbody><tr><td valign="middle"><img src=".gitbook/assets/fumi.gif" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform with a mail satchel and a little owl on her shoulder" data-size="original"></td><td valign="middle"><p>Postal Worker Fumi (文, "letter") on duty.</p><p>Specialist agents on a 14-node graph — Fumi minds the inbox while the pipeline files every letter.</p></td></tr></tbody></table>
+<table data-header-hidden><thead><tr><th valign="middle"></th><th valign="middle"></th></tr></thead><tbody><tr><td valign="middle"><img src=".gitbook/assets/fumi.gif" alt="Fumi, the llm-mailroom mascot: a chibi postal maid in a USPS-style uniform with a mail satchel and a little owl on her shoulder" data-size="original"></td><td valign="middle"><p>Postal Worker Fumi (文, "letter") on duty.</p><p>Specialist agents on a 22-node graph — Fumi minds the inbox while the pipeline files every letter.</p></td></tr></tbody></table>
 
 This is the published home of [Mailroom Inc. Docs](https://mailroom-inc.gitbook.io/mailroom-inc.-docs/). It matches the repository landing page in `landing/` (banner, title, badges, tags, install, pipeline walk-through, docs shelf). Fumi appears after the masthead as Postal Worker Fumi (文, "letter") on duty. GitBook strips scripts, so the idle mail-floor terminal stays on the static page. This page uses GitBook's own type — it does not load the landing page's display font.
 
@@ -58,7 +58,7 @@ The pipeline reference:
 
 | Page                                                                      | What it covers                                                               |
 | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [Architecture](pipeline-reference-llm-mailroom/architecture.md)           | The 14-node graph, routing, and the auxiliary lanes.                         |
+| [Architecture](pipeline-reference-llm-mailroom/architecture.md)           | The 22-node graph, routing, and the auxiliary lanes.                         |
 | [Agents](pipeline-reference-llm-mailroom/agents.md)                       | Sorter, five specialists, judge, arbiter, and boss.                          |
 | [Configuration](pipeline-reference-llm-mailroom/configuration.md)         | `taxonomy.yaml`, thresholds, and environment variables.                      |
 | [API](pipeline-reference-llm-mailroom/api.md)                             | Upload, status, and audit endpoints on the FastAPI server.                   |
@@ -95,7 +95,7 @@ The pages below are the canonical documentation for the `llm-mailroom` pipeline 
 
 | Document                                                                          | Description                                                                 |
 | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [Architecture](pipeline-reference-llm-mailroom/architecture.md)                   | System design and the 14-node state machine                                 |
+| [Architecture](pipeline-reference-llm-mailroom/architecture.md)                   | System design and the 22-node state machine                                 |
 | [Agents](pipeline-reference-llm-mailroom/agents.md)                               | LLM and procedural agent specifications                                     |
 | [Configuration](pipeline-reference-llm-mailroom/configuration.md)                 | `taxonomy.yaml`, environment variables, thresholds                          |
 | [Gmail intake](pipeline-reference-llm-mailroom/gmail-intake.md)                   | Gmail intake route: upload guide, subject-line contract, pathways (HUB-037) |

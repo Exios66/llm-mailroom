@@ -4,7 +4,9 @@ a safe hook for plug-in route rules.
 The topology literals below were captured from ``build_graph()`` on the code
 before the edges moved into ``route_spec`` (f83e398, v0.30.0), so they are an
 independent record of what the compiled graph looked like, not a copy of the new
-declaration.
+declaration. The unified audit row (spec 5.1) then added ``audit_failed`` (the terminal
+node a rejected review ends in) and the scoring family between ``compile_report`` and
+``catalog_write``; those entries are marked below.
 """
 from __future__ import annotations
 
@@ -38,6 +40,7 @@ EXPECTED_NODES = frozenset({
     "__start__",
     "arbiter",
     "archive",
+    "audit_failed",  # unified audit row
     "boss_escalation",
     "catalog_write",
     "classification_arbiter",
@@ -50,7 +53,17 @@ EXPECTED_NODES = frozenset({
     "retry_classify",
     "retry_extract",
     "review_classify",
+    # unified audit row: one scoring node per dojo scorer, entered through score_common
+    "score_common",
+    "score_contract",
+    "score_corporate_record",
+    "score_correspondence",
+    "score_generic",
+    "score_insurance_claim",
+    "score_merger_agreement",
 })
+
+SCORING_TYPES = ("contract", "corporate_record", "correspondence", "generic", "insurance_claim", "merger_agreement")
 
 # (source, target, conditional) as snapshotted from build_graph() at f83e398 (v0.30.0).
 EXPECTED_EDGES = frozenset({
@@ -73,7 +86,7 @@ EXPECTED_EDGES = frozenset({
     ("classify", "human_review", True),
     ("classify", "retry_classify", True),
     ("classify", "review_classify", True),
-    ("compile_report", "catalog_write", True),
+    ("compile_report", "score_common", True),  # was catalog_write before the scoring family
     ("compile_report", "human_review", True),
     ("extract", "boss_escalation", True),
     ("extract", "compile_report", True),
@@ -81,7 +94,10 @@ EXPECTED_EDGES = frozenset({
     ("extract", "human_review", True),
     ("extract", "judge_verify", True),
     ("extract", "retry_extract", True),
-    ("human_review", "__end__", True),
+    ("human_review", "audit_failed", True),  # was __end__ before the terminal audit node
+    ("audit_failed", "__end__", False),
+    *[("score_common", f"score_{t}", True) for t in SCORING_TYPES],
+    *[(f"score_{t}", "catalog_write", False) for t in SCORING_TYPES],
     ("human_review", "compile_report", True),
     ("human_review", "extract", True),
     ("intake", "classify", False),
@@ -111,16 +127,24 @@ EXPECTED_BRANCHES = {
     "boss_escalation": ("after_boss", {"boss_escalation": "boss_escalation", "compile_report": "compile_report", "human_review": "human_review"}),
     "classification_arbiter": ("after_classification_arbiter", {"extract": "extract", "human_review": "human_review"}),
     "classify": ("after_classify", {"classify": "classify", "extract": "extract", "human_review": "human_review", "retry_classify": "retry_classify", "review_classify": "review_classify"}),
-    "compile_report": ("after_report", {"catalog_write": "catalog_write", "human_review": "human_review"}),
+    "compile_report": ("after_report", {"catalog_write": "score_common", "human_review": "human_review"}),
     "extract": ("after_extraction_gated", {"boss_escalation": "boss_escalation", "compile_report": "compile_report", "extract": "extract", "human_review": "human_review", "judge_verify": "judge_verify", "retry_extract": "retry_extract"}),
-    "human_review": ("after_human_review", {"compile_report": "compile_report", "extract": "extract", "failed": "__end__"}),
+    "human_review": ("after_human_review", {"compile_report": "compile_report", "extract": "extract", "failed": "audit_failed"}),
     "judge_verify": ("after_judge", {"arbiter": "arbiter", "compile_report": "compile_report", "human_review": "human_review", "judge_verify": "judge_verify"}),
     "retry_classify": ("after_retry_classify", {"extract": "extract", "human_review": "human_review", "retry_classify": "retry_classify", "review_classify": "review_classify"}),
+    "score_common": ("score_route", {f"score_{t}": f"score_{t}" for t in SCORING_TYPES}),  # unified audit row
     "retry_extract": ("after_retry_extraction_gated", {"boss_escalation": "boss_escalation", "compile_report": "compile_report", "human_review": "human_review", "judge_verify": "judge_verify", "retry_extract": "retry_extract"}),
     "review_classify": ("after_review_classify", {"classification_arbiter": "classification_arbiter", "extract": "extract", "human_review": "human_review", "review_classify": "review_classify"}),
 }
 
-EXPECTED_PLAIN_EDGES = [("archive", "__end__"), ("catalog_write", "archive"), ("intake", "classify")]
+# ROUTE_SPECS / PLAIN_EDGES: the static part. The scoring family's edges come from scoring_topology().
+EXPECTED_STATIC_PLAIN_EDGES = [
+    ("archive", "__end__"),
+    ("audit_failed", "__end__"),
+    ("catalog_write", "archive"),
+    ("intake", "classify"),
+]
+EXPECTED_PLAIN_EDGES = sorted([*EXPECTED_STATIC_PLAIN_EDGES, *[(f"score_{t}", "catalog_write") for t in SCORING_TYPES]])
 
 
 @pytest.fixture(autouse=True)
@@ -187,9 +211,24 @@ class TestTopologyUnchanged:
         assert sorted(compiled.builder.edges) == EXPECTED_PLAIN_EDGES
 
     def test_spec_table_is_exactly_the_conditional_nodes(self):
-        assert {s.node for s in ROUTE_SPECS} == set(EXPECTED_BRANCHES)
-        assert len(ROUTE_SPECS) == len(EXPECTED_BRANCHES) == 12  # START + 11 nodes
-        assert sorted(PLAIN_EDGES) == EXPECTED_PLAIN_EDGES
+        assert {s.node for s in ROUTE_SPECS} == set(EXPECTED_BRANCHES) - {"score_common"}
+        assert len(ROUTE_SPECS) == 12  # START + 11 nodes; score_common's route is derived
+        assert sorted(PLAIN_EDGES) == EXPECTED_STATIC_PLAIN_EDGES
+
+    def test_scoring_topology_is_the_scoring_family_and_outside_the_rule_registry(self):
+        specs, edges = rs.scoring_topology()
+        assert [s.node for s in specs] == ["score_common"]
+        assert sorted(specs[0].destinations) == sorted(f"score_{t}" for t in SCORING_TYPES)
+        assert sorted(edges) == sorted((f"score_{t}", "catalog_write") for t in SCORING_TYPES)
+        with pytest.raises(ValueError, match="no route is declared"):
+            add_route_rule("score_common", RouteRule("a", lambda s, p: None))
+
+    def test_wire_edges_rejects_a_scoring_node_with_no_edges(self):
+        workflow = StateGraph(_State)
+        workflow.add_node("classify", _stub("classify"))
+        workflow.add_node("score_common", _stub("score_common"))
+        with pytest.raises(RouteSpecError, match="score_common.*no outgoing edge"):
+            wire_edges(workflow, [RouteSpec(START, lambda s: "classify", {"classify": "classify"})], [("classify", END)])
 
     def test_routers_keep_their_public_names(self):
         by_node = {s.node: s.router for s in ROUTE_SPECS}
@@ -220,7 +259,8 @@ class TestValidation:
 
     def test_declared_topology_is_valid_for_the_real_nodes(self):
         nodes = {n for n in EXPECTED_NODES if not n.startswith("__")}
-        validate_route_specs(ROUTE_SPECS, PLAIN_EDGES, nodes)
+        specs, edges = rs.scoring_topology()
+        validate_route_specs((*ROUTE_SPECS, *specs), (*PLAIN_EDGES, *edges), nodes)
 
     def test_literal_annotation_and_destinations_must_agree(self):
         spec = _spec(_ab, {"a": "extract"})  # "b" is annotated but not mapped
@@ -542,7 +582,7 @@ class TestRegistry:
             add_route_rule("extract", RouteRule("b", lambda s, p: None), position="middle")
         assert [r.name for r in route_rules("extract")] == ["a"]
 
-    @pytest.mark.parametrize("node", ["intake", "catalog_write", "archive"])
+    @pytest.mark.parametrize("node", ["intake", "catalog_write", "archive", "audit_failed"])
     def test_plain_edge_nodes_take_no_rules(self, node):
         assert node in {src for src, _ in PLAIN_EDGES}
         with pytest.raises(ValueError, match="no route is declared"):

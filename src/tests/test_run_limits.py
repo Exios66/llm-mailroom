@@ -108,6 +108,18 @@ class TestLimitsUnit:
         assert summary["prompt_tokens"] == 0
         assert summary["completion_tokens"] == 57
 
+    def test_zero_counts_preserve_audit_prompt_and_completion(self):
+        from pipeline.limits import _run_usage, record_usage, reset_run_usage
+
+        reset_run_usage()
+        record_usage(
+            {"input_tokens": 0, "output_tokens": 0, "prompt_tokens": 99, "completion_tokens": 99},
+            model="m", prompt="audit prompt", completion="audit response",
+        )
+        [call] = _run_usage.get()
+        assert (call["prompt_tokens"], call["completion_tokens"]) == (0, 0)
+        assert (call["prompt"], call["completion"]) == ("audit prompt", "audit response")
+
     @pytest.mark.parametrize(
         "prompt,completion",
         [
@@ -330,3 +342,64 @@ def test_base_agent_records_served_model(mock_openai_client):
     agent = _A()
     agent._call_llm("hello")
     assert usage_summary()["by_agent"]["sorter"]["served_models"] == ["served/model-x"]
+
+
+class TestNoUsageRetainedOutsideARun:
+    """#239 review: a call outside an active run (Gmail triage, relations-scan threads) must not
+    pile prompts into a shared module-level list that nothing ever resets."""
+
+    def test_threads_outside_a_run_retain_nothing(self):
+        import contextvars
+        import threading
+
+        from pipeline import limits
+
+        errors: list[BaseException] = []
+
+        def worker():
+            try:
+                for _ in range(3):
+                    limits.record_usage(
+                        {"prompt_tokens": 5, "completion_tokens": 5}, model="m", agent="relations",
+                        prompt="X" * 10**6, completion="Y" * 10**6,
+                    )
+                assert limits.run_calls() == []
+                assert limits.usage_summary()["calls"] == 0
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=contextvars.Context().run, args=(worker,)) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+
+        def later_run_view():
+            # Nothing leaked into the (default) context a later thread would see.
+            assert limits._run_usage.get() is None
+            assert limits.run_calls() == []
+            assert limits.estimate_cost() == 0.0
+
+        contextvars.Context().run(later_run_view)
+
+    def test_default_context_has_no_shared_list(self):
+        import contextvars
+
+        from pipeline import limits
+
+        def body():
+            before = limits._run_usage.get()
+            limits.record_usage({"prompt_tokens": 1, "completion_tokens": 1}, prompt="p", completion="c")
+            assert limits._run_usage.get() is before
+            assert not before  # None (or empty): never a list that grew
+
+        contextvars.Context().run(body)
+
+    def test_a_run_still_records_after_reset(self):
+        from pipeline import limits
+
+        limits.reset_run_usage()
+        limits.record_usage({"prompt_tokens": 1, "completion_tokens": 2}, agent="a", prompt="p", completion="c")
+        [call] = limits.run_calls()
+        assert (call["prompt"], call["completion"]) == ("p", "c")

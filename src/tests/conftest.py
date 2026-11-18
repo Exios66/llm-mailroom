@@ -161,6 +161,27 @@ def broken_specialist_pin():
         frozen.load_specialist_v1.cache_clear()
 
 
+@pytest.fixture
+def migrated_audit_db(temp_base_dir, monkeypatch):
+    """Take the explicit unified-audit migration on the default test database.
+
+    The migration is an operator step in this storage layer (startup never runs
+    it without ``MAILROOM_AUDIT_MIGRATE=1``), so a test that exercises the
+    unified row takes it exactly like a deployment does. Depends on
+    ``temp_base_dir`` so the database URL is already pointed at the test's base
+    directory when the migration creates/migrates the file. ``DATABASE_URL`` is
+    pinned to that SQLite file so a developer's real ``DATABASE_URL`` can never
+    be migrated by a test.
+    """
+    import asyncio
+
+    from storage import audit_migrate
+
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{temp_base_dir / 'mailroom.db'}")
+
+    return asyncio.run(audit_migrate.migrate_audit_log())
+
+
 @pytest.fixture(autouse=True)
 def _reopen_watcher_claim_gate():
     """A test that calls ``Watcher.stop()`` closes the module-level claim gate;
