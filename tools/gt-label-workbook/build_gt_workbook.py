@@ -257,25 +257,27 @@ def _maud_answered(question: str, record: Any) -> bool:
     return bool(answer) or ambiguous
 
 
-def _maud_consideration(gt: dict) -> str | None:
-    """The ``merger_consideration`` token the Dojo reads from the row's MAUD ``Type of Consideration``
-    answer, or ``None`` (no answer, a label map marked absent, or an unreadable ``gt_fields``)."""
+def _maud_consideration(gt: dict, subclass: str | None = None) -> str | None:
+    """The ``merger_consideration`` the Dojo scores for this row, or ``None`` when it scores none.
+
+    ``hub_merger_expected_fields`` takes the token of the MAUD ``Type of Consideration`` answer, then of
+    ``subclass``; a blank answer, a label map marked absent and the unannotated ``other`` subclass give
+    no gold. An unreadable ``gt_fields`` also gives ``None``."""
     from llm_dojo_scoring.schemas.maud_schema import hub_merger_expected_fields
 
     try:
-        # no subclass and no expected_subclass: only the answer decides; the caller falls back
-        return hub_merger_expected_fields({**gt, "expected_subclass": None}).get("merger_consideration")
+        return hub_merger_expected_fields({**gt, "expected_subclass": None}, subclass).get("merger_consideration")
     except (ValueError, TypeError):
         return None
 
 
-def _derived_value(cls: str, gt: dict, subclass: str) -> str:
-    """The value of the field the Dojo derives for ``cls``: the MAUD answer first for a merger's
-    ``merger_consideration``, then the subclass."""
+def _derived_value(cls: str, gt: dict, subclass: str) -> str | None:
+    """The value of the field the Dojo derives for ``cls``, or ``None`` when the Dojo scores none.
+
+    A merger's ``merger_consideration`` is the MAUD answer first, then the subclass; for the unannotated
+    ``other`` subclass with no answer the Dojo leaves it unscored, so there is nothing to show."""
     if cls == "merger_agreement":
-        token = _maud_consideration(gt)
-        if token:
-            return token
+        return _maud_consideration(gt, subclass)
     return normalize_corpus_subclass(cls, subclass)
 
 
@@ -380,7 +382,9 @@ def cell_for(cls: str, key: str, gt: dict, presence: dict, subclass: str) -> tup
     if _DERIVED.get(cls) == key and is_empty(gt.get(key)) and presence.get(key) not in (
             "not_applicable", "schema_documented_absence", "pending_annotation"):
         # the Dojo derives this field (merger_consideration: from the MAUD answer first): never a labelling gap
-        return _derived_value(cls, gt, subclass), "populated"
+        derived = _derived_value(cls, gt, subclass)
+        # the Dojo scores no value here (merger subclass ``other``, no MAUD answer): not a labelling gap either
+        return (derived, "populated") if derived else ("", "not_applicable")
     value, status = gt.get(key), presence.get(key)
     if status in ("not_applicable", "schema_documented_absence", "pending_annotation"):
         return render(value), status

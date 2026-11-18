@@ -944,3 +944,23 @@ def test_a_closed_maud_field_keeps_its_status_even_with_retained_answers(tool, c
     value, status = _maud_cell(tool, labels, presence={"maud_clause_labels": closed})
     assert status == closed and "Yes" in value
     assert _maud_cell(tool, {}, presence={"maud_clause_labels": closed}) == ("", closed)
+
+
+def _consideration_cell(tool, gt, subclass):
+    gt = {"gt_presence": {}, **gt}
+    return tool.cell_for("merger_agreement", "merger_consideration", gt, gt["gt_presence"], subclass)
+
+
+def test_the_unannotated_other_merger_subclass_has_no_consideration_gold(tool):
+    """The Dojo never makes ``other`` gold for ``merger_consideration``; the workbook must not show it as populated."""
+    assert _consideration_cell(tool, {}, "other") == ("", "not_applicable")
+    # a real subclass, and a MAUD answer on an ``other`` row, still give the Dojo's token
+    assert _consideration_cell(tool, {}, "all_cash") == ("all_cash", "populated")
+    labels = {"maud_clause_labels": {"Type of Consideration": {"answer": "All Cash"}}}
+    assert _consideration_cell(tool, labels, "other")[1] == "populated"
+
+
+def test_a_marked_absent_maud_map_does_not_feed_merger_consideration(tool):
+    labels = {"maud_clause_labels": {"Type of Consideration": {"answer": "All Cash"}},
+              "gt_presence": {"maud_clause_labels": "not_applicable"}}
+    assert _consideration_cell(tool, labels, "other") == ("", "not_applicable")
