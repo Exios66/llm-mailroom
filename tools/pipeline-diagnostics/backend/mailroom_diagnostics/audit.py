@@ -1591,6 +1591,10 @@ def _read_event_chain(
         "started_at": events[0]["timestamp"] if events else None,
         "updated_at": last["timestamp"] if last else None,
         "events": events,
+        # last_event/status/updated_at describe the last event READ; when the
+        # cap cut the chain that is not the document's last event.
+        "truncated": truncated,
+        "events_shown": len(events),
     }
     legacy_truncated = legacy_total > len(legacy_rows)
     legacy_failures: list[dict[str, Any]] = []
@@ -1609,6 +1613,16 @@ def _read_event_chain(
             "truncated": True,
             "notes": ["a bounded read was truncated; nothing is reported as verified"],
         }
+        if truncated:
+            message = (
+                f"event chain capped by MAX_EVENTS: {len(rows)} of {total} events read; "
+                "the chain is not verified and last_event/status/updated_at describe "
+                "the last event read, not the document's last event"
+            )
+            verification["notes"].append(message)
+            payload["notes"].append(message)
+        if legacy_truncated:
+            verification["notes"].append("legacy section exceeds the bounded read; it is not verified")
     else:
         failures = _verify_legacy_chain(rows, scope="events")
         failures.extend(legacy_failures)

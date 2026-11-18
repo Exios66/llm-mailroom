@@ -2127,3 +2127,40 @@ def test_lookup_timeout_default_is_small_and_bounded():
     from mailroom_diagnostics import audit
 
     assert 0 < audit.LOOKUP_TIMEOUT_SECONDS <= 5
+
+
+def test_event_cap_truncation_is_stated_in_the_status(client, make_store, monkeypatch):
+    """Not just ``unverified``: the payload must name the cap that cut the document."""
+    from mailroom_diagnostics import audit
+
+    make_store("event-chain")
+    full = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    total = full["record"]["entries"]
+    assert total > 2
+    assert full["record"]["truncated"] is False
+    assert full["verification"]["status"] == "verified"
+
+    monkeypatch.setattr(audit, "MAX_EVENTS", 2)
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    verification = payload["verification"]
+    assert verification["status"] == "unverified"
+    assert verification["truncated"] is True
+    assert verification["checked"]["main"] == 0
+    assert payload["record"]["truncated"] is True
+    assert payload["record"]["events_shown"] == 2
+    joined = " ".join(verification["notes"] + payload["notes"])
+    assert f"2 of {total} events" in joined
+    assert "MAX_EVENTS" in joined
+
+
+def test_legacy_only_truncation_is_not_reported_as_an_event_truncation(client, make_store, monkeypatch):
+    from mailroom_diagnostics import audit
+
+    db = make_store("event-chain")
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE audit_log_legacy AS SELECT * FROM audit_log WHERE doc_id=?", (DOC,))
+    total = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["record"]["entries"]
+    monkeypatch.setattr(audit, "MAX_EVENTS", total)  # events fit exactly; legacy copy fits too
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["record"]["truncated"] is False
+    assert payload["verification"]["status"] == "verified"
