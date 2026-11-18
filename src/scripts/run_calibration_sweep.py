@@ -957,7 +957,14 @@ def load_manifest_docs(manifest: Path, samples_dir: Path | None) -> tuple[list[D
             expected_stage=want.get("expected_stage") or None,
             expected_fields=want.get("expected_fields"),
         ))
-    return docs, {"dataset_id": f"manifest:{manifest.name}", "dataset_revision": None, "split": "unsplit"}
+    # Identified by the resolved path, so two manifests with the same file name in different folders
+    # are different datasets. ``legacy_dataset_id`` is the name-only id earlier sweeps recorded; it is
+    # never written to rows, only accepted when resuming such a file (see ``resume_mismatch``).
+    return docs, {
+        "dataset_id": f"manifest:{manifest.resolve().as_posix()}",
+        "legacy_dataset_id": f"manifest:{manifest.name}",
+        "dataset_revision": None, "split": "unsplit",
+    }
 
 
 def load_hf_docs(split: str, per_class: int, seed: int, strict: bool = False) -> tuple[list[Doc], dict]:
@@ -1136,6 +1143,18 @@ def _same_setting(saved: Any, now: Any) -> bool:
     return isinstance(saved, bool) == isinstance(now, bool) and saved == now
 
 
+def _legacy_manifest_id_matches(saved: Any, current: dict) -> bool:
+    """A saved name-only manifest id (``manifest:<file name>``) continues this run's manifest of that name.
+
+    Sweeps before the full-path id recorded only the file name, so such rows cannot say which folder
+    they came from. They keep resuming when the name matches; the per-document ``doc_id`` and
+    ``content_sha256`` checks below still refuse a different manifest's documents. Rows this version
+    writes carry the full path, which a same-named manifest elsewhere does not match.
+    """
+    legacy = current.get("legacy_dataset_id")
+    return isinstance(saved, str) and isinstance(legacy, str) and saved == legacy
+
+
 def resume_mismatch(
     existing: list[dict], docs: list[Doc], current: dict, *, allow_legacy: bool = False
 ) -> str | None:
@@ -1144,7 +1163,8 @@ def resume_mismatch(
     A resume skips documents by ``doc_id`` alone, so it is only sound when the saved records
     came from the same inputs and settings. ``current`` holds this run's ``mode``,
     ``dataset_id``, ``dataset_revision``, ``split``, ``taxonomy_sha256``, ``judge_attempts``,
-    ``max_extraction_candidates`` and ``thresholds``, plus the selection settings ``seed`` and
+    ``max_extraction_candidates`` and ``thresholds`` (and, for a manifest, ``legacy_dataset_id``, the
+    name-only id older sweeps recorded), plus the selection settings ``seed`` and
     ``per_class`` (``None`` unless the HF corpus is sampled) and ``limit``. A saved record that lacks
     a recorded value cannot be validated and is refused too: start a new output file. ``limit`` is
     a prefix of the document list, so a resume may raise it (or drop it) to sweep more of the same
@@ -1163,6 +1183,8 @@ def resume_mismatch(
             if key not in run:
                 if not (allow_legacy and key in LEGACY_RUN_KEYS):
                     diffs.setdefault(key, "not recorded in the saved records")
+            elif key == "dataset_id" and _legacy_manifest_id_matches(run[key], current):
+                continue
             elif not _same_setting(run[key], current.get(key)):
                 diffs.setdefault(key, f"saved {run[key]!r}, now {current.get(key)!r}")
         if "limit" not in run:
@@ -1390,6 +1412,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.resume:
             current = {
                 "mode": "mock" if mock else "real", "dataset_id": ds["dataset_id"],
+                "legacy_dataset_id": ds.get("legacy_dataset_id"),
                 "dataset_revision": ds["dataset_revision"], "split": ds["split"],
                 "taxonomy_sha256": _taxonomy_sha256(), "judge_attempts": args.judge_attempts,
                 "max_extraction_candidates": args.max_extraction_candidates, "thresholds": thresholds,
