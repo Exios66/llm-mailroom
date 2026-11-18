@@ -953,3 +953,28 @@ def test_vendor_note_carries_no_release_state():
     vendor_md = B.REPO_ROOT / "vendor" / "llm-dojo-scoring" / "VENDOR.md"
     text = vendor_md.read_text(encoding="utf-8")
     assert not re.search(r"untagged|unreleased|no GitHub release", text, re.IGNORECASE)
+
+
+def test_live_pyproject_interim_comment_is_retired_when_a_tag_lands_on_it():
+    """#240: every 'untagged …' wording in the real pyproject is retired, not only 'not released'."""
+    root = Path(__file__).resolve().parents[2]
+    text = (root / "pyproject.toml").read_text(encoding="utf-8")
+    sha = re.search(r'llm-dojo-scoring @ git\+[^"]*@([0-9a-f]{40})', text)
+    assert sha, "pyproject pins llm-dojo-scoring by a 40-hex commit"
+    pinned = sha.group(1)
+    if f"Interim pin {pinned[:7]} (" not in text:
+        pytest.skip("the pinned commit carries no interim note")
+    out = B._retire_interim_note(text, pinned, "v9.9.9")
+    assert out != text
+    assert f"Interim pin {pinned[:7]} (" not in out
+    assert f"v9.9.9 release commit {pinned[:7]} (" in out
+    note = out[out.index(f"v9.9.9 release commit {pinned[:7]}"):].split("\n", 1)[0]
+    assert "untagged" not in note
+
+
+def test_untagged_package_wording_is_retired():
+    """The '; untagged, package X)' tail is an interim note too."""
+    text = "# Interim pin 025400f (Dojo merge of #173; untagged, package 0.30.1):\n"
+    assert B._retire_interim_note(text, "025400f" + "0" * 33, "v0.30.2") == (
+        "# v0.30.2 release commit 025400f (Dojo merge of #173):\n"
+    )

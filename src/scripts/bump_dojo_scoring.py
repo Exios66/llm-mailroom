@@ -370,10 +370,11 @@ _LATEST_ROW_RES: tuple[re.Pattern[str], ...] = (
 #: The pyproject comment that describes an interim commit pin: ``Interim pin 93eedd8 (<what
 #: it carries>; untagged, not released)`` (the "untagged, not released" sentence may wrap onto
 #: the next comment line, and older blocks end ", unreleased"). Once a release is tagged on the
-#: pinned commit this claim is false, so the bump rewrites it (#240).
+#: pinned commit this claim is false, so the bump rewrites it (#240). Any ``untagged …`` tail
+#: counts (``untagged, package 0.30.1`` included), so a reworded note is still retired.
 _INTERIM_NOTE_RE = re.compile(
-    r"Interim pin (?P<sha>[0-9a-f]{7}) \((?P<body>[^()]*?)[;,]\s+"
-    r"(?:untagged,\s+(?:#\s+)?not released|unreleased)\)"
+    r"Interim pin (?P<sha>[0-9a-f]{7}) \((?P<body>[^()]*?)[;,]\s+(?:#\s+)?"
+    r"(?:untagged\b[^()]*?|unreleased)\)"
 )
 
 
