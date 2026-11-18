@@ -1147,8 +1147,9 @@ def _legacy_manifest_id_matches(saved: Any, current: dict) -> bool:
     """A saved name-only manifest id (``manifest:<file name>``) continues this run's manifest of that name.
 
     Sweeps before the full-path id recorded only the file name, so such rows cannot say which folder
-    they came from. They keep resuming when the name matches; the per-document ``doc_id`` and
-    ``content_sha256`` checks below still refuse a different manifest's documents. Rows this version
+    they came from. They keep resuming when the name matches. That is the trust level resume always had for them: the
+    ``content_sha256`` check below catches a changed document under the same ``doc_id``, but a
+    same-named manifest whose ids do not overlap is not detected. Rows this version
     writes carry the full path, which a same-named manifest elsewhere does not match.
     """
     legacy = current.get("legacy_dataset_id")
