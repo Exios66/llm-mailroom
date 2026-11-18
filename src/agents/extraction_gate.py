@@ -2,9 +2,9 @@
 
 A gate is a plain callable, ``gate(doc_text, handoff) -> Mapping``. It reviews one
 specialist extraction and answers with at least a ``verdict``. The Decisions-model
-gate also returns ``key_field_score``, ``field_support`` and ``fields_asked`` (the
-key fields it was asked about; the decision slots count an asked field with no answer
-as unsupported, and release nothing without it). As with the decision
+gate also returns ``key_field_score``, ``field_support`` and ``fields_asked`` (kept on
+the record for evidence; the decision slots judge coverage from the taxonomy's own
+``decision_slots.gate_key_fields``, never from this list). As with the decision
 backend, the graph never constructs a gate: the host (the sandbox, an eval, a test)
 registers one. With nothing registered, extraction runs exactly as before.
 

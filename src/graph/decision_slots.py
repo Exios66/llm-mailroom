@@ -20,20 +20,20 @@ places the decision-model experiments (Sets A-F) measured or plan to measure:
     cause ``archive_gate_unsupported`` while the slot's ``park_cap`` allows. With
     ``release: true`` the gate may also send a document the router would park straight to
     the report, but only when every review cause is soft (low extraction confidence, spent
-    retries, a ``partial`` judge verdict), the gate names the fields it was asked
-    (``fields_asked``) and every one of them is supported at ``release_support_min``, and
-    the ``release_cap`` allows. It never releases a document the
+    retries, a ``partial`` judge verdict), the gate answered every key field the taxonomy
+    names for the class (``gate_key_fields``; an unanswered key field is support 0) at
+    ``release_support_min`` or above, and the ``release_cap`` allows. It never releases a document the
     judge called ``incomplete``, a schema, guardrail, chunk, vocabulary or coverage failure,
     or a matter conflict.
 ``judge_replacement``
     ``mode: gate``: ``judge_verify`` asks no LLM when the gate has answered for the current
-    extraction attempt; the verdict is ``complete`` when the gate supports every field, else
+    extraction attempt and the class has ``gate_key_fields`` (else the LLM judge runs); the verdict is ``complete`` when the gate supports every field, else
     ``incomplete`` with the unsupported fields as findings (``judge_source:
     extraction_gate``; no judge score is emitted and ``judge_coverage`` is cleared). The
     arbiter and its retry budget then work as before, with one rule: an
     ``accept_with_caveats`` on a gate ``incomplete``/``partial`` never archives (cause
-    ``gate_incomplete``, within the slot's ``park_cap``). With no usable gate answer the LLM
-    judge runs (the baseline).
+    ``gate_incomplete``; never capped). With no usable gate answer the LLM judge runs (the
+    baseline).
 ``arbiter_veto``
     ``mode: enforce``: an arbiter ``accept_with_caveats`` that the gate disagrees with parks
     (cause ``arbiter_veto_gate``). A veto only parks; it never releases. It does not spend
@@ -50,6 +50,11 @@ places the decision-model experiments (Sets A-F) measured or plan to measure:
     person should check (``review_focus``: gate-unsupported and off-list fields, with the
     resolver's pick when there is one), when there are at most ``max_fields`` of them.
     Routing is unchanged.
+
+**Key fields.** ``gate_key_fields`` names, per class, the fields the gate must answer; it is
+the mailroom's own list, so coverage never rests on what the plug-in says it asked. Field
+names the gate returns that are not fields of the class's extraction schema are dropped
+(at most 64 are read), so plug-in text never reaches findings or review evidence.
 
 **Caps** are rates over the documents a slot has seen in this process: a park or release is
 allowed while ``count + 1 <= cap * max(seen, cap_warmup)``. ``cap_warmup`` (default 20) keeps
@@ -107,12 +112,13 @@ _MODES: dict[str, tuple[str, ...]] = {
 _KEYS: dict[str, tuple[str, ...]] = {
     "sorter_reviewer": ("mode", "park_cap"),
     "archive_gate": ("mode", "park_cap", "release", "release_support_min", "release_cap"),
-    "judge_replacement": ("mode", "park_cap"),
+    "judge_replacement": ("mode",),
     "arbiter_veto": ("mode", "park_cap"),
     "closed_field_resolver": ("mode", "min_probability", "release_cap"),
     "field_review": ("mode", "max_fields"),
 }
-_TOP_KEYS = ("gate_support_min", "cap_warmup", *SLOTS)
+_TOP_KEYS = ("gate_support_min", "cap_warmup", "gate_key_fields", *SLOTS)
+_MAX_GATE_FIELDS = 64
 # Review causes a gate release may clear: none of them is hard evidence of a bad extraction.
 _SOFT_CAUSES = frozenset({"low_extraction_confidence", "retries_exhausted", "judge_partial"})
 _MAX_RESOLVED_FIELDS = 8
@@ -133,7 +139,6 @@ class SlotsConfig:
     archive_release_support_min: float = 0.9
     archive_release_cap: float | None = 0.03
     judge_replacement: str = "baseline"
-    judge_park_cap: float | None = None
     arbiter_veto: str = "baseline"
     veto_park_cap: float | None = None
     resolver: str = "baseline"
@@ -141,6 +146,7 @@ class SlotsConfig:
     resolver_release_cap: float | None = 0.03
     field_review: str = "baseline"
     field_review_max_fields: int = 3
+    gate_key_fields: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
     def nodes_to_wrap(self) -> frozenset[str]:
@@ -174,6 +180,44 @@ def _prob(where: str, value: Any) -> float:
     if not _unit(value):
         raise DecisionSlotConfigError(f"decision_slots.{where} must be a number in [0, 1], got {value!r}")
     return float(value)
+
+
+def _key_fields(raw: Any) -> dict[str, tuple[str, ...]]:
+    """``gate_key_fields``: ``{class: [field, ...]}``, every field a field of the class's schema."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise DecisionSlotConfigError("decision_slots.gate_key_fields must map doc classes to field lists")
+    out: dict[str, tuple[str, ...]] = {}
+    for cls, names in raw.items():
+        where = f"decision_slots.gate_key_fields.{cls}"
+        if not isinstance(names, (list, tuple)) or not names or not all(isinstance(n, str) and n for n in names):
+            raise DecisionSlotConfigError(f"{where} must be a non-empty list of field names")
+        if len(set(names)) != len(names) or len(names) > _MAX_GATE_FIELDS:
+            raise DecisionSlotConfigError(f"{where} must name distinct fields, at most {_MAX_GATE_FIELDS}")
+        known = _schema_fields(str(cls))
+        unknown = sorted(set(names) - known) if known is not None else []
+        if unknown:
+            raise DecisionSlotConfigError(f"{where}: {unknown} are not fields of the {cls} extraction schema")
+        out[str(cls)] = tuple(names)
+    return out
+
+
+@functools.lru_cache(maxsize=32)
+def _schema_field_set(doc_type: str) -> frozenset[str] | None:
+    try:
+        from schemas import EXTRACTION_SCHEMAS
+    except ImportError:  # loaded by path (the sandbox preflight): field names are checked at startup
+        return None
+    model = EXTRACTION_SCHEMAS.get(doc_type)
+    if model is None:
+        raise DecisionSlotConfigError(f"decision_slots.gate_key_fields: {doc_type!r} has no extraction schema")
+    return frozenset(model.model_fields)
+
+
+def _schema_fields(doc_type: str) -> frozenset[str] | None:
+    """The field names of ``doc_type``'s extraction schema; ``None`` when the schemas cannot be imported."""
+    return _schema_field_set(doc_type)
 
 
 def parse_slots(raw: Any) -> SlotsConfig:
@@ -211,6 +255,7 @@ def parse_slots(raw: Any) -> SlotsConfig:
     if isinstance(max_fields, bool) or not isinstance(max_fields, int) or max_fields < 1:
         raise DecisionSlotConfigError(f"decision_slots.field_review.max_fields must be a positive integer, got {max_fields!r}")
     ag, rv = blocks["archive_gate"], blocks["closed_field_resolver"]
+    key_fields = _key_fields(raw.get("gate_key_fields"))
     return SlotsConfig(
         gate_support_min=_prob("gate_support_min", raw.get("gate_support_min", 0.5)),
         cap_warmup=warmup,
@@ -221,7 +266,6 @@ def parse_slots(raw: Any) -> SlotsConfig:
         archive_release_support_min=_prob("archive_gate.release_support_min", ag.get("release_support_min", 0.9)),
         archive_release_cap=_cap("archive_gate.release_cap", ag.get("release_cap", 0.03)),
         judge_replacement=blocks["judge_replacement"].get("mode", "baseline"),
-        judge_park_cap=_cap("judge_replacement.park_cap", blocks["judge_replacement"].get("park_cap")),
         arbiter_veto=blocks["arbiter_veto"].get("mode", "baseline"),
         veto_park_cap=_cap("arbiter_veto.park_cap", blocks["arbiter_veto"].get("park_cap")),
         resolver=rv.get("mode", "baseline"),
@@ -229,6 +273,7 @@ def parse_slots(raw: Any) -> SlotsConfig:
         resolver_release_cap=_cap("closed_field_resolver.release_cap", rv.get("release_cap", 0.03)),
         field_review=blocks["field_review"].get("mode", "baseline"),
         field_review_max_fields=max_fields,
+        gate_key_fields=key_fields,
         raw=dict(raw),
     )
 
@@ -315,8 +360,8 @@ class GateView:
     unsupported: tuple[str, ...] = ()
     min_support: float | None = None
     field_support: Mapping[str, float] = field(default_factory=dict)
-    # True when the gate named the fields it was asked (``fields_asked``): every one counts,
-    # and an asked field with no answer is support 0.0. False: only the answered fields are known.
+    # True when the taxonomy names the class's key fields (``gate_key_fields``): every one
+    # counts, and a key field with no answer is support 0.0. False: only the answered fields are known.
     covered: bool = False
 
     def summary(self) -> dict[str, Any]:
@@ -326,12 +371,17 @@ class GateView:
             "gate": "supports" if self.accepts else "unsupported",
             "unsupported_fields": list(self.unsupported),
             "min_support": round(self.min_support, 4) if self.min_support is not None else None,
-            "coverage": "asked" if self.covered else "answered_only",
+            "coverage": "key_fields" if self.covered else "answered_only",
         }
 
 
-def gate_view(state: Mapping[str, Any], support_min: float) -> GateView:
-    """The extraction gate's answer on the CURRENT attempt, judged from ``field_support`` only."""
+def gate_view(state: Mapping[str, Any], support_min: float,
+              key_fields: Mapping[str, tuple[str, ...]] | None = None) -> GateView:
+    """The extraction gate's answer on the CURRENT attempt, judged from ``field_support`` only.
+
+    Only field names of the class's extraction schema are read (at most 64); every
+    ``key_fields[doc_type]`` field counts, unanswered as support 0.
+    """
     rec = state.get("extraction_gate")
     if not isinstance(rec, Mapping):
         return GateView(False, "no_gate_answer")
@@ -345,16 +395,26 @@ def gate_view(state: Mapping[str, Any], support_min: float) -> GateView:
     support = rec.get("field_support")
     if not isinstance(support, Mapping) or not support:
         return GateView(False, "no_field_support")
+    doc_type = str(state.get("doc_type") or "")
+    try:
+        known = _schema_fields(doc_type)
+    except DecisionSlotConfigError:
+        known = None
     values: dict[str, float] = {}
     for name, p in support.items():
+        if not isinstance(name, str) or (known is not None and name not in known):
+            continue  # plug-in text that is not one of our field names is never stored or shown
         if not _unit(p):
             return GateView(False, "malformed_field_support")
-        values[str(name)] = float(p)
-    asked = rec.get("fields_asked")
-    covered = isinstance(asked, list) and bool(asked) and all(isinstance(f, str) and f for f in asked)
-    if covered:
-        # A field the gate was asked but did not answer can never count as supported.
-        values = {**{f: 0.0 for f in asked}, **{f: values[f] for f in asked if f in values}}
+        values[name] = float(p)
+        if len(values) >= _MAX_GATE_FIELDS:
+            break
+    key = tuple((key_fields or {}).get(doc_type, ()))
+    covered = bool(key)
+    for name in key:  # a key field the gate did not answer can never count as supported
+        values.setdefault(name, 0.0)
+    if not values:
+        return GateView(False, "no_field_support")
     unsupported = tuple(sorted(f for f, p in values.items() if p < support_min))
     return GateView(True, None, not unsupported, unsupported, min(values.values()), values, covered)
 
@@ -404,7 +464,7 @@ def _archive_gate(cfg: SlotsConfig, state: Mapping[str, Any], proposal: str | No
     if proposal == PARK and not cfg.archive_release:
         return None
     _mark_seen("archive_gate", marks)
-    view = gate_view(state, cfg.gate_support_min)
+    view = gate_view(state, cfg.gate_support_min, cfg.gate_key_fields)
     rec: dict[str, Any] = {"action": "unavailable", "route": None, **view.summary()}
     if not view.available:
         return rec
@@ -416,7 +476,7 @@ def _archive_gate(cfg: SlotsConfig, state: Mapping[str, Any], proposal: str | No
         return {**rec, "action": "capped", "cause": "archive_gate_unsupported"}
     blocker = _release_blocker(state)
     if blocker is None and not view.covered:
-        blocker = "coverage_unknown"  # a partial answer must never release
+        blocker = "coverage_unknown"  # no key fields for the class: a partial answer must never release
     if blocker is None and (view.min_support or 0.0) < cfg.archive_release_support_min:
         blocker = "support_below_release_min"
     if blocker is not None:
@@ -437,14 +497,11 @@ def _arbiter_slots(cfg: SlotsConfig, state: Mapping[str, Any], proposal: str | N
     ):
         prior = (state.get(OUTCOMES_KEY) or {}).get("judge_replacement")
         replaced = {"replaced_verdict": prior.get("verdict")} if isinstance(prior, Mapping) else {}
-        _mark_seen("judge_replacement", marks)
-        if _charge("judge_replacement", "park", cfg.judge_park_cap, cfg.cap_warmup, marks):
-            out["judge_replacement"] = {"action": "park", "route": PARK, "cause": "gate_incomplete", **replaced}
-        else:
-            out["judge_replacement"] = {"action": "capped", "route": None, "cause": "gate_incomplete", **replaced}
+        # Never capped: a gate ``incomplete`` is never auto-accepted.
+        out["judge_replacement"] = {"action": "park", "route": PARK, "cause": "gate_incomplete", **replaced}
     if cfg.arbiter_veto == "enforce":
         _mark_seen("arbiter_veto", marks)
-        view = gate_view(state, cfg.gate_support_min)
+        view = gate_view(state, cfg.gate_support_min, cfg.gate_key_fields)
         rec: dict[str, Any] = {"action": "unavailable", "route": None, **view.summary()}
         if view.available:
             if view.accepts:
@@ -478,7 +535,10 @@ def wrap_node(node: str, fn: Callable[[Any], Any], cfg: SlotsConfig | None = Non
         }
         own = update.get(OUTCOMES_KEY)
         if isinstance(own, Mapping):
-            outcomes.update(own)
+            # The node may hand back a copy of the prior outcomes (judge_verify does); only an
+            # entry it changed is fresh, so a stale entry of this node never comes back.
+            old = prior if isinstance(prior, Mapping) else {}
+            outcomes.update({k: v for k, v in own.items() if k not in old or v != old[k]})
         if update.get("transient_error"):
             return {**update, OUTCOMES_KEY: outcomes}
         merged = {**state, **update}
@@ -573,9 +633,11 @@ def gate_judge_update(state: Mapping[str, Any]) -> tuple[dict[str, Any] | None, 
     cfg = get_slots()
     if cfg.judge_replacement != "gate":
         return None, {}
-    view = gate_view(state, cfg.gate_support_min)
+    view = gate_view(state, cfg.gate_support_min, cfg.gate_key_fields)
     outcomes = dict(state.get(OUTCOMES_KEY) or {})
     base = {"node": "judge_verify", "attempt": state.get("extraction_attempts"), "proposal": None, "route": None}
+    if view.available and not view.covered:
+        view = GateView(False, "coverage_unknown")  # no key fields for the class: the LLM judge decides
     if not view.available:
         logger.info("judge_replacement_fallback", doc_id=state.get("doc_id"), reason=view.reason)
         outcomes["judge_replacement"] = {**base, "action": "unavailable", **view.summary()}
@@ -594,7 +656,9 @@ def gate_judge_update(state: Mapping[str, Any]) -> tuple[dict[str, Any] | None, 
         "judge_coverage": None,
         "judge_pass_count": int(state.get("judge_pass_count") or 0) + 1,
         "transient_error": False,
-        OUTCOMES_KEY: {**outcomes, "judge_replacement": {**base, "action": "replaced", "verdict": label, **view.summary()}},
+        OUTCOMES_KEY: {**outcomes, "judge_replacement": {**base, "action": "replaced", "verdict": label,
+                                                          "judge_pass": int(state.get("judge_pass_count") or 0) + 1,
+                                                          **view.summary()}},
     }
     history = attempt_history.record_verdict(state, verdict=label, score=score, findings=findings, source_verified=False)
     if history is not None:
@@ -731,7 +795,7 @@ def review_focus(state: Mapping[str, Any]) -> list[dict[str, Any]] | None:
     from pipeline.label_vocab import out_of_vocabulary_fields
 
     focus: dict[str, dict[str, Any]] = {}
-    view = gate_view(state, cfg.gate_support_min)
+    view = gate_view(state, cfg.gate_support_min, cfg.gate_key_fields)
     if view.available:
         for name in view.unsupported:
             focus[name] = {"field": name, "reason": "unsupported", "support": round(view.field_support[name], 4)}

@@ -22,9 +22,9 @@ registers them from its run spec); the chat sorter reviewer is the baseline.
 
 | Slot | Baseline | Decision-model role | Guard |
 | --- | --- | --- | --- |
-| `sorter_reviewer` | `reviewer:` decision_only classes park on any failed rule | `park_cap`: past it the chat reviewer reviews instead | accepts are never capped |
+| `sorter_reviewer` | `reviewer:` decision_only classes park on any failed rule | `park_cap`: past it the chat reviewer reviews instead | accepts are never capped; every non-accept route (a park or a classification-arbiter escalation) counts |
 | `archive_gate` | gate answer recorded only | `enforce`: the gate parks an archive it does not support, on the `extract`, `retry_extract` and `judge_verify` routes; optional `release` of a soft park | `park_cap` 10%, `release_cap` 3% |
-| `judge_replacement` | LLM judge, up to `judge_max_passes` | `gate`: the gate answer on this attempt is the verdict; no judge call, no judge score | an arbiter `accept_with_caveats` on a gate `incomplete` parks (`gate_incomplete`); `park_cap` (none by default) |
+| `judge_replacement` | LLM judge, up to `judge_max_passes` | `gate`: the gate answer on this attempt is the verdict (classes with `gate_key_fields` only); no judge call, no judge score | an arbiter `accept_with_caveats` on a gate `incomplete` always parks (`gate_incomplete`, never capped) |
 | `arbiter_veto` | `accept_with_caveats` archives | `enforce`: gate disagreement parks (`arbiter_veto_gate`) | only parks, never releases; `park_cap` (none by default); no charge when `judge_replacement` already parks |
 | `closed_field_resolver` | off-list closed label parks (#285) | `suggest` records an allowed pick; `resolve` applies it | every off-list field needs an on-list pick at `min_probability`; `release_cap` 3% |
 | `field_review` | the whole document parks | `annotate`: the review block lists `review_focus` fields | at most `max_fields`, else the whole document |
@@ -38,6 +38,16 @@ unsupported field is not supported. The answer counts only for the extraction at
 judged (`extraction_gate.attempt` equals `extraction_attempts`); an error, a skip, a stale
 or malformed answer is `unavailable`, and the slot then follows the baseline.
 
+### Key fields
+
+`gate_key_fields` names, per class, the fields the gate must answer. It is the mailroom's own
+list (the shipped one matches the sandbox gate question set `extraction_gate_v1.3.0`), so
+coverage never rests on what the plug-in says it asked: a key field without an answer is
+support 0. Field names the gate returns that are not fields of the class's extraction schema
+are dropped, and at most 64 are read, so plug-in text never reaches findings or review
+evidence. A class without key fields can still park through `archive_gate` and
+`arbiter_veto`, but is never released and never has its judge replaced.
+
 ### Releases are narrow
 
 `archive_gate.release: true` lets the gate archive a document the router would park, only
@@ -45,9 +55,8 @@ when all of these hold:
 
 - every review cause is soft: `low_extraction_confidence`, `retries_exhausted`, `judge_partial`;
 - the judge did not say `incomplete` (or error), there is no matter conflict and no guardrail issue;
-- the gate answer names the fields it was asked (`fields_asked`), and every one of them is
-  supported at `release_support_min` (default 0.9); an asked field with no answer counts as
-  support 0, and an answer without `fields_asked` never releases;
+- the class has `gate_key_fields` and every one of them is supported at `release_support_min`
+  (default 0.9); a key field the gate did not answer counts as support 0;
 - the `release_cap` allows it.
 
 `archive_gate` does not see an arbiter `accept_with_caveats` archive (that is
