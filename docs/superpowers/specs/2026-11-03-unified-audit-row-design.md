@@ -345,7 +345,9 @@ After 3 failed attempts to commit the row:
    and writes each as a normal row with `detail.recovered_from` =
    `{sink, ref, captured_at, detail_sha256}` and sets the manifest to `audit_written: true`
    (`"pending_partial"`, with the kept refs, after a decisions-only row, until the complete copy
-   closes it). It does not write a second row for a document that already has one, with these
+   closes it). Every manifest mark is a read-modify-write under a file lock (`pipeline.bins.manifest_lock`), and the
+   `pending_partial` mark is a compare-and-set against the manifest as the sweep saw it before it read the
+   row, so a sweep that another sweep overtook does not overwrite `written` (#303). It does not write a second row for a document that already has one, with these
    exceptions, a partial row first: when that row has `recovered_from.complete = false` and a sink now
    returns a complete copy whose SHA-256 equals the row's `recovered_from.full_detail_sha256`,
    reconcile leaves the row unchanged (rows are immutable, §4.1) and writes one
@@ -446,7 +448,7 @@ digest must be the partial row's `recovered_from.full_detail_sha256`.
   (unchanged), `audit_rows_<date>` (row columns, `detail` as JSON, `audit_row_metrics`
   columns; key `entry_id`), `audit_attempts_<date>` (`attempt_id`, `parent_id`),
   `audit_addenda_<date>` (`addendum_id`, `doc_id`), `audit_legacy.parquet` (once). The
-  warehouse manifest maps `doc_id` to `entry_hash` and file names.
+  warehouse manifest maps `doc_id` to `entry_hash`, `addenda_count` (the addenda that export wrote) and file names; an incremental export selects a document whose committed addenda differ from `addenda_count`, so an addendum stamped before the watermark moved is still exported (#304). A manifest without the field reads as zero.
 - **`audit-report`:** Markdown per live document type: unique schema, n, model, route (API or
   Modal), then F1, F2 and every other collected metric; uncollected metrics are labelled,
   never filled. Reads the audit DB or the Parquet files. This is #235 acceptance 3.

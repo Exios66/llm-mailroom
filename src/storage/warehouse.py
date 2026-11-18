@@ -8,7 +8,7 @@ Layout under ``{MAILROOM_BASE_DIR}/warehouse/``::
     audit_attempts_YYYY-MM-DD.parquet  # their sub-rows (key attempt_id, parent_id)
     audit_addenda_YYYY-MM-DD.parquet   # their addenda (key addendum_id, doc_id)
     audit_legacy.parquet               # the migrated per-event history, written once
-    manifest.json                      # schema version, export watermark, doc_id -> entry_hash + files
+    manifest.json                      # schema version, export watermark, doc_id -> entry_hash + addenda_count + files
 
 Join key: ``doc_id``. Routine export runs after archive/failed (best-effort).
 Full/incremental backfill: ``scripts/export_warehouse.py``.
@@ -417,17 +417,29 @@ async def fetch_terminal_documents(
     doc_ids: list[str] | None = None,
     since: datetime | None = None,
     exported: dict[str, str] | None = None,
+    exported_addenda: dict[str, int] | None = None,
 ) -> list:
     """Terminal catalog documents: the requested ``doc_ids``, else those changed after ``since``.
 
     "Changed" is a catalog update, a unified row or addendum newer than ``since``, or (with
     ``exported``, the warehouse manifest's ``doc_id -> entry_hash`` map) a unified row the
-    warehouse does not hold yet. An addendum (rescore, review decision, ...) never touches the
-    catalog row, and a rejected review's ``failed`` row is written after the catalog flips to
-    ``failed`` (and after the routine export ran), so the catalog watermark alone would leave that
-    document's exported audit row stale or missing. Database errors propagate.
+    warehouse does not hold yet, or (with ``exported_addenda``, its ``doc_id -> addenda exported``
+    map) a document whose committed addenda are not the number exported. An addendum (rescore,
+    review decision, ...) never touches the catalog row, and a rejected review's ``failed`` row is
+    written after the catalog flips to ``failed`` (and after the routine export ran), so the catalog
+    watermark alone would leave that document's exported audit row stale or missing.
+
+    The addendum count is what makes every committed addendum reach an incremental export. A
+    writer that stamps the addendum's timestamp before it commits (PostgreSQL holds only a
+    per-document lock) can commit it after another document's later timestamp has advanced the
+    watermark; it then fails ``timestamp > since``, and the row hash does not change with an addendum.
+    Addenda are append-only, so any difference between the stored count and the exported one is
+    stale. A document absent from ``exported_addenda`` counts as zero exported, which is also how a
+    manifest written before this tracking reads: its documents that hold addenda are exported once
+    more (an idempotent upsert by key) and then carry the count. Without ``exported_addenda`` addenda
+    are compared by timestamp only, as before. Database errors propagate.
     """
-    from sqlalchemy import or_, select
+    from sqlalchemy import func, or_, select
 
     from storage.audit_log import AuditAddendumRecord, AuditLegacyRecord, AuditLogRecord, event_log_model
     from storage.catalog import DocumentRecord
@@ -466,6 +478,11 @@ async def fetch_terminal_documents(
                     held = (await session.execute(
                         select(AuditLogRecord.doc_id, AuditLogRecord.entry_hash))).all()
                     stale = [d for d, h in held if exported.get(d) != h]
+            if exported_addenda is not None:
+                counts = (await session.execute(
+                    select(AuditAddendumRecord.doc_id, func.count())
+                    .group_by(AuditAddendumRecord.doc_id))).all()
+                stale += [d for d, n in counts if exported_addenda.get(d, 0) != n]
             query = query.where(or_(DocumentRecord.updated_at > since, DocumentRecord.doc_id.in_(newer)))
         query = query.order_by(DocumentRecord.updated_at)
         records = list((await session.execute(query)).scalars().all())
@@ -574,10 +591,14 @@ async def export_to_warehouse(
         for doc, entry in (wh_manifest.get("documents") or {}).items()
         if isinstance(entry, dict)
     } if from_watermark else None
-    # ``exported`` is passed only when it applies, so a narrower ``fetch_terminal_documents`` still works.
-    records = await fetch_terminal_documents(
-        doc_ids=doc_ids, since=since, **({} if exported is None else {"exported": exported})
-    )
+    exported_addenda = {
+        doc: _addenda_count(entry)
+        for doc, entry in (wh_manifest.get("documents") or {}).items()
+        if isinstance(entry, dict)
+    } if from_watermark else None
+    # The map is passed only when it applies, so a narrower ``fetch_terminal_documents`` still works.
+    tracked = {} if exported is None else {"exported": exported, "exported_addenda": exported_addenda}
+    records = await fetch_terminal_documents(doc_ids=doc_ids, since=since, **tracked)
     if not records:
         # No document to export, but the one-time migrated history must not wait for one.
         return {
@@ -636,6 +657,14 @@ async def export_to_warehouse(
     }
 
 
+def _addenda_count(entry: dict[str, Any]) -> int:
+    """The addenda a manifest document entry says were exported; 0 for an old or unreadable entry."""
+    try:
+        return max(int(entry.get("addenda_count") or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
@@ -662,7 +691,10 @@ def _publish_unified(stamp, unified, manifest) -> None:
     docs = manifest.setdefault("documents", {})
     for row, attempts, addenda in unified:
         files = [paths[0].name] + ([paths[1].name] if attempts else []) + ([paths[2].name] if addenda else [])
-        docs[row["doc_id"]] = {"entry_hash": row["entry_hash"], "export_date": stamp.isoformat(), "files": files}
+        # ``addenda_count`` is what this batch wrote, not what the database holds now: an addendum that
+        # commits after the fetch makes the next incremental export select the document again.
+        docs[row["doc_id"]] = {"entry_hash": row["entry_hash"], "export_date": stamp.isoformat(), "files": files,
+                               "addenda_count": len(addenda)}
 
 
 async def _export_legacy_alone(wh_manifest: dict[str, Any]) -> int:

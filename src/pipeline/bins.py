@@ -7,6 +7,7 @@ import tempfile
 import threading
 import uuid
 from collections import OrderedDict
+from contextlib import contextmanager
 from pathlib import Path, PureWindowsPath
 from typing import Optional
 
@@ -718,6 +719,85 @@ def load_manifest(doc_id: str):
     if not isinstance(data, dict):
         raise ValueError("Document manifest root must be a JSON object")
     return DocumentManifest(**data)
+
+
+# One advisory lock for every read-modify-write of a manifest (``update_manifest``). It lives in the
+# manifests directory under a name the ``*.json`` manifest globs never match. ``flock`` holds across
+# processes (API, watcher, ``audit-reconcile`` runs) and across threads of one process (each acquisition
+# opens its own file description); the RLock only makes a nested acquisition in one thread safe.
+_MANIFEST_LOCK_NAME = ".manifests.lock"
+_manifest_rlock = threading.RLock()
+_manifest_lock_depth = 0
+_manifest_lock_warned = False
+
+
+def _warn_manifest_lock_once(reason: str, **kw) -> None:
+    global _manifest_lock_warned
+    if not _manifest_lock_warned:
+        _manifest_lock_warned = True
+        logger.warning("manifest_file_lock_unavailable", reason=reason, **kw)
+
+
+@contextmanager
+def manifest_lock():
+    """Serialize manifest read-modify-write cycles across processes (``fcntl.flock``).
+
+    Fail-safe where ``fcntl`` is missing (Windows) or the lock file cannot be opened: the update still
+    runs under the in-process RLock, with one ``manifest_file_lock_unavailable`` warning, because
+    manifest marks are best-effort bookkeeping and must never stop a pipeline run. Re-entrant per thread.
+
+    Only callers that go through this lock (``update_manifest``) are serialized against each other. Code
+    that still does a plain ``load_manifest``/``save_manifest`` can overwrite a locked update.
+    """
+    global _manifest_lock_depth
+    with _manifest_rlock:
+        if _manifest_lock_depth:
+            _manifest_lock_depth += 1
+            try:
+                yield
+            finally:
+                _manifest_lock_depth -= 1
+            return
+        handle = None
+        try:
+            import fcntl
+        except ImportError:
+            fcntl = None
+            _warn_manifest_lock_once("fcntl is not available on this platform")
+        if fcntl is not None:
+            try:
+                mdir = manifests_dir()
+                mdir.mkdir(parents=True, exist_ok=True)
+                handle = open(mdir / _MANIFEST_LOCK_NAME, "a+b")
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            except OSError as exc:
+                if handle is not None:
+                    handle.close()
+                handle = None
+                _warn_manifest_lock_once("lock file could not be locked", error=str(exc))
+        _manifest_lock_depth = 1
+        try:
+            yield
+        finally:
+            _manifest_lock_depth = 0
+            if handle is not None:
+                handle.close()  # closing the descriptor releases the flock
+
+
+def update_manifest(doc_id: str, mutate) -> bool:
+    """Compare-and-set a manifest: reload it under ``manifest_lock``, let ``mutate`` decide, save.
+
+    ``mutate(manifest)`` sees the manifest as it is on disk now, not as the caller saw it earlier, and
+    returns ``False`` to decline (the observed state no longer holds); any other return saves the
+    changes it made. Returns whether the manifest was saved: ``False`` for a missing manifest or a
+    declined update. Load and save errors propagate (``mark_manifest`` catches them).
+    """
+    with manifest_lock():
+        manifest = load_manifest(doc_id)
+        if manifest is None or mutate(manifest) is False:
+            return False
+        save_manifest(manifest)
+        return True
 
 
 def get_worker_id() -> str:

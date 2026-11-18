@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import structlog
 
@@ -418,31 +418,75 @@ def write_row(
 _AUDIT_WRITTEN = {"written": True, "pending": "pending", "pending_partial": "pending_partial", "gap": False}
 
 
-def mark_manifest(doc_id: str, status: str, refs=(), *, preserve_partial: bool = False) -> None:
-    """Record the row's write status and sink refs on an existing manifest.
+class ManifestState(NamedTuple):
+    """What a sweep saw on a manifest: the audit write status and the sink refs it listed."""
 
-    Missing manifests and load or save errors are ignored after logging the
-    latter; this best-effort update never raises (§5.6 step 2).
+    audit_written: Any
+    audit_pending_refs: tuple[tuple[tuple[str, Any], ...], ...]
+    mark_seq: int = 0  # marks applied so far: a mark that rewrote the same status and refs still moves it
+
+
+def _state_of(manifest) -> ManifestState:
+    return ManifestState(manifest.audit_written, _refs_key(manifest.audit_pending_refs),
+                         int(getattr(manifest, "audit_mark_seq", 0) or 0))
+
+
+def _refs_key(refs) -> tuple[tuple[tuple[str, Any], ...], ...]:
+    return tuple(tuple(sorted((str(k), v) for k, v in dict(r).items())) for r in refs or [])
+
+
+def observe_manifest(doc_id: str) -> ManifestState | None:
+    """The manifest's audit status and refs now, for ``mark_manifest(expect=...)``; ``None`` if unreadable.
+
+    Take it before reading the audit row a decision is based on: the later mark then applies only if no
+    other writer changed the manifest in between.
     """
     try:
-        from pipeline.bins import load_manifest, save_manifest
+        from pipeline.bins import load_manifest
 
         manifest = load_manifest(doc_id)
-        if manifest is None:
-            return
-        # A later successful live write does not close a prior pending or partial gap (an earlier row that
-        # exists only in a sink). Reconciliation clears it explicitly after recovering the full copy.
-        if preserve_partial and status == "written" and manifest.audit_written in ("pending", "pending_partial"):
-            return
-        manifest.audit_written = _AUDIT_WRITTEN[status]
-        manifest.audit_pending_refs = [dict(r) for r in refs]
-        save_manifest(manifest)
+        return None if manifest is None else _state_of(manifest)
+    except Exception:
+        logger.warning("audit_manifest_observe_failed", doc_id=doc_id, exc_info=True)
+        return None
+
+
+def mark_manifest(doc_id: str, status: str, refs=(), *, preserve_partial: bool = False,
+                  expect: ManifestState | None = None) -> bool:
+    """Record the row's write status and sink refs on an existing manifest; return whether it was saved.
+
+    The read-modify-write runs under the manifests file lock (``pipeline.bins.update_manifest``), so two
+    sweeps or a sweep and a live writer cannot interleave their cycles. With ``expect`` (from
+    ``observe_manifest``) it is a compare-and-set: the update is skipped, and ``False`` returned, when
+    the manifest no longer holds the state the caller decided from. Missing manifests and load or save
+    errors are ignored after logging the latter; this best-effort update never raises (§5.6 step 2).
+    """
+    try:
+        from pipeline.bins import update_manifest
+
+        def apply(manifest) -> bool:
+            if expect is not None and _state_of(manifest) != expect:
+                return False  # another writer moved the manifest since the caller looked
+            # A later successful live write does not close a prior pending or partial gap (an earlier row that
+            # exists only in a sink). Reconciliation clears it explicitly after recovering the full copy.
+            if preserve_partial and status == "written" and manifest.audit_written in ("pending", "pending_partial"):
+                return False
+            manifest.audit_written = _AUDIT_WRITTEN[status]
+            manifest.audit_pending_refs = [dict(r) for r in refs]
+            manifest.audit_mark_seq = int(getattr(manifest, "audit_mark_seq", 0) or 0) + 1
+            return True
+
+        applied = update_manifest(doc_id, apply)
+        if expect is not None and not applied:
+            logger.info("audit_manifest_mark_skipped", doc_id=doc_id, status=status)
+        return applied
     except Exception:
         logger.warning("audit_manifest_mark_failed", doc_id=doc_id, status=status, exc_info=True)
+        return False
 
 
 __all__ = [
     "EVENT_STAGE", "EXTRACTION_KEYS", "REF_KEYS", "ROW_DETAIL_KEYS", "ROW_SCHEMA", "attempts_from_trace",
     "human_correction_row",
-    "build_row", "row_metrics", "write_row",
+    "build_row", "row_metrics", "write_row", "ManifestState", "observe_manifest", "mark_manifest",
 ]

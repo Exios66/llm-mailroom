@@ -98,6 +98,9 @@ class DocumentManifest(BaseModel):
     # ``audit_pending_refs`` names the sink copies: [{sink, ref, complete, recoverable}].
     audit_written: bool | Literal["pending", "pending_partial"] | None = None
     audit_pending_refs: list[dict] = Field(default_factory=list)
+    # Counts the audit marks applied to this manifest, so a compare-and-set sees a mark that wrote the same
+    # status and refs as before (``audit.row.mark_manifest``).
+    audit_mark_seq: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
