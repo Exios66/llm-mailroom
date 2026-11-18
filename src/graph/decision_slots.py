@@ -2,7 +2,8 @@
 
 Taxonomy ``decision_slots:`` (``src/config/taxonomy.yaml``). Every slot ships ``mode:
 baseline``, which is exactly the pipeline without this module: no node is wrapped, no route
-rule is registered, no state key is written and no model is called. The slots are the six
+rule is registered, no slot state key is written and no model is called (a registered
+extraction gate's record carries the ``attempt`` it judged either way). The slots are the six
 places the decision-model experiments (Sets A-F) measured or plan to measure:
 
 ``sorter_reviewer``
@@ -19,21 +20,24 @@ places the decision-model experiments (Sets A-F) measured or plan to measure:
     cause ``archive_gate_unsupported`` while the slot's ``park_cap`` allows. With
     ``release: true`` the gate may also send a document the router would park straight to
     the report, but only when every review cause is soft (low extraction confidence, spent
-    retries, a ``partial`` judge verdict), every field is supported at
-    ``release_support_min`` and the ``release_cap`` allows. It never releases a document the
+    retries, a ``partial`` judge verdict), the gate names the fields it was asked
+    (``fields_asked``) and every one of them is supported at ``release_support_min``, and
+    the ``release_cap`` allows. It never releases a document the
     judge called ``incomplete``, a schema, guardrail, chunk, vocabulary or coverage failure,
     or a matter conflict.
 ``judge_replacement``
     ``mode: gate``: ``judge_verify`` asks no LLM when the gate has answered for the current
     extraction attempt; the verdict is ``complete`` when the gate supports every field, else
     ``incomplete`` with the unsupported fields as findings (``judge_source:
-    extraction_gate``). The arbiter and its retry budget then work as before, with one
-    rule: an ``accept_with_caveats`` on a gate ``incomplete``/``partial`` never archives
-    (cause ``gate_incomplete``). With no usable gate answer the LLM judge runs (the
-    baseline).
+    extraction_gate``; no judge score is emitted and ``judge_coverage`` is cleared). The
+    arbiter and its retry budget then work as before, with one rule: an
+    ``accept_with_caveats`` on a gate ``incomplete``/``partial`` never archives (cause
+    ``gate_incomplete``, within the slot's ``park_cap``). With no usable gate answer the LLM
+    judge runs (the baseline).
 ``arbiter_veto``
     ``mode: enforce``: an arbiter ``accept_with_caveats`` that the gate disagrees with parks
-    (cause ``arbiter_veto_gate``). A veto only parks; it never releases.
+    (cause ``arbiter_veto_gate``). A veto only parks; it never releases. It does not spend
+    its cap on a document ``judge_replacement`` already parks (``action: hold``).
 ``closed_field_resolver``
     #285 parks any closed-label value off its taxonomy vocabulary. ``mode: suggest`` asks the
     registered resolver (``agents.closed_field_resolver``) to pick an allowed value and
@@ -60,7 +64,8 @@ slot: ``node``, ``attempt``, ``proposal`` (the base router's destination), ``act
 (``park``, ``release``, ``capped``, ``agree``, ``hold``, ``unavailable``), ``route`` (the
 destination the slot's route rule applies, else ``None``), ``cause`` and the gate numbers.
 A route rule ``decision_slot:<node>`` applies ``route`` only while the router still proposes
-what the slot saw. ``state["decision_slot_marks"]`` lists ``seen:<slot>``, ``park:<slot>``
+what the slot saw. Once a person resolves a park, the outcomes are cleared (the marks stay),
+so a decision about an earlier attempt never labels the next. ``state["decision_slot_marks"]`` lists ``seen:<slot>``, ``park:<slot>``
 and ``release:<slot>`` so a document is counted once.
 """
 
@@ -102,7 +107,7 @@ _MODES: dict[str, tuple[str, ...]] = {
 _KEYS: dict[str, tuple[str, ...]] = {
     "sorter_reviewer": ("mode", "park_cap"),
     "archive_gate": ("mode", "park_cap", "release", "release_support_min", "release_cap"),
-    "judge_replacement": ("mode",),
+    "judge_replacement": ("mode", "park_cap"),
     "arbiter_veto": ("mode", "park_cap"),
     "closed_field_resolver": ("mode", "min_probability", "release_cap"),
     "field_review": ("mode", "max_fields"),
@@ -128,6 +133,7 @@ class SlotsConfig:
     archive_release_support_min: float = 0.9
     archive_release_cap: float | None = 0.03
     judge_replacement: str = "baseline"
+    judge_park_cap: float | None = None
     arbiter_veto: str = "baseline"
     veto_park_cap: float | None = None
     resolver: str = "baseline"
@@ -145,6 +151,11 @@ class SlotsConfig:
         if self.arbiter_veto == "enforce" or self.judge_replacement == "gate":
             nodes.add("arbiter")
         return frozenset(nodes)
+
+    def any_on(self) -> bool:
+        """True when some slot is not at its baseline."""
+        return bool(self.nodes_to_wrap()) or self.reviewer_park_cap is not None or (
+            self.resolver != "baseline") or self.field_review != "baseline"
 
 
 def _unit(value: Any) -> bool:
@@ -210,6 +221,7 @@ def parse_slots(raw: Any) -> SlotsConfig:
         archive_release_support_min=_prob("archive_gate.release_support_min", ag.get("release_support_min", 0.9)),
         archive_release_cap=_cap("archive_gate.release_cap", ag.get("release_cap", 0.03)),
         judge_replacement=blocks["judge_replacement"].get("mode", "baseline"),
+        judge_park_cap=_cap("judge_replacement.park_cap", blocks["judge_replacement"].get("park_cap")),
         arbiter_veto=blocks["arbiter_veto"].get("mode", "baseline"),
         veto_park_cap=_cap("arbiter_veto.park_cap", blocks["arbiter_veto"].get("park_cap")),
         resolver=rv.get("mode", "baseline"),
@@ -303,6 +315,9 @@ class GateView:
     unsupported: tuple[str, ...] = ()
     min_support: float | None = None
     field_support: Mapping[str, float] = field(default_factory=dict)
+    # True when the gate named the fields it was asked (``fields_asked``): every one counts,
+    # and an asked field with no answer is support 0.0. False: only the answered fields are known.
+    covered: bool = False
 
     def summary(self) -> dict[str, Any]:
         if not self.available:
@@ -311,6 +326,7 @@ class GateView:
             "gate": "supports" if self.accepts else "unsupported",
             "unsupported_fields": list(self.unsupported),
             "min_support": round(self.min_support, 4) if self.min_support is not None else None,
+            "coverage": "asked" if self.covered else "answered_only",
         }
 
 
@@ -334,8 +350,13 @@ def gate_view(state: Mapping[str, Any], support_min: float) -> GateView:
         if not _unit(p):
             return GateView(False, "malformed_field_support")
         values[str(name)] = float(p)
+    asked = rec.get("fields_asked")
+    covered = isinstance(asked, list) and bool(asked) and all(isinstance(f, str) and f for f in asked)
+    if covered:
+        # A field the gate was asked but did not answer can never count as supported.
+        values = {**{f: 0.0 for f in asked}, **{f: values[f] for f in asked if f in values}}
     unsupported = tuple(sorted(f for f, p in values.items() if p < support_min))
-    return GateView(True, None, not unsupported, unsupported, min(values.values()), values)
+    return GateView(True, None, not unsupported, unsupported, min(values.values()), values, covered)
 
 
 # ---------------------------------------------------------------------------
@@ -394,6 +415,8 @@ def _archive_gate(cfg: SlotsConfig, state: Mapping[str, Any], proposal: str | No
             return {**rec, "action": "park", "route": PARK, "cause": "archive_gate_unsupported"}
         return {**rec, "action": "capped", "cause": "archive_gate_unsupported"}
     blocker = _release_blocker(state)
+    if blocker is None and not view.covered:
+        blocker = "coverage_unknown"  # a partial answer must never release
     if blocker is None and (view.min_support or 0.0) < cfg.archive_release_support_min:
         blocker = "support_below_release_min"
     if blocker is not None:
@@ -412,7 +435,13 @@ def _arbiter_slots(cfg: SlotsConfig, state: Mapping[str, Any], proposal: str | N
         and state.get("judge_source") == "extraction_gate"
         and state.get("judge_verdict") in ("incomplete", "partial")
     ):
-        out["judge_replacement"] = {"action": "park", "route": PARK, "cause": "gate_incomplete"}
+        prior = (state.get(OUTCOMES_KEY) or {}).get("judge_replacement")
+        replaced = {"replaced_verdict": prior.get("verdict")} if isinstance(prior, Mapping) else {}
+        _mark_seen("judge_replacement", marks)
+        if _charge("judge_replacement", "park", cfg.judge_park_cap, cfg.cap_warmup, marks):
+            out["judge_replacement"] = {"action": "park", "route": PARK, "cause": "gate_incomplete", **replaced}
+        else:
+            out["judge_replacement"] = {"action": "capped", "route": None, "cause": "gate_incomplete", **replaced}
     if cfg.arbiter_veto == "enforce":
         _mark_seen("arbiter_veto", marks)
         view = gate_view(state, cfg.gate_support_min)
@@ -420,6 +449,8 @@ def _arbiter_slots(cfg: SlotsConfig, state: Mapping[str, Any], proposal: str | N
         if view.available:
             if view.accepts:
                 rec["action"] = "agree"
+            elif (out.get("judge_replacement") or {}).get("route") == PARK:
+                rec.update(action="hold", hold_reason="parked_by_judge_replacement")
             elif _charge("arbiter_veto", "park", cfg.veto_park_cap, cfg.cap_warmup, marks):
                 rec.update(action="park", route=PARK, cause="arbiter_veto_gate")
             else:
@@ -469,6 +500,26 @@ def wrap_node(node: str, fn: Callable[[Any], Any], cfg: SlotsConfig | None = Non
         return {**update, OUTCOMES_KEY: outcomes, MARKS_KEY: marks}
 
     wrapper.mailroom_decision_slot_node = node  # type: ignore[attr-defined]
+    return wrapper
+
+
+def wrap_human_review(fn: Callable[[Any], Any], cfg: SlotsConfig | None = None) -> Callable[[Any], Any]:
+    """``fn`` (the ``human_review`` node) clearing ``decision_slot_outcomes`` once a person decided.
+
+    The marks stay (each document is still counted once per slot). Every slot baseline: ``fn``.
+    """
+    cfg = cfg or get_slots()
+    if not cfg.any_on():
+        return fn
+
+    @functools.wraps(fn)
+    def wrapper(state: Any) -> Any:
+        update = fn(state)
+        if not isinstance(update, Mapping) or not (isinstance(state, Mapping) and state.get(OUTCOMES_KEY)):
+            return update
+        return {**update, OUTCOMES_KEY: {}}
+
+    wrapper.mailroom_clears_decision_slot_outcomes = True  # type: ignore[attr-defined]
     return wrapper
 
 
@@ -540,6 +591,7 @@ def gate_judge_update(state: Mapping[str, Any]) -> tuple[dict[str, Any] | None, 
         "judge_findings": findings,
         "judge_source_verified": False,
         "judge_source": "extraction_gate",
+        "judge_coverage": None,
         "judge_pass_count": int(state.get("judge_pass_count") or 0) + 1,
         "transient_error": False,
         OUTCOMES_KEY: {**outcomes, "judge_replacement": {**base, "action": "replaced", "verdict": label, **view.summary()}},
@@ -569,6 +621,12 @@ def cap_reviewer_park(state: Mapping[str, Any], update: dict[str, Any],
     base = {"node": "review_classify", "attempt": None, "proposal": None, "route": None}
     if update.get("review_route") == "extract":
         outcomes["sorter_reviewer"] = {**base, "action": "agree"}
+        return {**update, OUTCOMES_KEY: outcomes, MARKS_KEY: marks}
+    from pipeline.reconsideration import REVIEWER_UNAVAILABLE
+
+    if REVIEWER_UNAVAILABLE in (update.get("reviewer_causes") or []):
+        # A backend outage is not the model's park: it never spends the cap.
+        outcomes["sorter_reviewer"] = {**base, "action": "unavailable"}
         return {**update, OUTCOMES_KEY: outcomes, MARKS_KEY: marks}
     if _charge("sorter_reviewer", "park", cfg.reviewer_park_cap, cfg.cap_warmup, marks):
         outcomes["sorter_reviewer"] = {**base, "action": "park"}
@@ -623,10 +681,11 @@ def resolve_closed_fields(state: Mapping[str, Any], doc_type: str, result: Any,
             answer = run_bounded(lambda h=handoff: resolver(doc_text, h), name="closed-field-resolver",
                                  abandoned=_abandoned_resolver_threads, max_abandoned=4, lock=_resolver_lock)
         except DecisionBackendTimeout as exc:
-            records.append({**rec, "status": "timeout", "error": str(exc)[:200]})
+            records.append({**rec, "status": "timeout"})
             continue
         except Exception as exc:  # noqa: BLE001 - advisory call: fail to the baseline park
-            records.append({**rec, "status": "error", "error": f"{type(exc).__name__}: {str(exc)[:200]}"})
+            # Only our own tokens in stored evidence: the class name, never the backend's text.
+            records.append({**rec, "status": "error", "error": type(exc).__name__})
             continue
         if not isinstance(answer, Mapping):
             records.append({**rec, "status": "malformed"})
@@ -634,8 +693,7 @@ def resolve_closed_fields(state: Mapping[str, Any], doc_type: str, result: Any,
         token = canonical_label_value(tuple(vocab.get(name, ())), answer.get("value")) \
             if isinstance(answer.get("value"), str) else None
         prob = answer.get("probability")
-        rec.update(suggested=token, probability=float(prob) if _unit(prob) else None,
-                   model=str(answer.get("model"))[:120] if answer.get("model") else None)
+        rec.update(suggested=token, probability=float(prob) if _unit(prob) else None)
         rec["status"] = "off_list_answer" if token is None else (
             "confident" if rec["probability"] is not None and rec["probability"] >= cfg.resolver_min_probability
             else "unsure")

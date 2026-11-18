@@ -389,10 +389,11 @@ decision_slots:
     mode: baseline             # baseline (gate answer recorded only) | enforce
     park_cap: 0.10             # max share the gate may park instead of archive
     release: false             # true: may archive a soft park (never incomplete / hard causes)
-    release_support_min: 0.9   # every field at or above this to release
+    release_support_min: 0.9   # every asked field (gate fields_asked) at or above this to release
     release_cap: 0.03          # max share released from review
   judge_replacement:
     mode: baseline             # baseline (LLM judge) | gate (gate answer is the verdict)
+    park_cap: null             # cap on gate_incomplete parks of an accept_with_caveats; null = none
   arbiter_veto:
     mode: baseline             # baseline | enforce (gate disagrees with accept_with_caveats: park)
     park_cap: null             # a veto only parks, never releases

@@ -272,7 +272,7 @@ class TestArchiveGate:
         assert route("judge_verify", base) == "human_review"
         assert set(collect_review_causes(base)) <= ds._SOFT_CAUSES, collect_review_causes(base)
         state = run_wrapped("judge_verify", {"extraction_gate": gate({"parties": 0.99, "governing_law": 0.95},
-                                                                      attempt=3)}, base, cfg)
+                                                                      attempt=3, fields_asked=["parties", "governing_law"])}, base, cfg)
         assert state["decision_slot_outcomes"]["archive_gate"]["action"] == "release"
         assert route("judge_verify", state) == "compile_report"
 
@@ -292,13 +292,34 @@ class TestArchiveGate:
     def test_release_needs_every_field_at_the_release_bar(self, slots):
         cfg = slots({"archive_gate": {"mode": "enforce", "release": True, "release_cap": None}})
         state = run_wrapped("judge_verify", {"extraction_gate": gate({"parties": 0.99, "governing_law": 0.7},
-                                                                      attempt=3)}, self._soft_park(), cfg)
+                                                                      attempt=3, fields_asked=["parties", "governing_law"])}, self._soft_park(), cfg)
         assert state["decision_slot_outcomes"]["archive_gate"]["hold_reason"] == "support_below_release_min"
         assert route("judge_verify", state) == "human_review"
 
+    def test_a_partial_answer_never_releases(self, slots):
+        cfg = slots({"archive_gate": {"mode": "enforce", "release": True, "release_cap": None}})
+        # The gate was asked two fields and answered one: the missing one is support 0.
+        partial = gate({"parties": 0.99}, attempt=3, fields_asked=["parties", "governing_law"])
+        state = run_wrapped("judge_verify", {"extraction_gate": partial}, self._soft_park(), cfg)
+        rec = state["decision_slot_outcomes"]["archive_gate"]
+        assert rec["hold_reason"] == "support_below_release_min" and rec["unsupported_fields"] == ["governing_law"]
+        assert route("judge_verify", state) == "human_review"
+        # Without fields_asked the coverage is unknown: no release on the answered fields alone.
+        state = run_wrapped("judge_verify", {"extraction_gate": gate({"parties": 0.99}, attempt=3)},
+                            self._soft_park(), cfg)
+        assert state["decision_slot_outcomes"]["archive_gate"]["hold_reason"] == "coverage_unknown"
+        assert route("judge_verify", state) == "human_review"
+
+    def test_an_unanswered_asked_field_parks_an_archive(self, slots):
+        cfg = slots({"archive_gate": {"mode": "enforce", "park_cap": None}})
+        state = run_wrapped("extract", {"extraction_gate": gate({"parties": 0.99}, fields_asked=["parties", "governing_law"])}, extracted_state(), cfg)
+        assert state["decision_slot_outcomes"]["archive_gate"]["action"] == "park"
+        assert route("extract", state) == "human_review"
+
     def test_release_cap_holds_in_warmup(self, slots):
         cfg = slots({"archive_gate": {"mode": "enforce", "release": True}})  # 3% cap, warmup 20
-        state = run_wrapped("judge_verify", {"extraction_gate": gate({"parties": 0.99}, attempt=3)},
+        state = run_wrapped("judge_verify", {"extraction_gate": gate({"parties": 0.99}, attempt=3,
+                                                                      fields_asked=["parties"])},
                             self._soft_park(), cfg)
         assert state["decision_slot_outcomes"]["archive_gate"]["action"] == "capped"
         assert route("judge_verify", state) == "human_review"
@@ -358,6 +379,24 @@ class TestJudgeReplacement:
         assert route("arbiter", state) == "compile_report"
 
 
+    def test_gate_incomplete_park_cap(self, slots):
+        cfg = slots({"judge_replacement": {"mode": "gate", "park_cap": 0.0}})
+        base = extracted_state(judge_verdict="incomplete", judge_source="extraction_gate", judge_pass_count=1,
+                               decision_slot_outcomes={"judge_replacement": {"node": "judge_verify",
+                                                                             "action": "replaced",
+                                                                             "verdict": "incomplete"}})
+        state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
+        rec = state["decision_slot_outcomes"]["judge_replacement"]
+        assert (rec["action"], rec["replaced_verdict"]) == ("capped", "incomplete")
+        assert route("arbiter", state) == "compile_report"
+
+    def test_gate_verdict_clears_a_stale_judge_coverage(self, slots, no_llm_judge):
+        slots({"judge_replacement": {"mode": "gate"}})
+        out = bg.judge_verify_node(self._band(extraction_gate=gate({"parties": 0.9}),
+                                              judge_coverage={"windows_total": 2}))
+        assert "judge_coverage" in out and out["judge_coverage"] is None
+
+
 class TestArbiterVeto:
     def test_gate_disagreement_parks(self, slots):
         cfg = slots({"arbiter_veto": {"mode": "enforce"}})
@@ -375,6 +414,17 @@ class TestArbiterVeto:
         weak = {**base, "extraction_gate": gate({"parties": 0.2})}
         state = run_wrapped("arbiter", {"arbiter_decision": "retry_extraction", "arbiter_retry_count": 1}, weak, cfg)
         assert route("arbiter", state) == "retry_extract"  # a veto only parks an archive
+
+    def test_veto_spends_no_cap_on_a_judge_replacement_park(self, slots):
+        cfg = slots({"judge_replacement": {"mode": "gate"}, "arbiter_veto": {"mode": "enforce", "park_cap": 0.0}})
+        base = extracted_state(judge_verdict="incomplete", judge_source="extraction_gate", judge_pass_count=1,
+                               extraction_gate=gate({"parties": 0.2}))
+        state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
+        out = state["decision_slot_outcomes"]
+        assert out["judge_replacement"]["action"] == "park"
+        assert (out["arbiter_veto"]["action"], out["arbiter_veto"]["hold_reason"]) == ("hold", "parked_by_judge_replacement")
+        assert "park:arbiter_veto" not in state["decision_slot_marks"]
+        assert route("arbiter", state) == "human_review"
 
     def test_veto_never_releases(self, slots):
         cfg = slots({"arbiter_veto": {"mode": "enforce"}})
@@ -453,6 +503,9 @@ class TestClosedFieldResolver:
         register_closed_field_resolver(boom)
         out = bg.extract_node(_classified())
         assert out["closed_field_resolutions"][0]["status"] == "error"
+        # Only our own tokens are stored: the exception class, never the backend's text or model.
+        assert out["closed_field_resolutions"][0]["error"] == "RuntimeError"
+        assert "model" not in out["closed_field_resolutions"][0]
         assert route("extract", {**_classified(), **out}) == "human_review"
 
     def test_release_cap_holds_in_warmup(self, slots, monkeypatch):
@@ -495,6 +548,19 @@ class TestReviewerParkCap:
         assert out["decision_slot_outcomes"]["sorter_reviewer"]["action"] == "capped"
         assert route("review_classify", {**self._state(), **out}) == "extract"
 
+    def test_a_backend_outage_never_spends_the_cap(self, slots, monkeypatch):
+        slots({"sorter_reviewer": {"park_cap": 0.0}}, reviewer=REVIEWER)
+
+        def down(*a, **k):
+            raise RuntimeError("decisions api down")
+
+        register_decision_backend(down)
+        monkeypatch.setattr(bg, "_llm_review_classify", lambda s: pytest.fail("chat reviewer ran"))
+        out = bg.review_classify_node(self._state())
+        assert out["review_route"] == "human_review"
+        assert out["decision_slot_outcomes"]["sorter_reviewer"]["action"] == "unavailable"
+        assert not any(m.startswith("park:") for m in out["decision_slot_marks"])
+
     def test_accepts_are_never_capped(self, slots, monkeypatch):
         slots({"sorter_reviewer": {"park_cap": 0.0}}, reviewer=REVIEWER)
         register_decision_backend(lambda *a, **k: DecisionAnswer("contract", "other", 0.99, "m"))
@@ -531,6 +597,25 @@ class TestReviewFocus:
         slots({"field_review": {"mode": "annotate", "max_fields": 1}})
         state = extracted_state(extraction_gate=gate({"parties": 0.1, "governing_law": 0.2}))
         assert ds.review_focus(state) is None
+
+
+class TestHumanResume:
+    def test_a_person_s_decision_clears_the_outcomes_and_keeps_the_marks(self, slots):
+        cfg = slots({"arbiter_veto": {"mode": "enforce"}})
+        node = ds.wrap_human_review(lambda state: {"review_decision": "approved", "extraction_attempts": 0}, cfg)
+        parked = extracted_state(
+            decision_slot_outcomes={"arbiter_veto": {"node": "arbiter", "action": "park", "route": "human_review",
+                                                     "cause": "arbiter_veto_gate"}},
+            decision_slot_marks=["seen:arbiter_veto", "park:arbiter_veto"])
+        assert "arbiter_veto_gate" in collect_review_causes(parked)
+        out = node(parked)
+        assert out["decision_slot_outcomes"] == {} and "decision_slot_marks" not in out
+        assert "arbiter_veto_gate" not in collect_review_causes({**parked, **out})
+
+    def test_baseline_leaves_human_review_alone(self, slots):
+        cfg = slots({})
+        fn = lambda state: {}  # noqa: E731
+        assert ds.wrap_human_review(fn, cfg) is fn
 
 
 # ---------------------------------------------------------------------------
@@ -582,6 +667,10 @@ class TestCompiledGraph:
             "verdict": "accept", "field_support": {name: 0.05 for name in handoff.get("fields", {})} or {"x": 0.05}})
         graph = bg.build_graph()
         assert _slot_wrapped(graph) == {"extract", "retry_extract", "judge_verify"}
+        fn = getattr(graph.builder.nodes["human_review"].runnable, "func", None)
+        while fn is not None and not hasattr(fn, "mailroom_clears_decision_slot_outcomes"):
+            fn = getattr(fn, "__wrapped__", None)
+        assert fn is not None, "human_review does not clear decision_slot_outcomes"
         result = run_doc(temp_base_dir, mock_langchain_llm)
         interrupts = result.get("__interrupt__")
         assert interrupts, f"document was not parked: stage={result.get('stage')}"

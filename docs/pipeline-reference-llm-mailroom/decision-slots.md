@@ -4,7 +4,8 @@ Six places in the graph where a decision model may change what happens to a docu
 They are configured in `src/config/taxonomy.yaml` under `decision_slots:` and implemented
 in `src/graph/decision_slots.py`. Every slot ships `mode: baseline`: the pipeline then runs
 exactly as it would without the block (no node is wrapped, no route rule is registered,
-no state key is written, no model is called).
+no slot state key is written, no model is called). A registered extraction gate's record
+carries the `attempt` it judged either way.
 
 The mailroom never builds a decision model. The host registers one per role:
 
@@ -14,17 +15,17 @@ The mailroom never builds a decision model. The host registers one per role:
 | Extraction gate | `agents.extraction_gate.register_extraction_gate` | `archive_gate`, `judge_replacement`, `arbiter_veto`, `field_review` |
 | Closed-field resolver | `agents.closed_field_resolver.register_closed_field_resolver` | `closed_field_resolver`, `field_review` |
 
-The experiments run these on OpenRouter Decisions-API models (the sandbox refuses a chat
-model in these roles); the chat sorter reviewer is the baseline.
+The experiments run these on OpenRouter Decisions-API models (local-mailroom-sandbox
+registers them from its run spec); the chat sorter reviewer is the baseline.
 
 ## The slots
 
 | Slot | Baseline | Decision-model role | Guard |
 | --- | --- | --- | --- |
 | `sorter_reviewer` | `reviewer:` decision_only classes park on any failed rule | `park_cap`: past it the chat reviewer reviews instead | accepts are never capped |
-| `archive_gate` | gate answer recorded only | `enforce`: the gate parks an archive it does not support; optional `release` of a soft park | `park_cap` 10%, `release_cap` 3% |
-| `judge_replacement` | LLM judge, up to `judge_max_passes` | `gate`: the gate answer on this attempt is the verdict; no judge call | an arbiter `accept_with_caveats` on a gate `incomplete` parks (`gate_incomplete`) |
-| `arbiter_veto` | `accept_with_caveats` archives | `enforce`: gate disagreement parks (`arbiter_veto_gate`) | only parks, never releases |
+| `archive_gate` | gate answer recorded only | `enforce`: the gate parks an archive it does not support, on the `extract`, `retry_extract` and `judge_verify` routes; optional `release` of a soft park | `park_cap` 10%, `release_cap` 3% |
+| `judge_replacement` | LLM judge, up to `judge_max_passes` | `gate`: the gate answer on this attempt is the verdict; no judge call, no judge score | an arbiter `accept_with_caveats` on a gate `incomplete` parks (`gate_incomplete`); `park_cap` (none by default) |
+| `arbiter_veto` | `accept_with_caveats` archives | `enforce`: gate disagreement parks (`arbiter_veto_gate`) | only parks, never releases; `park_cap` (none by default); no charge when `judge_replacement` already parks |
 | `closed_field_resolver` | off-list closed label parks (#285) | `suggest` records an allowed pick; `resolve` applies it | every off-list field needs an on-list pick at `min_probability`; `release_cap` 3% |
 | `field_review` | the whole document parks | `annotate`: the review block lists `review_focus` fields | at most `max_fields`, else the whole document |
 
@@ -44,8 +45,13 @@ when all of these hold:
 
 - every review cause is soft: `low_extraction_confidence`, `retries_exhausted`, `judge_partial`;
 - the judge did not say `incomplete` (or error), there is no matter conflict and no guardrail issue;
-- every gate field is supported at `release_support_min` (default 0.9);
+- the gate answer names the fields it was asked (`fields_asked`), and every one of them is
+  supported at `release_support_min` (default 0.9); an asked field with no answer counts as
+  support 0, and an answer without `fields_asked` never releases;
 - the `release_cap` allows it.
+
+`archive_gate` does not see an arbiter `accept_with_caveats` archive (that is
+`arbiter_veto`'s place) or a boss approval (never gated).
 
 ## Caps
 
@@ -53,7 +59,8 @@ A cap is a share of the documents the slot has seen in this process. A park or r
 is allowed while `count + 1 <= cap * max(seen, cap_warmup)`; `cap_warmup` (default 20)
 keeps a cap from opening wide on the first documents, so a 3% release cap allows no release
 before document 34. Each document counts once per slot. A capped decision follows the
-baseline route and is recorded with `action: capped`. The ledger is per process: each API
+baseline route and is recorded with `action: capped`. A decision reviewer park caused by its
+backend failing (`reviewer_unavailable`) never spends the `sorter_reviewer` cap. The ledger is per process: each API
 or watcher worker keeps its own. `graph.decision_slots.reset_ledger()` starts a new one and
 `ledger_snapshot()` reports it.
 
@@ -64,6 +71,7 @@ or watcher worker keeps its own. `graph.decision_slots.reset_ledger()` starts a 
   `hold`, `unavailable`, `replaced`), `route`, `cause`, and the gate numbers
   (`unsupported_fields`, `min_support`, or `gate_reason`).
 - `decision_slot_marks`: `seen:<slot>`, `park:<slot>`, `release:<slot>` for the document.
+  The outcomes are cleared when a person resolves a park; the marks stay.
 - `closed_field_resolutions`: each off-list field, its original value, the pick, its
   probability and whether it was applied. An applied pick also leaves
   `extracted_data["_closed_field_resolutions"]` on the archived record.

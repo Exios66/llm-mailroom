@@ -1242,7 +1242,7 @@ def _review_extraction(
     if not isinstance(answer, Mapping):
         return {**record, "error": f"malformed gate answer ({type(answer).__name__})"}
     keep = ("verdict", "key_field_score", "accept_probability", "human_review_probability",
-            "field_support", "question_set", "model")
+            "field_support", "fields_asked", "question_set", "model")
     try:
         fields = {k: answer[k] for k in keep if k in answer}
         # The answer goes into state and the JSON ``extracted`` audit column: keep only
@@ -3934,7 +3934,7 @@ def build_graph(checkpointer=None):
         "classification_arbiter",
         traced_node("arbitrate-classification")(_bounded(_dp("classification_arbiter", classification_arbiter_node))),
     )
-    workflow.add_node("human_review", traced_node("route-for-review")(_bounded(decision_points.wrap_human_review(human_review_node, slots))))
+    workflow.add_node("human_review", traced_node("route-for-review")(_bounded(decision_slots.wrap_human_review(decision_points.wrap_human_review(human_review_node, slots), slot_cfg))))
     workflow.add_node("boss_escalation", traced_node("adjudicate-conflict")(_bounded(_dp("boss_escalation", boss_escalation_node))))
     workflow.add_node("compile_report", traced_node("compile-report")(_bounded(_dp("compile_report", compile_report_node))))
     workflow.add_node("catalog_write", traced_node("write-catalog")(_bounded(catalog_write_node)))
