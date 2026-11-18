@@ -54,6 +54,11 @@ OUT_OF_VOCABULARY = "out_of_vocabulary"
 ARCHIVE_GATE_UNSUPPORTED = "archive_gate_unsupported"
 ARBITER_VETO_GATE = "arbiter_veto_gate"
 GATE_INCOMPLETE = "gate_incomplete"
+ARBITER_ACCEPT_UNVERIFIED = "arbiter_accept_unverified"
+JUDGE_CHECK_UNSUPPORTED = "judge_check_unsupported"
+JUDGE_COMPLETE_UNVERIFIED = "judge_complete_unverified"
+BOSS_CHECK_UNSUPPORTED = "boss_check_unsupported"
+BOSS_APPROVAL_UNVERIFIED = "boss_approval_unverified"
 
 CAUSE_LABELS: dict[str, str] = {
     CLASS_MISS: "classification miss vs ground truth",
@@ -92,6 +97,11 @@ CAUSE_LABELS: dict[str, str] = {
     ARCHIVE_GATE_UNSUPPORTED: "the archive gate found extracted values the source does not support",
     ARBITER_VETO_GATE: "the archive gate disagreed with the arbiter's accept_with_caveats",
     GATE_INCOMPLETE: "the arbiter accepted an extraction the gate (as judge) called incomplete",
+    ARBITER_ACCEPT_UNVERIFIED: "the archive gate could not confirm the arbiter's accept_with_caveats",
+    JUDGE_CHECK_UNSUPPORTED: "the archive gate found values the source does not support in an extraction the judge called complete",
+    JUDGE_COMPLETE_UNVERIFIED: "the archive gate could not confirm the judge's complete verdict",
+    BOSS_CHECK_UNSUPPORTED: "the archive gate found values the source does not support in an extraction the boss approved",
+    BOSS_APPROVAL_UNVERIFIED: "the archive gate could not confirm the boss's approval",
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})
@@ -561,7 +571,10 @@ def _decision_point_causes(data: Mapping[str, Any]) -> list[str]:
     return out
 
 
-_DECISION_SLOT_CAUSES = frozenset({ARCHIVE_GATE_UNSUPPORTED, ARBITER_VETO_GATE, GATE_INCOMPLETE})
+_DECISION_SLOT_CAUSES = frozenset({
+    ARCHIVE_GATE_UNSUPPORTED, ARBITER_VETO_GATE, GATE_INCOMPLETE, ARBITER_ACCEPT_UNVERIFIED,
+    JUDGE_CHECK_UNSUPPORTED, JUDGE_COMPLETE_UNVERIFIED, BOSS_CHECK_UNSUPPORTED, BOSS_APPROVAL_UNVERIFIED,
+})
 
 
 def _decision_slot_causes(data: Mapping[str, Any]) -> list[str]:

@@ -501,6 +501,159 @@ class TestArbiterVeto:
         assert route("arbiter", state) == "human_review"
 
 
+class TestApprovalChecks:
+    """judge_check, boss_check and arbiter_veto.on_unverified: the gate must back an approval."""
+
+    def test_shipped_checks_are_baseline_with_caps(self):
+        cfg = ds.get_slots()
+        assert (cfg.judge_check, cfg.boss_check) == ("baseline", "baseline")
+        assert (cfg.judge_check_park_cap, cfg.boss_check_park_cap) == (0.10, 0.10)
+        assert (cfg.judge_check_on_unverified, cfg.boss_check_on_unverified, cfg.veto_on_unverified) == (
+            "baseline",) * 3
+
+    def test_nodes_to_wrap(self):
+        assert ds.parse_slots({"judge_check": {"mode": "enforce"}}).nodes_to_wrap() == {"judge_verify"}
+        assert ds.parse_slots({"boss_check": {"mode": "enforce"}}).nodes_to_wrap() == {"boss_escalation"}
+
+    @pytest.mark.parametrize("raw, needle", [
+        ({"judge_check": {"mode": "on"}}, "must be one of"),
+        ({"boss_check": {"on_unverified": True}}, "on_unverified"),
+        ({"arbiter_veto": {"on_unverified": "maybe"}}, "on_unverified"),
+        ({"judge_check": {"park_cap": -0.1}}, "park_cap"),
+    ])
+    def test_malformed_checks_raise(self, raw, needle):
+        with pytest.raises(ds.DecisionSlotConfigError, match=needle):
+            ds.parse_slots(raw)
+
+    def test_a_judge_complete_the_gate_disagrees_with_parks(self, slots):
+        cfg = slots({"judge_check": {"mode": "enforce"}})
+        state = run_wrapped("judge_verify", {"judge_verdict": "complete"},
+                            extracted_state(extraction_gate=gate({"parties": 0.1})), cfg)
+        rec = state["decision_slot_outcomes"]["judge_check"]
+        assert (rec["action"], rec["route"], rec["cause"]) == ("park", "human_review", "judge_check_unsupported")
+        assert route("judge_verify", state) == "human_review"
+        assert "judge_check_unsupported" in collect_review_causes(state)
+
+    def test_a_judge_complete_the_gate_backs_archives(self, slots):
+        cfg = slots({"judge_check": {"mode": "enforce", "on_unverified": "park"}})
+        state = run_wrapped("judge_verify", {"judge_verdict": "complete"},
+                            extracted_state(extraction_gate=gate({"parties": 0.95})), cfg)
+        assert state["decision_slot_outcomes"]["judge_check"]["action"] == "agree"
+        assert route("judge_verify", state) == "compile_report"
+
+    def test_an_unverified_judge_complete_follows_on_unverified(self, slots):
+        cfg = slots({"judge_check": {"mode": "enforce"}})
+        state = run_wrapped("judge_verify", {"judge_verdict": "complete"}, extracted_state(), cfg)
+        assert state["decision_slot_outcomes"]["judge_check"]["action"] == "unavailable"
+        assert route("judge_verify", state) == "compile_report"
+        ds.reset_ledger()
+        cfg = slots({"judge_check": {"mode": "enforce", "on_unverified": "park"}})
+        state = run_wrapped("judge_verify", {"judge_verdict": "complete"}, extracted_state(), cfg)
+        rec = state["decision_slot_outcomes"]["judge_check"]
+        assert (rec["action"], rec["cause"]) == ("park", "judge_complete_unverified")
+        assert route("judge_verify", state) == "human_review"
+        assert "judge_complete_unverified" in collect_review_causes(state)
+
+    def test_a_class_without_key_fields_is_unverified_not_agreed(self, slots):
+        cfg = slots({"gate_key_fields": {}, "judge_check": {"mode": "enforce"}})
+        base = extracted_state(extraction_gate=gate({"parties": 0.99}))
+        state = run_wrapped("judge_verify", {"judge_verdict": "complete"}, base, cfg)
+        rec = state["decision_slot_outcomes"]["judge_check"]
+        assert (rec["action"], rec["gate_reason"]) == ("unverified", "coverage_unknown")
+        assert route("judge_verify", state) == "compile_report"
+        cfg = slots({"gate_key_fields": {}, "judge_check": {"mode": "enforce", "on_unverified": "park"}})
+        state = run_wrapped("judge_verify", {"judge_verdict": "complete"}, base, cfg)
+        assert route("judge_verify", state) == "human_review"
+
+    def test_other_judge_verdicts_and_gate_verdicts_are_not_checked(self, slots):
+        cfg = slots({"judge_check": {"mode": "enforce", "on_unverified": "park"}})
+        state = run_wrapped("judge_verify", {"judge_verdict": "partial", "judge_pass_count": 1},
+                            extracted_state(extraction_gate=gate({"parties": 0.1})), cfg)
+        assert "judge_check" not in state["decision_slot_outcomes"]
+        assert route("judge_verify", state) == "arbiter"
+        cfg = slots({"judge_replacement": {"mode": "gate"}, "judge_check": {"mode": "enforce", "on_unverified": "park"}})
+        state = run_wrapped("judge_verify", {"judge_verdict": "complete", "judge_source": "extraction_gate"},
+                            extracted_state(), cfg)
+        assert "judge_check" not in state["decision_slot_outcomes"]
+
+    def test_no_double_charge_when_the_archive_gate_parks(self, slots):
+        cfg = slots({"archive_gate": {"mode": "enforce"}, "judge_check": {"mode": "enforce", "park_cap": 0.0}})
+        state = run_wrapped("judge_verify", {"judge_verdict": "complete"},
+                            extracted_state(extraction_gate=gate({"parties": 0.1})), cfg)
+        out = state["decision_slot_outcomes"]
+        assert out["archive_gate"]["action"] == "park"
+        assert (out["judge_check"]["action"], out["judge_check"]["hold_reason"]) == ("hold", "parked_by_archive_gate")
+        assert "park:judge_check" not in state["decision_slot_marks"]
+        assert route("judge_verify", state) == "human_review"
+
+    def test_a_spent_judge_check_cap_follows_the_baseline(self, slots):
+        cfg = slots({"judge_check": {"mode": "enforce", "park_cap": 0.0}})
+        state = run_wrapped("judge_verify", {"judge_verdict": "complete"},
+                            extracted_state(extraction_gate=gate({"parties": 0.1})), cfg)
+        assert state["decision_slot_outcomes"]["judge_check"]["action"] == "capped"
+        assert route("judge_verify", state) == "compile_report"
+        assert "judge_check_unsupported" not in collect_review_causes(state)
+
+    def test_a_boss_approval_the_gate_disagrees_with_parks(self, slots):
+        cfg = slots({"boss_check": {"mode": "enforce"}})
+        base = extracted_state(conflict_detected=True, extraction_gate=gate({"parties": 0.1}))
+        state = run_wrapped("boss_escalation", {"review_decision": "approved"}, base, cfg)
+        rec = state["decision_slot_outcomes"]["boss_check"]
+        assert (rec["action"], rec["cause"], rec["node"]) == ("park", "boss_check_unsupported", "boss_escalation")
+        assert route("boss_escalation", state) == "human_review"
+        assert "boss_check_unsupported" in collect_review_causes(state)
+
+    def test_a_boss_approval_the_gate_backs_archives(self, slots):
+        cfg = slots({"boss_check": {"mode": "enforce", "on_unverified": "park"}})
+        base = extracted_state(conflict_detected=True, extraction_gate=gate({"parties": 0.9}))
+        state = run_wrapped("boss_escalation", {"review_decision": "approved"}, base, cfg)
+        assert state["decision_slot_outcomes"]["boss_check"]["action"] == "agree"
+        assert route("boss_escalation", state) == "compile_report"
+
+    def test_an_unverified_boss_approval_parks_only_when_asked(self, slots):
+        base = extracted_state(conflict_detected=True)
+        cfg = slots({"boss_check": {"mode": "enforce"}})
+        state = run_wrapped("boss_escalation", {"review_decision": "approved"}, base, cfg)
+        assert route("boss_escalation", state) == "compile_report"
+        cfg = slots({"boss_check": {"mode": "enforce", "on_unverified": "park", "park_cap": None}})
+        state = run_wrapped("boss_escalation", {"review_decision": "approved"}, base, cfg)
+        assert state["decision_slot_outcomes"]["boss_check"]["cause"] == "boss_approval_unverified"
+        assert route("boss_escalation", state) == "human_review"
+
+    def test_a_boss_review_ruling_is_not_checked(self, slots):
+        cfg = slots({"boss_check": {"mode": "enforce", "on_unverified": "park"}})
+        state = run_wrapped("boss_escalation", {"review_decision": "review"}, extracted_state(), cfg)
+        assert "boss_check" not in state["decision_slot_outcomes"]
+        assert route("boss_escalation", state) == "human_review"
+
+    def test_a_transient_boss_error_is_not_checked(self, slots):
+        cfg = slots({"boss_check": {"mode": "enforce", "on_unverified": "park"}})
+        state = run_wrapped("boss_escalation", {"transient_error": True, "transient_retries_boss_escalation": 1},
+                            extracted_state(review_decision="approved"), cfg)
+        assert "boss_check" not in state["decision_slot_outcomes"]
+        assert route("boss_escalation", state) == "boss_escalation"
+
+    def test_veto_parks_an_unverified_accept_only_when_asked(self, slots):
+        base = extracted_state(judge_verdict="partial")
+        cfg = slots({"arbiter_veto": {"mode": "enforce"}})
+        state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
+        assert state["decision_slot_outcomes"]["arbiter_veto"]["action"] == "unavailable"
+        assert route("arbiter", state) == "compile_report"
+        cfg = slots({"arbiter_veto": {"mode": "enforce", "on_unverified": "park"}})
+        state = run_wrapped("arbiter", {"arbiter_decision": "accept_with_caveats"}, base, cfg)
+        assert state["decision_slot_outcomes"]["arbiter_veto"]["cause"] == "arbiter_accept_unverified"
+        assert route("arbiter", state) == "human_review"
+        assert "arbiter_accept_unverified" in collect_review_causes(state)
+
+    def test_every_slot_cause_has_a_label_and_a_tray_weight(self):
+        import pipeline.config as config
+        from pipeline import reconsideration as rc
+
+        weights = config.load_config()["review_queue"]["cause_weights"]
+        for cause in rc._DECISION_SLOT_CAUSES:
+            assert cause in rc.CAUSE_LABELS and cause in weights, cause
+
+
 # ---------------------------------------------------------------------------
 # Closed-field resolver
 # ---------------------------------------------------------------------------

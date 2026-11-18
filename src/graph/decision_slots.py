@@ -100,6 +100,8 @@ SLOTS = (
     "arbiter_veto",
     "closed_field_resolver",
     "field_review",
+    "judge_check",
+    "boss_check",
 )
 _MODES: dict[str, tuple[str, ...]] = {
     "sorter_reviewer": ("baseline",),
@@ -108,15 +110,22 @@ _MODES: dict[str, tuple[str, ...]] = {
     "arbiter_veto": ("baseline", "enforce"),
     "closed_field_resolver": ("baseline", "suggest", "resolve"),
     "field_review": ("baseline", "annotate"),
+    "judge_check": ("baseline", "enforce"),
+    "boss_check": ("baseline", "enforce"),
 }
 _KEYS: dict[str, tuple[str, ...]] = {
     "sorter_reviewer": ("mode", "park_cap"),
     "archive_gate": ("mode", "park_cap", "release", "release_support_min", "release_cap"),
     "judge_replacement": ("mode",),
-    "arbiter_veto": ("mode", "park_cap"),
+    "arbiter_veto": ("mode", "park_cap", "on_unverified"),
     "closed_field_resolver": ("mode", "min_probability", "release_cap"),
     "field_review": ("mode", "max_fields"),
+    "judge_check": ("mode", "park_cap", "on_unverified"),
+    "boss_check": ("mode", "park_cap", "on_unverified"),
 }
+# What an approval check does when the gate cannot confirm the approval (no usable answer, or
+# the class has no gate_key_fields): follow the baseline, or park.
+_ON_UNVERIFIED = ("baseline", "park")
 _TOP_KEYS = ("gate_support_min", "cap_warmup", "gate_key_fields", *SLOTS)
 _MAX_GATE_FIELDS = 64
 # Review causes a gate release may clear: none of them is hard evidence of a bad extraction.
@@ -141,11 +150,18 @@ class SlotsConfig:
     judge_replacement: str = "baseline"
     arbiter_veto: str = "baseline"
     veto_park_cap: float | None = None
+    veto_on_unverified: str = "baseline"
     resolver: str = "baseline"
     resolver_min_probability: float = 0.9
     resolver_release_cap: float | None = 0.03
     field_review: str = "baseline"
     field_review_max_fields: int = 3
+    judge_check: str = "baseline"
+    judge_check_park_cap: float | None = 0.10
+    judge_check_on_unverified: str = "baseline"
+    boss_check: str = "baseline"
+    boss_check_park_cap: float | None = 0.10
+    boss_check_on_unverified: str = "baseline"
     gate_key_fields: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
@@ -156,6 +172,10 @@ class SlotsConfig:
             nodes |= {"extract", "retry_extract", "judge_verify"}
         if self.arbiter_veto == "enforce" or self.judge_replacement == "gate":
             nodes.add("arbiter")
+        if self.judge_check == "enforce":
+            nodes.add("judge_verify")
+        if self.boss_check == "enforce":
+            nodes.add("boss_escalation")
         return frozenset(nodes)
 
     def any_on(self) -> bool:
@@ -180,6 +200,15 @@ def _prob(where: str, value: Any) -> float:
     if not _unit(value):
         raise DecisionSlotConfigError(f"decision_slots.{where} must be a number in [0, 1], got {value!r}")
     return float(value)
+
+
+def _on_unverified(slot: str, block: Mapping[str, Any]) -> str:
+    value = block.get("on_unverified", "baseline")
+    if isinstance(value, bool) or value not in _ON_UNVERIFIED:
+        raise DecisionSlotConfigError(
+            f"decision_slots.{slot}.on_unverified must be one of {list(_ON_UNVERIFIED)}, got {value!r}"
+        )
+    return value
 
 
 def _key_fields(raw: Any) -> dict[str, tuple[str, ...]]:
@@ -255,6 +284,7 @@ def parse_slots(raw: Any) -> SlotsConfig:
     if isinstance(max_fields, bool) or not isinstance(max_fields, int) or max_fields < 1:
         raise DecisionSlotConfigError(f"decision_slots.field_review.max_fields must be a positive integer, got {max_fields!r}")
     ag, rv = blocks["archive_gate"], blocks["closed_field_resolver"]
+    jc, bc = blocks["judge_check"], blocks["boss_check"]
     key_fields = _key_fields(raw.get("gate_key_fields"))
     return SlotsConfig(
         gate_support_min=_prob("gate_support_min", raw.get("gate_support_min", 0.5)),
@@ -268,11 +298,18 @@ def parse_slots(raw: Any) -> SlotsConfig:
         judge_replacement=blocks["judge_replacement"].get("mode", "baseline"),
         arbiter_veto=blocks["arbiter_veto"].get("mode", "baseline"),
         veto_park_cap=_cap("arbiter_veto.park_cap", blocks["arbiter_veto"].get("park_cap")),
+        veto_on_unverified=_on_unverified("arbiter_veto", blocks["arbiter_veto"]),
         resolver=rv.get("mode", "baseline"),
         resolver_min_probability=_prob("closed_field_resolver.min_probability", rv.get("min_probability", 0.9)),
         resolver_release_cap=_cap("closed_field_resolver.release_cap", rv.get("release_cap", 0.03)),
         field_review=blocks["field_review"].get("mode", "baseline"),
         field_review_max_fields=max_fields,
+        judge_check=jc.get("mode", "baseline"),
+        judge_check_park_cap=_cap("judge_check.park_cap", jc.get("park_cap", 0.10)),
+        judge_check_on_unverified=_on_unverified("judge_check", jc),
+        boss_check=bc.get("mode", "baseline"),
+        boss_check_park_cap=_cap("boss_check.park_cap", bc.get("park_cap", 0.10)),
+        boss_check_on_unverified=_on_unverified("boss_check", bc),
         gate_key_fields=key_fields,
         raw=dict(raw),
     )
@@ -375,6 +412,37 @@ class GateView:
         }
 
 
+def _gate_problem(rec: Any, state: Mapping[str, Any]) -> str | None:
+    """Why the gate record says nothing about the current attempt (``None`` = it does)."""
+    if not isinstance(rec, Mapping):
+        return "no_gate_answer"
+    if rec.get("error"):
+        return "gate_error"
+    if rec.get("skipped"):
+        return f"gate_skipped:{rec.get('skipped')}"
+    attempt = rec.get("attempt")
+    if attempt is None or attempt != state.get("extraction_attempts"):
+        return "stale_answer"
+    support = rec.get("field_support")
+    if not isinstance(support, Mapping) or not support:
+        return "no_field_support"
+    return None
+
+
+def _read_support(support: Mapping[Any, Any], known: frozenset[str] | None) -> dict[str, float] | None:
+    """The schema-field answers (at most 64); ``None`` when one of them is malformed."""
+    values: dict[str, float] = {}
+    for name, p in support.items():
+        if not isinstance(name, str) or (known is not None and name not in known):
+            continue  # plug-in text that is not one of our field names is never stored or shown
+        if not _unit(p):
+            return None
+        values[name] = float(p)
+        if len(values) >= _MAX_GATE_FIELDS:
+            break
+    return values
+
+
 def gate_view(state: Mapping[str, Any], support_min: float,
               key_fields: Mapping[str, tuple[str, ...]] | None = None) -> GateView:
     """The extraction gate's answer on the CURRENT attempt, judged from ``field_support`` only.
@@ -383,40 +451,24 @@ def gate_view(state: Mapping[str, Any], support_min: float,
     ``key_fields[doc_type]`` field counts, unanswered as support 0.
     """
     rec = state.get("extraction_gate")
-    if not isinstance(rec, Mapping):
-        return GateView(False, "no_gate_answer")
-    if rec.get("error"):
-        return GateView(False, "gate_error")
-    if rec.get("skipped"):
-        return GateView(False, f"gate_skipped:{rec.get('skipped')}")
-    attempt = rec.get("attempt")
-    if attempt is None or attempt != state.get("extraction_attempts"):
-        return GateView(False, "stale_answer")
-    support = rec.get("field_support")
-    if not isinstance(support, Mapping) or not support:
-        return GateView(False, "no_field_support")
+    problem = _gate_problem(rec, state)
+    if problem is not None:
+        return GateView(False, problem)
     doc_type = str(state.get("doc_type") or "")
     try:
         known = _schema_fields(doc_type)
     except DecisionSlotConfigError:
         known = None
-    values: dict[str, float] = {}
-    for name, p in support.items():
-        if not isinstance(name, str) or (known is not None and name not in known):
-            continue  # plug-in text that is not one of our field names is never stored or shown
-        if not _unit(p):
-            return GateView(False, "malformed_field_support")
-        values[name] = float(p)
-        if len(values) >= _MAX_GATE_FIELDS:
-            break
+    values = _read_support(rec["field_support"], known)
+    if values is None:
+        return GateView(False, "malformed_field_support")
     key = tuple((key_fields or {}).get(doc_type, ()))
-    covered = bool(key)
     for name in key:  # a key field the gate did not answer can never count as supported
         values.setdefault(name, 0.0)
     if not values:
         return GateView(False, "no_field_support")
     unsupported = tuple(sorted(f for f, p in values.items() if p < support_min))
-    return GateView(True, None, not unsupported, unsupported, min(values.values()), values, covered)
+    return GateView(True, None, not unsupported, unsupported, min(values.values()), values, bool(key))
 
 
 # ---------------------------------------------------------------------------
@@ -500,20 +552,72 @@ def _arbiter_slots(cfg: SlotsConfig, state: Mapping[str, Any], proposal: str | N
         # Never capped: a gate ``incomplete`` is never auto-accepted.
         out["judge_replacement"] = {"action": "park", "route": PARK, "cause": "gate_incomplete", **replaced}
     if cfg.arbiter_veto == "enforce":
-        _mark_seen("arbiter_veto", marks)
-        view = gate_view(state, cfg.gate_support_min, cfg.gate_key_fields)
-        rec: dict[str, Any] = {"action": "unavailable", "route": None, **view.summary()}
-        if view.available:
-            if view.accepts:
-                rec["action"] = "agree"
-            elif (out.get("judge_replacement") or {}).get("route") == PARK:
-                rec.update(action="hold", hold_reason="parked_by_judge_replacement")
-            elif _charge("arbiter_veto", "park", cfg.veto_park_cap, cfg.cap_warmup, marks):
-                rec.update(action="park", route=PARK, cause="arbiter_veto_gate")
-            else:
-                rec.update(action="capped", cause="arbiter_veto_gate")
-        out["arbiter_veto"] = rec
+        held = (out.get("judge_replacement") or {}).get("route") == PARK
+        out["arbiter_veto"] = _approval_check(
+            "arbiter_veto", cfg, state, marks,
+            cap=cfg.veto_park_cap, on_unverified=cfg.veto_on_unverified,
+            causes=("arbiter_veto_gate", "arbiter_accept_unverified"),
+            held_by="parked_by_judge_replacement" if held else None,
+        )
     return out
+
+
+def _approval_check(slot: str, cfg: SlotsConfig, state: Mapping[str, Any], marks: list[str], *,
+                    cap: float | None, on_unverified: str, causes: tuple[str, str],
+                    held_by: str | None = None) -> dict[str, Any]:
+    """Check an approval (judge ``complete``, arbiter ``accept_with_caveats``, boss ``approved``) against the gate.
+
+    The gate disagrees (a field below ``gate_support_min``): park with ``causes[0]``. The gate
+    cannot confirm it (no usable answer, ``unavailable``; or an answer for a class without
+    ``gate_key_fields``, ``unverified``): the baseline, or with ``on_unverified: park`` park
+    with ``causes[1]``. Every park spends the slot's ``park_cap``; ``held_by`` names another
+    slot that already parks this pass, so nothing is charged twice.
+    """
+    _mark_seen(slot, marks)
+    view = gate_view(state, cfg.gate_support_min, cfg.gate_key_fields)
+    rec: dict[str, Any] = {"action": "unavailable", "route": None, **view.summary()}
+    if view.available and not view.accepts:
+        cause = causes[0]
+    elif view.available and view.covered:
+        return {**rec, "action": "agree"}
+    else:
+        if view.available:
+            rec.update(action="unverified", gate_reason="coverage_unknown")
+        if on_unverified != "park":
+            return rec
+        cause = causes[1]
+    if held_by is not None:
+        return {**rec, "action": "hold", "hold_reason": held_by}
+    if _charge(slot, "park", cap, cfg.cap_warmup, marks):
+        return {**rec, "action": "park", "route": PARK, "cause": cause}
+    return {**rec, "action": "capped", "cause": cause}
+
+
+def _judge_check(cfg: SlotsConfig, state: Mapping[str, Any], proposal: str | None, marks: list[str],
+                 decided: Mapping[str, dict]) -> dict | None:
+    """``judge_check: enforce``: a judge ``complete`` about to archive must be backed by the gate."""
+    if proposal != ARCHIVE or state.get("judge_verdict") != "complete":
+        return None
+    if cfg.judge_replacement == "gate" and state.get("judge_source") == "extraction_gate":
+        return None  # the gate gave this verdict itself
+    held = (decided.get("archive_gate") or {}).get("route") == PARK
+    return _approval_check(
+        "judge_check", cfg, state, marks,
+        cap=cfg.judge_check_park_cap, on_unverified=cfg.judge_check_on_unverified,
+        causes=("judge_check_unsupported", "judge_complete_unverified"),
+        held_by="parked_by_archive_gate" if held else None,
+    )
+
+
+def _boss_check(cfg: SlotsConfig, state: Mapping[str, Any], proposal: str | None, marks: list[str]) -> dict | None:
+    """``boss_check: enforce``: a boss ``approved`` about to archive must be backed by the gate."""
+    if proposal != ARCHIVE or state.get("review_decision") != "approved":
+        return None
+    return _approval_check(
+        "boss_check", cfg, state, marks,
+        cap=cfg.boss_check_park_cap, on_unverified=cfg.boss_check_on_unverified,
+        causes=("boss_check_unsupported", "boss_approval_unverified"),
+    )
 
 
 def wrap_node(node: str, fn: Callable[[Any], Any], cfg: SlotsConfig | None = None) -> Callable[[Any], Any]:
@@ -549,6 +653,14 @@ def wrap_node(node: str, fn: Callable[[Any], Any], cfg: SlotsConfig | None = Non
             rec = _archive_gate(cfg, merged, proposal, marks)
             if rec is not None:
                 decided["archive_gate"] = rec
+        if node == "judge_verify" and cfg.judge_check == "enforce":
+            rec = _judge_check(cfg, merged, proposal, marks, decided)
+            if rec is not None:
+                decided["judge_check"] = rec
+        if node == "boss_escalation" and cfg.boss_check == "enforce":
+            rec = _boss_check(cfg, merged, proposal, marks)
+            if rec is not None:
+                decided["boss_check"] = rec
         if node == "arbiter":
             decided.update(_arbiter_slots(cfg, merged, proposal, marks))
         attempt = merged.get("extraction_attempts")
