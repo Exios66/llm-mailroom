@@ -33,6 +33,7 @@ follows the scorer when the Dojo pin moves.
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime as _dt
 import io
 import json
@@ -231,6 +232,53 @@ def _derived_fields() -> dict[str, str]:
 _DERIVED = _derived_fields()
 
 
+def _fallback_maud_answer_status(question: str, record: Any) -> tuple[str, bool]:
+    """Stand-in for the Dojo's ``_label_answer_status`` (blank, ``nan`` and empty containers are
+    unanswered; the Hub class ``"None"`` is an answer), used only if the Dojo renames that helper."""
+    answer = record.get("answer") if isinstance(record, dict) else record
+    if answer is None or (isinstance(answer, (list, tuple, dict, set)) and not answer):
+        return "", False
+    text = str(answer).strip()
+    return ("", False) if text.lower() in {"", "nan"} else (text, False)
+
+
+def _maud_answered(question: str, record: Any) -> bool:
+    """True when ``record`` (one ``maud_clause_labels`` entry) holds an answer by the Dojo's rules.
+
+    Not ``is_empty``: that treats the Hub class ``"None"`` (no matching right) as blank, and a
+    ``{"answer": ""}`` record as a value. A record the Dojo skips as ambiguous (several distinct
+    answers) still holds an answer, so it stays populated here.
+    """
+    try:
+        from llm_dojo_scoring.schemas.maud_schema import _label_answer_status
+    except ImportError:  # pragma: no cover - the Dojo renamed its private helper
+        _label_answer_status = _fallback_maud_answer_status
+    answer, ambiguous = _label_answer_status(question, record)
+    return bool(answer) or ambiguous
+
+
+def _maud_consideration(gt: dict) -> str | None:
+    """The ``merger_consideration`` token the Dojo reads from the row's MAUD ``Type of Consideration``
+    answer, or ``None`` (no answer, a label map marked absent, or an unreadable ``gt_fields``)."""
+    from llm_dojo_scoring.schemas.maud_schema import hub_merger_expected_fields
+
+    try:
+        # no subclass and no expected_subclass: only the answer decides; the caller falls back
+        return hub_merger_expected_fields({**gt, "expected_subclass": None}).get("merger_consideration")
+    except (ValueError, TypeError):
+        return None
+
+
+def _derived_value(cls: str, gt: dict, subclass: str) -> str:
+    """The value of the field the Dojo derives for ``cls``: the MAUD answer first for a merger's
+    ``merger_consideration``, then the subclass."""
+    if cls == "merger_agreement":
+        token = _maud_consideration(gt)
+        if token:
+            return token
+    return normalize_corpus_subclass(cls, subclass)
+
+
 def carried_fields(sub: pd.DataFrame) -> set[str]:
     """Fields the dataset's ground truth carries for these rows: a non-empty value or a gt_presence key."""
     carried: set[str] = set()
@@ -314,9 +362,11 @@ def cell_for(cls: str, key: str, gt: dict, presence: dict, subclass: str) -> tup
             # documented absence of the clause, not a labelling gap.
             return "", "schema_documented_absence"
     if cls == "merger_agreement" and key.startswith("maud::"):
+        if presence.get("maud_clause_labels") == "pending_annotation":
+            return "", "pending_annotation"
         maud = _json(gt.get("maud_clause_labels")) or {}
         value = maud.get(key[6:]) if isinstance(maud, dict) else None
-        return (render(value), "populated") if not is_empty(value) else ("", "UNLABELED")
+        return (render(value), "populated") if _maud_answered(key[6:], value) else ("", "UNLABELED")
     if cls == "corporate_record" and key not in extraction_schema(cls).field_types:
         if key not in entity_field_types(subclass) and key not in ENTITY_CORE_FIELDS:
             return "", "not_applicable"
@@ -325,8 +375,8 @@ def cell_for(cls: str, key: str, gt: dict, presence: dict, subclass: str) -> tup
         return (table, "populated") if table else ("", "not_applicable")
     if _DERIVED.get(cls) == key and is_empty(gt.get(key)) and presence.get(key) not in (
             "not_applicable", "schema_documented_absence", "pending_annotation"):
-        # the Dojo derives this field from the subclass: it is never a labelling gap
-        return normalize_corpus_subclass(cls, subclass), "populated"
+        # the Dojo derives this field (merger_consideration: from the MAUD answer first): never a labelling gap
+        return _derived_value(cls, gt, subclass), "populated"
     value, status = gt.get(key), presence.get(key)
     if status in ("not_applicable", "schema_documented_absence", "pending_annotation"):
         return render(value), status
@@ -421,7 +471,10 @@ def _meta(value: Any) -> dict:
         try:
             value = json.loads(value)
         except ValueError:
-            return {}
+            try:  # the ``default.metadata`` column is a Python dict repr; same fallback as the Dojo's parser
+                value = ast.literal_eval(value)
+            except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+                return {}
     return dict(value) if isinstance(value, dict) else {}
 
 
@@ -954,7 +1007,8 @@ def _readme_rows(*, dataset: str, revision: str, resolved: str | None, n_rows: i
         ("not_applicable - the field does not apply to this class/subclass.", "p"),
         ("UNLABELED - the Dojo scores this field but the dataset carries no label for it (not scored today).", "p"),
         ("Derived fields (communication_type, cuad_family, merger_consideration, cms_source_table) are derived "
-         "from the subclass and shown as populated; they are never gaps.", "p"),
+         "from the subclass (merger_consideration from the MAUD 'Type of Consideration' answer first) and shown "
+         "as populated; they are never gaps.", "p"),
         ("", "p"),
         ("COLUMNS AND COUNTS", "h"),
         ("Columns: a value column and a status column for each field the Dojo scores for that class "

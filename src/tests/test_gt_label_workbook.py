@@ -837,6 +837,76 @@ def test_merger_columns_accept_dict_valued_gt_fields(tool, tmp_path):
     assert ("maud::Deal Size", "MAUD: Deal Size", "maud answer") in cols
 
 
+def _maud_cell(tool, labels, *, key="maud::Deal Size", presence=None, subclass="all_cash"):
+    gt = {"maud_clause_labels": labels, "gt_presence": presence or {}}
+    return tool.cell_for("merger_agreement", key, gt, gt["gt_presence"], subclass)
+
+
+def test_pending_maud_labels_are_not_counted_as_populated(tool):
+    labels = {"Deal Size": {"answer": "Yes", "category": "General Information"}}
+    pending = {"maud_clause_labels": "pending_annotation"}
+    assert _maud_cell(tool, labels, presence=pending) == ("", "pending_annotation")
+    # the same retained answer is populated once the record is no longer pending
+    assert _maud_cell(tool, labels, presence={"maud_clause_labels": "populated"})[1] == "populated"
+
+
+@pytest.mark.parametrize(
+    "record, status",
+    [
+        ({"answer": "", "category": "General Information"}, "UNLABELED"),
+        ({"answer": "nan"}, "UNLABELED"),
+        ({"answer": None}, "UNLABELED"),
+        ({"answer": []}, "UNLABELED"),
+        ("nan", "UNLABELED"),
+        (None, "UNLABELED"),
+        # "None" is a Hub class (no matching right), so it is a label, not a gap
+        ("None", "populated"),
+        ({"answer": "None"}, "populated"),
+        ({"answer": "Yes"}, "populated"),
+        ("Yes", "populated"),
+    ],
+)
+def test_maud_answers_follow_the_dojo_answer_rules(tool, record, status):
+    value, got = _maud_cell(tool, {"Deal Size": record})
+    assert got == status
+    assert (value != "") == (status == "populated")
+
+
+@pytest.mark.parametrize(
+    "record", [{"answer": ""}, {"answer": "nan"}, {"answer": None}, {"answer": []}, "nan", None, "None", {"answer": "Yes"}]
+)
+def test_maud_answer_fallback_agrees_with_the_dojo_helper(tool, record):
+    from llm_dojo_scoring.schemas.maud_schema import _label_answer_status
+
+    assert tool._fallback_maud_answer_status("Deal Size", record) == _label_answer_status("Deal Size", record)
+
+
+def test_merger_consideration_comes_from_the_maud_answer_before_the_subclass(tool):
+    labels = {"Type of Consideration": {"answer": "All Stock"}}
+    assert _maud_cell(tool, labels, key="merger_consideration", subclass="all_cash") == ("all_stock", "populated")
+    # a pending label map contributes nothing, so the subclass is the fallback
+    pending = {"maud_clause_labels": "pending_annotation"}
+    assert _maud_cell(tool, labels, key="merger_consideration", presence=pending, subclass="all_cash") == (
+        "all_cash", "populated")
+    # no Type of Consideration answer: the subclass
+    assert _maud_cell(tool, {"Deal Size": "Yes"}, key="merger_consideration", subclass="mixed_cash_stock") == (
+        "mixed_cash_stock", "populated")
+    # a value the dataset carries is never replaced
+    gt = {"merger_consideration": "all_cash", "maud_clause_labels": labels, "gt_presence": {}}
+    assert tool.cell_for("merger_agreement", "merger_consideration", gt, {}, "all_stock") == ("all_cash", "populated")
+
+
+def test_original_link_reads_a_python_dict_repr_of_the_metadata(tool):
+    expected = (f"{tool.SEC_BASE}/Archives/edgar/data/1/0001/ex3.htm", "SEC EDGAR")
+    repr_meta = repr({"exhibit_url": "/Archives/edgar/data/1/0001/ex3.htm", "n": None})
+    assert tool.original_link(repr_meta, DATASET, COMMIT, None) == expected
+    assert tool.original_link(json.dumps({"exhibit_url": "/Archives/edgar/data/1/0001/ex3.htm"}),
+                              DATASET, COMMIT, None) == expected
+    # anything that is not a dict literal stays "no link", never an exception
+    for bad in ("{[]: 1}", "{'exhibit_url': ", "not metadata", "['exhibit_url']", "{__import__('os'): 1}"):
+        assert tool.original_link(bad, DATASET, COMMIT, None) is None
+
+
 def test_readme_names_documents_with_no_default_text(tool, label_rows, tmp_path):
     label_rows.loc[label_rows.document_id == "DOC-B", "doc_text"] = float("nan")
     _, stats, wb = _build(tool, label_rows, tmp_path, to_label=("correspondence",))
