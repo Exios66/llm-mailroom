@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import fcntl
 import threading
 
 import pytest
+
+fcntl = pytest.importorskip("fcntl")  # POSIX only; the no-fcntl fallback is simulated below
 
 from audit.row import mark_manifest, observe_manifest
 from pipeline import bins

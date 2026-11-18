@@ -33,6 +33,10 @@ from audit.models import AuditMigrationPending
 
 logger = structlog.get_logger(__name__)
 
+# ``observed`` not passed at all (a direct caller with no earlier snapshot), as opposed to ``None``: the
+# sweep took its snapshot before the row read and it was unreadable.
+_NOT_OBSERVED: Any = object()
+
 
 @dataclass
 class ReconcileReport:
@@ -221,14 +225,16 @@ def _kept_refs(copies: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _mark_partial(doc_id: str, copies: list[dict[str, Any]], *, row_gap: dict | None = None,
-                  observed: Any = None) -> None:
+                  observed: Any = _NOT_OBSERVED) -> None:
     """Keep the gap on the manifest: ``pending_partial`` with the kept copies, until a complete one closes it.
 
     A compare-and-set against ``observed`` (the manifest as the sweep saw it before it read the row): a
     second sweep that closed the gap in between has marked ``written`` and dropped the spooled copies,
     and writing ``pending_partial`` over that would point the manifest at copies that no longer exist,
-    with nothing left for a later sweep to repair. The mark is then skipped. Without ``observed`` the
-    manifest is read here, which still makes the update atomic but not relative to the row read.
+    with nothing left for a later sweep to repair. The mark is then skipped. An ``observed`` of ``None``
+    (the snapshot was unreadable) also skips it: a snapshot taken now, after the row read, could already
+    hold the second sweep's ``written``. The spooled copies stay, so the next sweep re-observes. Without
+    ``observed`` the manifest is read here, which makes the update atomic but not relative to a row read.
     """
     from audit.row import _refs_key, mark_manifest, observe_manifest
 
@@ -239,7 +245,10 @@ def _mark_partial(doc_id: str, copies: list[dict[str, Any]], *, row_gap: dict | 
         # this sweep read that copy back successfully.
         refs.append({"sink": row_gap.get("sink"), "ref": row_gap.get("ref"),
                      "complete": False, "recoverable": False})
-    expect = observed if observed is not None else observe_manifest(doc_id)
+    if observed is None:
+        logger.warning("audit_manifest_mark_skipped", doc_id=doc_id, reason="no manifest snapshot before the row read")
+        return
+    expect = observe_manifest(doc_id) if observed is _NOT_OBSERVED else observed
     if expect is not None and expect.audit_written == "pending_partial" and expect.audit_pending_refs == _refs_key(refs):
         return
     mark_manifest(doc_id, "pending_partial", refs, expect=expect)
@@ -345,7 +354,7 @@ async def _write_repeat(doc_id: str, rec: dict[str, Any], known: set[str] | None
 
 async def _reconcile_repeats(report: ReconcileReport, doc_id: str, row: dict[str, Any],
                              copies: list[dict[str, Any]], unique: list[dict[str, Any]], *, dry_run: bool,
-                             observed: Any = None) -> None:
+                             observed: Any = _NOT_OBSERVED) -> None:
     """A document with a (complete) row: its copies are spent, or later terminal writes to record."""
     from audit.row import mark_manifest
 
