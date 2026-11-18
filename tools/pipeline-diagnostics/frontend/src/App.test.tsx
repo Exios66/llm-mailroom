@@ -661,6 +661,23 @@ describe("detail requests and partial failures", () => {
     expect(screen.getByText(/bounded audit read was truncated/)).toBeInTheDocument();
   });
 
+  it("lists at most ten failure rows with stable ids and counts the rest", async () => {
+    const base = auditPayload("DOC-1", "failed");
+    const failures = Array.from({ length: 25 }, (_, index) => ({ scope: "attempts", id: `foreign-${index}`, reason: "attempt-doc-mismatch" }));
+    mockApi((url) => url.endsWith("/audit/documents/DOC-1") ? jsonResponse({ ...base, verification: { ...base.verification, failures } }) : undefined);
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText(/All 4 connections/);
+    await user.selectOptions(screen.getByLabelText("Load a run journal"), "run-1");
+    const list = await screen.findByRole("list", { name: "Verification failures" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows).toHaveLength(11);
+    expect(rows[0]).toHaveAttribute("data-failure-id", "attempts|foreign-0|attempt-doc-mismatch");
+    expect(rows[9]).toHaveAttribute("data-failure-id", "attempts|foreign-9|attempt-doc-mismatch");
+    expect(within(list).getByText("15 more failures not shown")).toBeInTheDocument();
+    expect(screen.queryByText(/foreign-10\b/)).not.toBeInTheDocument();
+  });
+
   it("distinguishes an unavailable store from a missing audit record", async () => {
     mockApi((url) => {
       if (!url.includes("/audit/documents/")) return undefined;
