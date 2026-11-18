@@ -423,10 +423,12 @@ class ManifestState(NamedTuple):
 
     audit_written: Any
     audit_pending_refs: tuple[tuple[tuple[str, Any], ...], ...]
+    mark_seq: int = 0  # marks applied so far: a mark that rewrote the same status and refs still moves it
 
 
 def _state_of(manifest) -> ManifestState:
-    return ManifestState(manifest.audit_written, _refs_key(manifest.audit_pending_refs))
+    return ManifestState(manifest.audit_written, _refs_key(manifest.audit_pending_refs),
+                         int(getattr(manifest, "audit_mark_seq", 0) or 0))
 
 
 def _refs_key(refs) -> tuple[tuple[tuple[str, Any], ...], ...]:
@@ -471,6 +473,7 @@ def mark_manifest(doc_id: str, status: str, refs=(), *, preserve_partial: bool =
                 return False
             manifest.audit_written = _AUDIT_WRITTEN[status]
             manifest.audit_pending_refs = [dict(r) for r in refs]
+            manifest.audit_mark_seq = int(getattr(manifest, "audit_mark_seq", 0) or 0) + 1
             return True
 
         applied = update_manifest(doc_id, apply)

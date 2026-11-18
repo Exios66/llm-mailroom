@@ -139,3 +139,22 @@ def test_mark_manifest_expect_compares_the_refs_too(manifest):
 def test_mark_manifest_without_a_manifest_is_a_quiet_no_op(temp_base_dir):
     assert mark_manifest("ghost", "written") is False
     assert observe_manifest("ghost") is None
+
+
+def test_a_mark_that_rewrites_the_same_status_still_defeats_a_stale_expectation(manifest):
+    """Sweep A saw ``written`` with no refs; sweep B marks ``written`` with no refs again (closing a gap
+    the manifest never showed). The state is identical, but A's later mark must still be declined."""
+    assert mark_manifest(manifest, "written", ())
+    seen_by_a = observe_manifest(manifest)
+
+    assert mark_manifest(manifest, "written", ())  # sweep B: same status, same refs
+
+    assert mark_manifest(manifest, "pending_partial", [{"sink": "s", "ref": "r"}], expect=seen_by_a) is False
+    assert bins.load_manifest(manifest).audit_written is True
+
+
+def test_an_update_with_no_intervening_mark_still_succeeds(manifest):
+    assert mark_manifest(manifest, "written", ())
+    seen = observe_manifest(manifest)
+    assert mark_manifest(manifest, "pending_partial", [{"sink": "s", "ref": "r"}], expect=seen) is True
+    assert bins.load_manifest(manifest).audit_written == "pending_partial"
