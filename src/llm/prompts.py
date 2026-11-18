@@ -1,11 +1,12 @@
 """Langfuse-managed agent prompts with graceful local fallback.
 
-Every agent's system prompt lives in Langfuse Prompt Management (name
-`mailroom-<agent_name>`, type `text`, `production` label). At runtime we fetch
-the production version and compile its `{{variables}}` in; when Langfuse is not
-configured or unreachable we fall back to the same template shipped in code, so
-the pipeline behaves identically without observability — the local template is
-always the floor.
+Every agent's system prompt ships in this repo (the active prompt set, see
+``llm.prompt_sets``) and is the default: the mailroom does not depend on Langfuse or
+any other service for its prompts. Langfuse Prompt Management (name
+`mailroom-<agent_name>`, type `text`, `production` label) is an explicit opt-in via
+``MAILROOM_PROMPT_SOURCE=langfuse`` (or taxonomy ``prompt_source: langfuse``): the
+production version is then fetched and its `{{variables}}` compiled in, and when Langfuse
+is not configured or unreachable the repo template is served.
 
 Linking to traces: the fetched prompt object is returned alongside the compiled
 text. Callers pass it to the OpenAI call via `langfuse_prompt=` (consumed by
@@ -44,6 +45,33 @@ def prompt_cache_ttl() -> float:
         return 60.0
 
 
+PROMPT_SOURCE_ENV = "MAILROOM_PROMPT_SOURCE"
+PROMPT_SOURCES = ("repo", "langfuse")
+
+
+def prompt_source() -> str:
+    """Where agent prompts come from: ``repo`` (default) or ``langfuse``.
+
+    ``repo`` serves the prompt shipped in this repository (the active prompt set, see
+    ``llm.prompt_sets``) and never consults Langfuse, so the pipeline does not depend on
+    any trace sink or prompt service. ``langfuse`` is an explicit opt-in: a Langfuse
+    prompt labelled ``production`` overrides the repo text, with the repo text as the
+    fallback. Order: env ``MAILROOM_PROMPT_SOURCE``, taxonomy ``prompt_source``, ``repo``.
+    """
+    raw = os.environ.get(PROMPT_SOURCE_ENV, "").strip().lower()
+    if raw in PROMPT_SOURCES:
+        return raw
+    if raw:
+        logger.warning("prompt_source_env_ignored", value=raw, allowed=list(PROMPT_SOURCES))
+    try:
+        from pipeline.config import load_config
+
+        configured = str(load_config().get("prompt_source", "repo")).strip().lower()
+    except Exception:
+        configured = "repo"
+    return configured if configured in PROMPT_SOURCES else "repo"
+
+
 def prompt_name(agent_name: str) -> str:
     return f"{PROMPT_PREFIX}-{agent_name}"
 
@@ -78,9 +106,12 @@ def get_managed_prompt(
 ) -> tuple[str, object | None]:
     """Return (compiled_prompt_text, prompt_obj_or_None).
 
-    Prefers the Langfuse-managed prompt labeled `production`; falls back to
-    `default_text` (rendered with `variables`) when unavailable.
+    Serves `default_text` (rendered with `variables`), the prompt shipped in the repo.
+    Only when ``prompt_source()`` is ``langfuse`` does the Langfuse-managed prompt labeled
+    `production` take precedence, with `default_text` as the fallback.
     """
+    if prompt_source() != "langfuse":
+        return render_template(default_text, variables), None
     cache_key = (agent_name, label)
     cached = _prompt_cache.get(cache_key)
     if cached is not None and _now() - cached[0] >= prompt_cache_ttl():

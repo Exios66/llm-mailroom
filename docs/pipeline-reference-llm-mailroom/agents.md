@@ -24,7 +24,7 @@ class BaseAgent(ABC):
 Key design points:
 
 * `self.client` and `self.model` are resolved from `config/taxonomy.yaml` → `llm/providers.py` → `llm/client.py`
-* `system_prompt()` fetches the **Langfuse-managed prompt** (`mailroom-<agent_name>`, production label) via `llm/prompts.py:get_managed_prompt`, falling back to the identical template shipped in code when Langfuse is unavailable — behavior never depends on the observability backend being up. Sync templates with `scripts/sync_prompts.py`.
+* `system_prompt()` serves the **prompt shipped in the repo** (the active prompt set in `llm/prompt_sets/catalog.yaml`, else the agent's code default) via `llm/prompts.py:get_managed_prompt`. Langfuse is never consulted unless `MAILROOM_PROMPT_SOURCE=langfuse` (or taxonomy `prompt_source: langfuse`) opts in; then a `mailroom-<agent_name>` prompt labelled `production` overrides the repo text — behavior never depends on the observability backend. Sync templates with `scripts/sync_prompts.py`.
 * `_call_structured()` uses `response_format={"type": "json_object"}` and appends boilerplate that guarantees the literal token `json` in the messages (some providers reject requests without it) and embeds the JSON schema in the prompt.
 * Every LLM call goes through `llm/retry.py:retry_chat_completion` (transient failures only: connection errors, timeouts, 429, 5xx) and a `max_tokens` cap from the agent's `taxonomy.yaml` entry.
 * When a managed prompt is active, it's passed to the OpenAI call as `langfuse_prompt=`, linking each generation to its exact prompt version in the trace UI.

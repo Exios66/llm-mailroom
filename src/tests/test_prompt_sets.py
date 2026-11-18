@@ -256,3 +256,111 @@ def test_corporate_filing_number_stays_null_where_labels_never_carry_one():
 def test_corporate_catalog_fixes_name_the_filing_number_change():
     fixes = PS.catalog()["sets"]["deploy_v1"]["agents"]["corporate_records_specialist"]["fixes"]
     assert "filing_number" in fixes
+
+
+# --- prompt source: the repo is the default; Langfuse only on explicit opt-in -------------
+
+
+class _ManagedClient:
+    """A Langfuse client that holds a different `production` prompt for every name."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def get_prompt(self, name, label="production"):
+        self.calls += 1
+
+        class _P:
+            prompt = f"LANGFUSE TEXT for {name}"
+
+        return _P()
+
+
+def _wire_managed(monkeypatch):
+    client = _ManagedClient()
+    monkeypatch.setattr("llm.prompts._prompt_cache", {})
+    monkeypatch.setattr("llm.prompts._miss_cache", {})
+    monkeypatch.setattr("llm.prompts._client", lambda: client)
+    return client
+
+
+def test_repo_prompt_is_served_even_when_langfuse_has_a_managed_copy(monkeypatch):
+    from llm.prompts import get_managed_prompt, prompt_source
+
+    monkeypatch.delenv("MAILROOM_PROMPT_SOURCE", raising=False)
+    client = _wire_managed(monkeypatch)
+    assert prompt_source() == "repo"
+    for agent in ("correspondence_specialist", "sorter", "boss"):
+        name, default = PS.served_prompt(agent, f"REPO TEXT {agent}")
+        text, obj = get_managed_prompt(name, default)
+        assert text == default and obj is None
+    assert client.calls == 0, "the repo source must never consult Langfuse"
+
+
+def test_langfuse_source_is_an_explicit_opt_in(monkeypatch):
+    from llm.prompts import get_managed_prompt
+
+    client = _wire_managed(monkeypatch)
+    monkeypatch.setenv("MAILROOM_PROMPT_SOURCE", "langfuse")
+    text, obj = get_managed_prompt("sorter", "REPO TEXT")
+    assert text == "LANGFUSE TEXT for mailroom-sorter" and obj is not None and client.calls == 1
+
+
+def test_unknown_prompt_source_falls_back_to_repo(monkeypatch):
+    from llm.prompts import prompt_source
+
+    monkeypatch.setenv("MAILROOM_PROMPT_SOURCE", "lang-fuse")
+    assert prompt_source() == "repo"
+    monkeypatch.setenv("MAILROOM_PROMPT_SOURCE", "")
+    monkeypatch.setattr("pipeline.config.load_config", lambda: {"prompt_source": "langfuse"})
+    assert prompt_source() == "langfuse"
+
+
+def test_taxonomy_ships_the_repo_source():
+    from pipeline.config import load_config
+
+    assert load_config()["prompt_source"] == "repo"
+
+
+def test_prompt_ids_name_what_actually_runs(monkeypatch):
+    monkeypatch.delenv("MAILROOM_PROMPT_SOURCE", raising=False)
+    monkeypatch.setenv(PS.PROMPT_SET_ENV, "frozen_v1")
+    ids = PS.prompt_ids()
+    assert ids["correspondence_specialist"] == "correspondence_specialist@code"
+    assert ids["sorter"] == "sorter@code" and "boss" in ids  # carried agents are recorded too
+    monkeypatch.setenv("MAILROOM_PROMPT_SOURCE", "langfuse")
+    assert PS.prompt_id("correspondence_specialist") == (
+        "correspondence_specialist@langfuse:mailroom-correspondence_specialist|correspondence_specialist@code"
+    )
+    monkeypatch.delenv(PS.PROMPT_SET_ENV)
+    assert PS.prompt_id("judge") == "judge@langfuse:mailroom-judge--deploy_v1|judge@deploy_v1"
+
+
+def test_trace_metadata_records_the_prompt_source(monkeypatch, tmp_path, temp_base_dir):
+    import graph.build_graph as bg
+    import observability.tracing as tracing
+
+    captured: dict = {}
+
+    @contextlib.contextmanager
+    def fake_trace(**kwargs):
+        captured.update(kwargs["metadata"])
+        raise RuntimeError("stop before the graph runs")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(tracing, "pipeline_trace", fake_trace)
+    monkeypatch.delenv("MAILROOM_PROMPT_SOURCE", raising=False)
+    doc = tmp_path / "doc.txt"
+    doc.write_text("hello")
+    with contextlib.suppress(RuntimeError):
+        bg.run_pipeline(doc, "M-1", run_id="r-src")
+    assert captured["prompt_source"] == "repo"
+    assert captured["prompt_ids"]["judge"] == "judge@deploy_v1"
+
+
+def test_insurance_scope_keeps_claim_decision_letters_in_scope():
+    text = PS.resolve("insurance_claims_specialist", "deploy_v1")[1]
+    first = text.splitlines()[0]
+    assert "claims decision letter" in first and "general correspondence" in first
+    assert "agreement, letter or" not in first
+    assert "AUTOMOBILE CLAIMS DECISION LETTER" in text

@@ -4455,7 +4455,10 @@ def _execute_run(
     # which prompts produced it.
     from llm.prompt_sets import active_prompt_set, prompt_ids
 
+    from llm.prompts import prompt_source
+
     trace_metadata["prompt_set"] = active_prompt_set()
+    trace_metadata["prompt_source"] = prompt_source()
     trace_metadata["prompt_ids"] = prompt_ids()
     if oracle_routing and ground_truth:
         _warn_oracle_routing_once(run_id)

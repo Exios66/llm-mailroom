@@ -558,7 +558,7 @@ All LLM calls go through `retry_chat_completion` (`llm/retry.py`): transient fai
 
 ### Prompt Management
 
-Every agent's system prompt is a **Langfuse-managed prompt** (`mailroom-<agent_name>`, type `text`, `production` label) — versioned, editable without a deploy, and linked to every generation in the trace UI.
+Every agent's system prompt ships in the repo (`src/llm/prompt_sets/catalog.yaml`, default set `deploy_v1`), and that is what production serves: the mailroom does not depend on Langfuse or any other service for its prompts. Langfuse prompt management (`mailroom-<agent_name>`, type `text`, `production` label) is an explicit opt-in with `MAILROOM_PROMPT_SOURCE=langfuse`, which lets a managed copy override the repo text and links it to every generation in the trace UI.
 
 ```bash
 # Push the local prompt templates to Langfuse (idempotent: only new versions on change)

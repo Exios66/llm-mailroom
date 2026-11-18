@@ -90,6 +90,7 @@ def _wire(monkeypatch, client, clock=None):
     monkeypatch.setattr("llm.prompts._prompt_cache", {})
     monkeypatch.setattr("llm.prompts._miss_cache", {})
     monkeypatch.setattr("llm.prompts._client", lambda: client)
+    monkeypatch.setenv("MAILROOM_PROMPT_SOURCE", "langfuse")  # these tests exercise the opt-in fetch
     if clock is not None:
         monkeypatch.setattr("llm.prompts._now", clock)
 

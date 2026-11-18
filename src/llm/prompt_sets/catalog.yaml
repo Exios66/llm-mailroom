@@ -38,7 +38,7 @@ sets:
       insurance_claims_specialist:
         file: deploy_v1/insurance_claims_specialist.txt
         parent: sandbox insurance_claims_specialist_condensed_v5 (v4 adopted + llm-mailroom #280 claim_type rule)
-        fixes: none beyond v5 (the interim labels add only derived cms_source_table)
+        fixes: scope line names the in-scope templates (claims decision letters included) instead of excluding every letter; otherwise v5 as is (the interim labels add only derived cms_source_table)
         status: candidate
       judge:
         file: deploy_v1/judge.txt

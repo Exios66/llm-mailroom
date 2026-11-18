@@ -314,6 +314,12 @@ routing:
   # Cause labelling (class_miss, subclass_miss) and scoring read GT either way.
   use_ground_truth: false
 
+# Prompt source: `repo` (default) serves the prompts shipped in this repository (the active
+# prompt set below) and never consults Langfuse. `langfuse` is an explicit opt-in where a
+# Langfuse prompt labelled `production` overrides the repo text. MAILROOM_PROMPT_SOURCE
+# overrides this for one process.
+prompt_source: repo
+
 # Prompt sets (llm/prompt_sets/catalog.yaml): which versioned system prompt each agent
 # serves. deploy_v1 = the condensed front-runners plus the label-guide fixes; frozen_v1 =
 # every agent's code default (the A/B baseline); deploy_v1_examples = deploy_v1 plus

@@ -40,7 +40,7 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 |:---|:---|
 | `src/graph/` | `build_graph.py` (22 nodes, including `classification_arbiter` and `audit_failed`; `run_pipeline`, tracing wrappers), `scoring_nodes.py` (`score_common` + one `score_<type>` per dojo scorer), `routing.py` (conditional edges) |
 | `src/agents/` | LLM agents (`BaseAgent` subclasses: sorter, specialists, judge, boss, relations, triage) and procedural ones (reporter, archivist, pdf_transcriber, image_extractor, intake clerk) |
-| `src/llm/` | `client.py:get_llm`, `providers.py`, `retry.py`, `prompts.py` (Langfuse-managed prompts + fallbacks), `vision.py` |
+| `src/llm/` | `client.py:get_llm`, `providers.py`, `retry.py`, `prompts.py` (repo prompts by default; Langfuse override only on opt-in), `prompt_sets/` (versioned prompt sets), `vision.py` |
 | `src/pipeline/` | watcher, bins, guards, Gmail intake, relations, ops monitor, pager, env/logging/config |
 | `src/schemas/` | Pydantic document and manifest models, `EXTRACTION_SCHEMAS` |
 | `src/storage/` | SQLite/Postgres catalog, audit log, relations tables |

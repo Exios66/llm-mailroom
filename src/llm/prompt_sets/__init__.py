@@ -117,14 +117,28 @@ def served_prompt(agent: str, default_text: str) -> tuple[str, str]:
 
 
 def prompt_id(agent: str) -> str:
+    """The id of the prompt this agent serves: ``<agent>@<set>``, or ``<agent>@code`` for
+    the agent's code default. Under the opt-in ``MAILROOM_PROMPT_SOURCE=langfuse`` a
+    Langfuse ``production`` prompt can override the repo text, so the id is then
+    ``<agent>@langfuse:<managed name>`` (with the repo id as the fallback after ``|``)."""
+    from llm.prompts import prompt_name, prompt_source
+
     hit = resolve(agent)
-    return hit[0] if hit else f"{agent}@code"
+    repo_id = hit[0] if hit else f"{agent}@code"
+    if prompt_source() != "langfuse":
+        return repo_id
+    managed = prompt_name(repo_id.replace("@", "--") if hit else agent)
+    return f"{agent}@langfuse:{managed}|{repo_id}"
 
 
 def prompt_ids() -> dict[str, str]:
-    """Agent -> served prompt id for every agent any set lists (records per-agent A/B pins)."""
-    agents = sorted({a for spec in catalog()["sets"].values() for a in (spec.get("agents") or {})})
-    return {agent: prompt_id(agent) for agent in agents}
+    """Agent -> served prompt id for every agent a set lists or carries (records A/B pins)."""
+    agents = {
+        a
+        for spec in catalog()["sets"].values()
+        for a in (*(spec.get("agents") or {}), *(spec.get("carried") or {}))
+    }
+    return {agent: prompt_id(agent) for agent in sorted(agents)}
 
 
 def set_templates() -> dict[str, str]:
