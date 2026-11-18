@@ -213,3 +213,25 @@ def test_negative_limit_is_a_usage_error_and_a_saved_negative_limit_is_refused(t
     assert exc.value.code == 2
     why = sw.resume_mismatch([_row(seed=1, per_class=5, limit=-1)], [], {**_CURRENT, "limit": 1})
     assert why is not None and "limit: saved -1 is not a valid limit" in why
+
+
+def test_a_saved_bool_limit_is_not_a_valid_limit():
+    """``isinstance(True, int)`` is true; a recorded ``true`` must not pass as the limit 1."""
+    why = sw.resume_mismatch([_row(seed=1, per_class=5, limit=True)], [], {**_CURRENT, "limit": 1})
+    assert why is not None and "limit: saved True is not a valid limit" in why
+    # a real integer still passes, and False is refused like True
+    assert sw.resume_mismatch([_row(seed=1, per_class=5, limit=1)], [], {**_CURRENT, "limit": 1}) is None
+    why = sw.resume_mismatch([_row(seed=1, per_class=5, limit=False)], [], {**_CURRENT, "limit": 1})
+    assert why is not None and "not a valid limit" in why
+
+
+@pytest.mark.parametrize("key,saved,now", [("seed", True, 1), ("per_class", True, 1), ("seed", False, 0)])
+def test_a_saved_bool_never_equals_an_integer_selection_setting(key, saved, now):
+    """``True == 1`` in Python; a bool in the saved row is a different identity from the integer."""
+    current = {**_CURRENT, key: now}
+    run = {"seed": 1, "per_class": 5, "limit": None, key: saved}
+    why = sw.resume_mismatch([_row(**run)], [], current)
+    assert why is not None and f"{key}: saved {saved!r}, now {now!r}" in why
+    # the same integer still matches
+    run[key] = now
+    assert sw.resume_mismatch([_row(**run)], [], current) is None

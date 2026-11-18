@@ -1111,8 +1111,29 @@ LEGACY_RUN_KEYS = ("seed", "per_class", "limit")
 
 
 def legacy_rows(existing: list[dict]) -> int:
-    """How many saved rows predate the #247 selection settings (lack any of ``LEGACY_RUN_KEYS``)."""
+    """How many saved rows predate the #247 selection settings (lack any of ``LEGACY_RUN_KEYS``).
+
+    A row is legacy when its ``run`` block has no ``seed``, ``per_class`` or ``limit`` key at all,
+    which includes a row with no ``run`` block (a missing or null block reads as ``{}``). A key that
+    is present counts as recorded even when its value is ``None`` (``limit=None`` means "no limit",
+    ``seed``/``per_class`` are ``None`` for fixtures and manifests), so such a row is not legacy.
+
+    This is also the only legacy shape ``resume_mismatch(..., allow_legacy=True)`` waives, and only
+    for those three keys. A legacy row must still record ``mode``, ``dataset_id``,
+    ``dataset_revision``, ``split``, ``taxonomy_sha256``, ``diagnostics.judge_attempts``,
+    ``diagnostics.max_extraction_candidates`` and ``thresholds_in_force``; older rows lacking any of
+    those are refused whatever the flag says.
+    """
     return sum(1 for row in existing if any(k not in (row.get("run") or {}) for k in LEGACY_RUN_KEYS))
+
+
+def _same_setting(saved: Any, now: Any) -> bool:
+    """Equality for a recorded setting, where a bool is never the integer it compares equal to.
+
+    ``True == 1`` and ``False == 0`` in Python, so a saved ``seed: true`` would otherwise resume a
+    run whose seed is 1.
+    """
+    return isinstance(saved, bool) == isinstance(now, bool) and saved == now
 
 
 def resume_mismatch(
@@ -1142,14 +1163,16 @@ def resume_mismatch(
             if key not in run:
                 if not (allow_legacy and key in LEGACY_RUN_KEYS):
                     diffs.setdefault(key, "not recorded in the saved records")
-            elif run[key] != current.get(key):
+            elif not _same_setting(run[key], current.get(key)):
                 diffs.setdefault(key, f"saved {run[key]!r}, now {current.get(key)!r}")
         if "limit" not in run:
             if not allow_legacy:
                 diffs.setdefault("limit", "not recorded in the saved records")
         else:
             saved_limit, new_limit = run["limit"], current.get("limit")
-            if saved_limit is not None and (not isinstance(saved_limit, int) or saved_limit < 0):
+            if saved_limit is not None and (
+                isinstance(saved_limit, bool) or not isinstance(saved_limit, int) or saved_limit < 0
+            ):
                 diffs.setdefault("limit", f"saved {saved_limit!r} is not a valid limit")
             elif new_limit is not None and (saved_limit is None or new_limit < saved_limit):
                 diffs.setdefault("limit", f"saved {saved_limit!r}, now {new_limit!r} (it can only be raised)")
