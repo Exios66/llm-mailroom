@@ -637,6 +637,44 @@ def _boss_check(cfg: SlotsConfig, state: Mapping[str, Any], proposal: str | None
     )
 
 
+def _carried_outcomes(node: str, state: Any, update: Mapping[str, Any]) -> dict[str, Any]:
+    """The outcomes after a pass of ``node``: the prior ones minus ``node``'s, plus what it changed."""
+    prior = state.get(OUTCOMES_KEY) if isinstance(state, Mapping) else None
+    # This node's earlier decisions never survive a new pass of it.
+    outcomes = {
+        k: v for k, v in (prior.items() if isinstance(prior, Mapping) else ())
+        if not (isinstance(v, Mapping) and v.get("node") == node)
+    }
+    own = update.get(OUTCOMES_KEY)
+    if isinstance(own, Mapping):
+        # The node may hand back a copy of the prior outcomes (judge_verify does); only an
+        # entry it changed is fresh, so a stale entry of this node never comes back.
+        old = prior if isinstance(prior, Mapping) else {}
+        outcomes.update({k: v for k, v in own.items() if k not in old or v != old[k]})
+    return outcomes
+
+
+def _decide(node: str, cfg: SlotsConfig, merged: Mapping[str, Any], proposal: str | None,
+            marks: list) -> dict[str, dict]:
+    """Each slot of ``node`` that is on, in order (a later slot sees the earlier decisions)."""
+    decided: dict[str, dict] = {}
+    checks = (
+        ("archive_gate", node in ("extract", "retry_extract", "judge_verify") and cfg.archive_gate == "enforce",
+         lambda: _archive_gate(cfg, merged, proposal, marks)),
+        ("judge_check", node == "judge_verify" and cfg.judge_check == "enforce",
+         lambda: _judge_check(cfg, merged, proposal, marks, decided)),
+        ("boss_check", node == "boss_escalation" and cfg.boss_check == "enforce",
+         lambda: _boss_check(cfg, merged, proposal, marks)),
+    )
+    for slot, on, run in checks:
+        rec = run() if on else None
+        if rec is not None:
+            decided[slot] = rec
+    if node == "arbiter":
+        decided.update(_arbiter_slots(cfg, merged, proposal, marks))
+    return decided
+
+
 def wrap_node(node: str, fn: Callable[[Any], Any], cfg: SlotsConfig | None = None) -> Callable[[Any], Any]:
     """``fn`` with the routing slots of ``node`` decided after it returns; ``fn`` itself when none is on."""
     cfg = cfg or get_slots()
@@ -648,40 +686,14 @@ def wrap_node(node: str, fn: Callable[[Any], Any], cfg: SlotsConfig | None = Non
         update = fn(state)
         if not isinstance(update, Mapping):
             return update
-        prior = state.get(OUTCOMES_KEY) if isinstance(state, Mapping) else None
-        # This node's earlier decisions never survive a new pass of it.
-        outcomes = {
-            k: v for k, v in (prior.items() if isinstance(prior, Mapping) else ())
-            if not (isinstance(v, Mapping) and v.get("node") == node)
-        }
-        own = update.get(OUTCOMES_KEY)
-        if isinstance(own, Mapping):
-            # The node may hand back a copy of the prior outcomes (judge_verify does); only an
-            # entry it changed is fresh, so a stale entry of this node never comes back.
-            old = prior if isinstance(prior, Mapping) else {}
-            outcomes.update({k: v for k, v in own.items() if k not in old or v != old[k]})
+        outcomes = _carried_outcomes(node, state, update)
         if update.get("transient_error"):
             return {**update, OUTCOMES_KEY: outcomes}
         merged = {**state, **update}
         marks = list(merged.get(MARKS_KEY) or [])
         proposal = _proposal(node, merged)
-        decided: dict[str, dict] = {}
-        if node in ("extract", "retry_extract", "judge_verify") and cfg.archive_gate == "enforce":
-            rec = _archive_gate(cfg, merged, proposal, marks)
-            if rec is not None:
-                decided["archive_gate"] = rec
-        if node == "judge_verify" and cfg.judge_check == "enforce":
-            rec = _judge_check(cfg, merged, proposal, marks, decided)
-            if rec is not None:
-                decided["judge_check"] = rec
-        if node == "boss_escalation" and cfg.boss_check == "enforce":
-            rec = _boss_check(cfg, merged, proposal, marks)
-            if rec is not None:
-                decided["boss_check"] = rec
-        if node == "arbiter":
-            decided.update(_arbiter_slots(cfg, merged, proposal, marks))
         attempt = merged.get("extraction_attempts")
-        for slot, rec in decided.items():
+        for slot, rec in _decide(node, cfg, merged, proposal, marks).items():
             outcomes[slot] = {**rec, "node": node, "attempt": attempt, "proposal": proposal}
             if rec.get("action") in ("park", "release", "capped"):
                 logger.info("decision_slot_decided", slot=slot, node=node, doc_id=merged.get("doc_id"),
