@@ -366,6 +366,10 @@ def cell_for(cls: str, key: str, gt: dict, presence: dict, subclass: str) -> tup
             return "", "pending_annotation"
         maud = _json(gt.get("maud_clause_labels")) or {}
         value = maud.get(key[6:]) if isinstance(maud, dict) else None
+        closed = presence.get("maud_clause_labels")
+        if closed in ("not_applicable", "schema_documented_absence"):
+            # the Dojo closed the whole field: keep the status (and any retained answer) so To Label never lists it
+            return render(value) if _maud_answered(key[6:], value) else "", closed
         return (render(value), "populated") if _maud_answered(key[6:], value) else ("", "UNLABELED")
     if cls == "corporate_record" and key not in extraction_schema(cls).field_types:
         if key not in entity_field_types(subclass) and key not in ENTITY_CORE_FIELDS:

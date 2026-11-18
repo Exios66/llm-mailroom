@@ -936,3 +936,11 @@ def test_hidden_vocabulary_keeps_formula_like_subclass_literal(tool):
     cell = wb["Lists"].cell(2, 1)
     assert cell.value == "=1+1"
     assert cell.data_type == "s"
+
+
+@pytest.mark.parametrize("closed", ["not_applicable", "schema_documented_absence"])
+def test_a_closed_maud_field_keeps_its_status_even_with_retained_answers(tool, closed):
+    labels = {"Deal Size": {"answer": "Yes"}}
+    value, status = _maud_cell(tool, labels, presence={"maud_clause_labels": closed})
+    assert status == closed and "Yes" in value
+    assert _maud_cell(tool, {}, presence={"maud_clause_labels": closed}) == ("", closed)
