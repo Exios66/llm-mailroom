@@ -85,8 +85,8 @@ def _agent_set(agent: str) -> str:
     pinned = by_agent.get(agent) if isinstance(by_agent, dict) else None
     if pinned is not None and pinned not in set_names():
         logger.warning("prompt_set_by_agent_ignored", agent=agent, value=pinned)
-    elif pinned is not None and not os.environ.get(PROMPT_SET_ENV, "").strip():
-        return pinned
+    elif pinned is not None and os.environ.get(PROMPT_SET_ENV, "").strip() not in set_names():
+        return pinned  # a valid env value overrides the pin; an unknown one is ignored
     return active_prompt_set()
 
 

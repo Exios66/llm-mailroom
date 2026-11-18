@@ -81,6 +81,13 @@ def test_by_agent_pin_and_env_precedence(monkeypatch):
     assert PS.served_prompt("correspondence_specialist", "X")[0] == "correspondence_specialist--deploy_v1"
 
 
+def test_unknown_env_value_keeps_the_by_agent_pin(monkeypatch):
+    _taxonomy(monkeypatch, {"active": "deploy_v1", "by_agent": {"correspondence_specialist": "frozen_v1"}})
+    monkeypatch.setenv(PS.PROMPT_SET_ENV, "deploy_v2")
+    assert PS.served_prompt("correspondence_specialist", "X") == ("correspondence_specialist", "X")
+    assert PS.served_prompt("contracts_specialist", "X")[0] == "contracts_specialist--deploy_v1"
+
+
 def test_contract_prompt_names_every_schema_field_and_the_dojo_roles():
     from llm_dojo_scoring.schemas.cuad_schema import CONTRACT_PARTY_ROLES
     from schemas.documents import ContractExtraction
