@@ -174,6 +174,31 @@ def _mount_diagnostics(application: FastAPI) -> bool:
 _diagnostics_mounted = _mount_diagnostics(app)
 
 
+def _upload_provider_problem() -> str | None:
+    """Why uploads must be refused for lack of a model, or ``None`` to accept them.
+
+    Only active when ``MAILROOM_UPLOAD_REQUIRE_PROVIDER`` is truthy. It resolves the
+    sorter's provider and model the same way the pipeline does (no network call, no
+    tokens), so a missing or placeholder API key is caught before a document is queued.
+    The free-only spend guardrail (``MAILROOM_LLM_FREE_ONLY``) is checked too, since a
+    model it blocks would park the document the same way. Only ``/upload`` (and its
+    ``/v1`` alias) is gated: Gmail intake and files dropped into the inbox are not.
+    The answer is the exception's type name only: the exception text can carry
+    configuration detail and is logged, never returned to the client.
+    """
+    flag = os.environ.get("MAILROOM_UPLOAD_REQUIRE_PROVIDER", "").strip().lower()
+    if flag not in ("1", "true", "yes", "on"):
+        return None
+    try:
+        from llm.client import check_spend_guardrail, resolve_agent_model
+
+        check_spend_guardrail("sorter", resolve_agent_model("sorter"))
+    except Exception as exc:  # any resolution failure means no usable model
+        logger.warning("upload_refused_no_provider", error_type=type(exc).__name__)
+        return type(exc).__name__
+    return None
+
+
 async def _check_llm_provider() -> dict:
     """Best-effort LLM provider connectivity check.
 
@@ -191,6 +216,18 @@ async def _check_llm_provider() -> dict:
         status = "ok"
         # Gateway runs report the tier too (e.g. litellm:mailroom-fast[fast]).
         detail = f"{provider.name}:{model}" + (f"[{resolved.tier}]" if resolved.tier else "")
+        try:
+            from llm.client import check_spend_guardrail
+
+            check_spend_guardrail("sorter", resolved)
+        except Exception as exc:
+            # Same check the upload provider gate runs: a model the free-only
+            # guardrail blocks resolves fine but cannot run. Type name only.
+            return {
+                "status": "degraded",
+                "detail": f"{provider.name}:{model} — blocked by spend guardrail: {type(exc).__name__}",
+                "provider": provider.name,
+            }
         try:
             from openai import OpenAI
 
@@ -333,6 +370,17 @@ async def upload_document(
     # Pause gate (audit L-18): refuse new work while ingestion is paused.
     if is_ingestion_paused():
         raise HTTPException(503, "Ingestion is paused by the ops monitor — try again later")
+
+    # Provider gate (opt-in, on in the Compose producer): without a model the watcher
+    # would accept the document and quietly park it in review.
+    provider_problem = _upload_provider_problem()
+    if provider_problem:
+        raise HTTPException(
+            503,
+            f"No usable LLM provider for the sorter ({provider_problem}): it does not resolve "
+            "or the spend guardrail blocks its model; uploads are refused until that is fixed "
+            "— `checks.llm_provider` in GET /health names the cause",
+        )
 
     _rate_limit_upload()
 

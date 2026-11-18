@@ -105,7 +105,7 @@ PYTHONPATH=src python -m pipeline.watcher   # filesystem watcher (optional when 
 PYTHONPATH=src python -m pipeline.gmail_intake  # Gmail intake poller standalone (debug; normally runs inside the watcher)
 PYTHONPATH=src python src/scripts/gmail_smoke_test.py  # Gmail + watcher connectivity smoke (example insurance claim; --real for SMTP+IMAP)
 PYTHONPATH=src python -m api.main           # FastAPI on :8000 — embeds the inbox watcher by default
-docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build  # reachable producer for The-Mailroom REVIEW resolve
+docker compose -f deploy/docker-compose.producer.yml --env-file .env up -d --build  # reachable producer for The-Mailroom REVIEW resolve; /upload answers 503 until the sorter's provider resolves (MAILROOM_UPLOAD_REQUIRE_PROVIDER=0 turns that off; docs/pipeline-reference-llm-mailroom/configuration.md)
 PYTHONPATH=src python src/scripts/publish_space.py --check  # validate HF Docker Space payload (MAILROOM_PIPELINE_URL + Observatory pair)
 PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py # regenerate the GitBook Changelog space from CHANGELOG.md
 PYTHONPATH=src python src/scripts/sync_gitbook_changelog.py --check # fail if docs/changelog/ is stale vs CHANGELOG.md

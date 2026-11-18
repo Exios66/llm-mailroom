@@ -57,15 +57,14 @@ Only report real problems. If the diff is clean, say READY with no findings.
 
 ## Lessons from bot reviews
 
-- Exercise public report and email paths for internal exception causes; evidence prefix parsing must be scoped to category-shaped fields.
-
 Careless mistakes that the bots are configured to catch (`.coderabbit.yaml`) or have
 caught before. Check each one. The orchestrator adds a line when a new one gets through (see
 `.claude/rules/pr-flow.md`).
 
+- Exercise public report and email paths for internal exception causes; evidence prefix parsing must be scoped to category-shaped fields.
 - Response-shape validation must cover absent attributes as well as explicit nulls; exercise both inside the retry wrapper.
-- Plug-in answers are untrusted text everywhere: logs, spans and stored evidence carry only our own tokens or operator-configured names, never a backend's reason, detail or hint; and a config-derived property ("can redirect") reads only the settings in force (`enabled` respected).
-
+- Plug-in answers are untrusted text everywhere: logs, spans and stored evidence carry only our own tokens or operator-configured names, never a backend's reason, detail or hint.
+- A config-derived property ("can redirect") reads only the settings in force (`enabled` respected).
 - A fact changed in one doc but not in the other pages that repeat it (versions, counts,
   pins, ports, defaults).
 - A relative link or `#anchor` that does not resolve.
