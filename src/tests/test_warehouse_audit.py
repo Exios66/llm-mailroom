@@ -155,6 +155,7 @@ def test_manifest_maps_doc_to_hash_and_files(wh):
     assert docs["d-1"] == {
         "entry_hash": h1, "export_date": "2026-11-03",
         "files": ["audit_rows_2026-11-03.parquet", "audit_attempts_2026-11-03.parquet"],
+        "addenda_count": 0,
     }
     assert docs["d-2"]["files"] == ["audit_rows_2026-11-03.parquet"]
 
@@ -164,6 +165,7 @@ def test_manifest_maps_doc_to_hash_and_files(wh):
     assert docs["d-1"]["export_date"] == "2026-11-04"
     assert docs["d-1"]["files"] == ["audit_rows_2026-11-04.parquet", "audit_attempts_2026-11-04.parquet",
                                     "audit_addenda_2026-11-04.parquet"]
+    assert docs["d-1"]["addenda_count"] == 1
     assert docs["d-2"]["export_date"] == "2026-11-03"  # untouched by a batch it was not in
     assert asyncio.run(doc_view("d-1"))["warehouse"] == {
         "export_date": "2026-11-04", "files": docs["d-1"]["files"]}
@@ -322,3 +324,109 @@ def test_legacy_alone_export_does_not_block_the_event_loop_thread(wh, monkeypatc
 
     assert asyncio.run(run()) == 0
     assert seen["publish"] != seen["loop"]
+
+
+# ---------------------------------------------------------------- #304: addenda are tracked per document
+
+
+def _watermark(wh) -> datetime:
+    return datetime.fromisoformat(wh.load_warehouse_manifest()["last_doc_updated_at"])
+
+
+def _add_addendum_stamped(doc, stamp, monkeypatch, kind="review_decision"):
+    """Commit an addendum whose timestamp is ``stamp``, as a PostgreSQL writer that stamped it before a
+    later transaction committed would (the stamp is taken before commit; the commit lands afterwards)."""
+    import audit.writer as writer
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return stamp
+
+    with monkeypatch.context() as m:
+        m.setattr(writer, "datetime", Frozen)
+        add_addendum(doc, kind)
+
+
+def test_incremental_export_includes_an_addendum_older_than_the_advanced_watermark(wh, monkeypatch):
+    """#304: the watermark moved past an addendum's timestamp before the addendum committed. The addendum
+    passes neither ``timestamp > since`` nor the row-hash staleness check, so it was omitted until the
+    document changed or a full export ran."""
+    from datetime import timedelta
+
+    seed("d-1")
+    seed("d-2")
+    asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    watermark = _watermark(wh)
+
+    _add_addendum_stamped("d-1", watermark - timedelta(minutes=5), monkeypatch)
+    second = asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+
+    assert second["exported_documents"] == 1 and second["exported_audit_addenda"] == 1
+    adds = wh._read_parquet_rows(wh.daily_audit_addenda_path(DAY1))
+    assert [(a["doc_id"], a["kind"]) for a in adds] == [("d-1", "review_decision")]
+    assert wh.load_warehouse_manifest()["documents"]["d-1"]["addenda_count"] == 1
+    # Exported once: the manifest now matches, so the next incremental run selects nothing.
+    assert asyncio.run(wh.export_to_warehouse(stamp=DAY1))["exported_documents"] == 0
+
+
+def test_every_committed_addendum_is_exported_when_several_commit_behind_the_watermark(wh, monkeypatch):
+    from datetime import timedelta
+
+    seed("d-1")
+    asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    watermark = _watermark(wh)
+    _add_addendum_stamped("d-1", watermark - timedelta(minutes=9), monkeypatch, "rescore")
+    assert asyncio.run(wh.export_to_warehouse(stamp=DAY1))["exported_audit_addenda"] == 1
+    _add_addendum_stamped("d-1", watermark - timedelta(minutes=8), monkeypatch, "review_decision")
+    again = asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    assert again["exported_audit_addenda"] == 2  # the document's addenda are exported whole (upserted by key)
+    assert wh.load_warehouse_manifest()["documents"]["d-1"]["addenda_count"] == 2
+
+
+def test_the_manifest_records_the_addenda_it_exported_not_the_count_at_selection(wh):
+    seed("d-1")
+    add_addendum("d-1")
+    wh_manifest = asyncio.run(wh.export_to_warehouse(doc_ids=["d-1"], stamp=DAY1))["manifest"]
+    assert wh_manifest["documents"]["d-1"]["addenda_count"] == 1
+    seed("d-2")
+    manifest = asyncio.run(wh.export_to_warehouse(doc_ids=["d-2"], stamp=DAY1))["manifest"]
+    assert manifest["documents"]["d-2"]["addenda_count"] == 0
+
+
+def test_a_manifest_from_before_addendum_tracking_reexports_documents_with_addenda_once(wh):
+    """Old manifests carry no ``addenda_count``: a document with addenda is exported again once (the upsert
+    is idempotent) and so repairs an addendum the old watermark logic skipped; one without addenda is not."""
+    seed("d-1")
+    seed("d-2")
+    add_addendum("d-1")
+    asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    manifest = wh.load_warehouse_manifest()
+    for entry in manifest["documents"].values():
+        entry.pop("addenda_count")
+    wh.save_warehouse_manifest(manifest)
+
+    upgraded = asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    assert upgraded["exported_documents"] == 1 and upgraded["exported_audit_addenda"] == 1
+    assert wh.load_warehouse_manifest()["documents"]["d-1"]["addenda_count"] == 1
+    assert len(wh._read_parquet_rows(wh.daily_audit_addenda_path(DAY1))) == 1
+    assert asyncio.run(wh.export_to_warehouse(stamp=DAY1))["exported_documents"] == 0
+
+
+def test_fetch_terminal_documents_compares_addenda_only_when_given_the_exported_counts(wh, monkeypatch):
+    from datetime import timedelta
+
+    seed("d-1")
+    asyncio.run(wh.export_to_warehouse(stamp=DAY1))
+    manifest = wh.load_warehouse_manifest()
+    since = _watermark(wh)
+    hashes = {d: e["entry_hash"] for d, e in manifest["documents"].items()}
+    _add_addendum_stamped("d-1", since - timedelta(minutes=1), monkeypatch)
+
+    def ids(**kw):
+        return [r.doc_id for r in asyncio.run(wh.fetch_terminal_documents(since=since, **kw))]
+
+    assert ids(exported=hashes) == []  # the earlier contract: entry hashes only, addenda are not compared
+    assert ids(exported=hashes, exported_addenda={"d-1": 0}) == ["d-1"]
+    assert ids(exported=hashes, exported_addenda={"d-1": 1}) == []
+    assert ids(exported=hashes, exported_addenda={}) == ["d-1"]  # no entry reads as none exported
