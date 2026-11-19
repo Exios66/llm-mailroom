@@ -157,6 +157,7 @@ flowchart TD
     end
 
     N_REPORT -- "_report assembled" --> N_CATALOG
+    N_REPORT -- "auto_archive false (merger_agreement), no human-applied fields" --> N_HUMAN
     N_REPORT -- "report_error or no _report" --> N_HUMAN
     N_CATALOG --> N_ARCHIVE
     N_ARCHIVE --> END_OK
@@ -201,16 +202,17 @@ flowchart TD
 
 ## Thresholds used by the routers
 
-Values from the `confidence:` block of `src/config/taxonomy.yaml`. The per-class rows override `high`, `low` and `judge_band_high` once `doc_type` is known (`pipeline/config.py:get_confidence_thresholds`). Retry budgets stay global.
+Values from the `confidence:` block of `src/config/taxonomy.yaml` (profile `calibrated_v1`, 2026-11-17; `MAILROOM_CONFIDENCE_PROFILE=legacy_v0` selects the previous values). The per-class rows override the globals once `doc_type` is known (`pipeline/config.py:get_confidence_thresholds`). Budgets stay global unless a class sets them.
 
 | Key | Global | contract | merger_agreement | insurance_claim | corporate_record | correspondence |
 |---|---|---|---|---|---|---|
-| `high` | 0.97 | 0.98 | 0.98 | 0.98 | 0.96 | 0.95 |
+| `high` | 0.97 | 0.98 | 0.98 | 0.95 | 0.95 | 0.95 |
 | `low` | 0.88 | 0.90 | 0.90 | 0.90 | 0.86 | 0.85 |
-| `judge_band_high` | 0.95 | 0.97 | 0.97 | 0.97 | 0.94 | 0.92 |
+| `judge_band_high` | 0.95 | 0.97 | 0.90 (empty band) | 0.97 | 0.94 | 0.92 |
 | `retry_max` | 2 | global | global | global | global | global |
-| `arbiter_retry_max` | 2 | global | global | global | global | global |
-| `judge_max_passes` | 3 | global | global | global | global | global |
+| `arbiter_retry_max` | 2 | global | 1 | global | global | global |
+| `judge_max_passes` | 3 | global | 2 | global | global | global |
+| `auto_archive` | true | global | false (always a person; no judge/arbiter loop; Gmail triage lane parks it) | global | global | global |
 | `judge_rejudge_retry` | false | global | global | global | global | global |
 | `keep_best_attempt` | false | global | global | global | global | global |
 
@@ -342,7 +344,7 @@ flowchart TD
     RFR -- "no (process restarted)" --> FRESH
 ```
 
-`record` and `requeue` work at any stage. Only the human-field completion (`complete`, and `correct` or `approve_as_is` with parked fields) makes no LLM call in the graph: it runs `compile_report`, `catalog_write` and `archive` on the reviewer's fields. A plain approved `resume`, `reclassify` and a field-less `approve_as_is` re-extract, and extraction can call an LLM, so those paths cost model calls and send the document text to the provider. The post-archive relations scan can also call an LLM when `relations.llm` is on. `complete` and `resume` need the document to be in the review stage (400 otherwise; a second resolve while one is in flight gets 409). Every `resume` and `complete` resolution is stored on the manifest as `human_label`, with a snapshot of the model's output taken before the override; `record` and `requeue` write only an audit entry and create no label. A classification override (`doc_type` or `override_doc_type`) can be written onto the manifest before a resume.
+`record` and `requeue` work at any stage. Only the human-field completion (`complete`, and `correct` or `approve_as_is` with parked fields) makes no LLM call in the graph: it runs `compile_report`, `catalog_write` and `archive` on the reviewer's fields. A plain approved `resume` (refused with 400 for a class with `auto_archive: false` that has parked fields, since it would only park again; use `approve_as_is`, `correct`, `complete`, or `requeue` to re-run from intake), `reclassify` and a field-less `approve_as_is` re-extract, and extraction can call an LLM, so those paths cost model calls and send the document text to the provider. The post-archive relations scan can also call an LLM when `relations.llm` is on. `complete` and `resume` need the document to be in the review stage (400 otherwise; a second resolve while one is in flight gets 409). Every `resume` and `complete` resolution is stored on the manifest as `human_label`, with a snapshot of the model's output taken before the override; `record` and `requeue` write only an audit entry and create no label. A classification override (`doc_type` or `override_doc_type`) can be written onto the manifest before a resume.
 
 ## Sources
 

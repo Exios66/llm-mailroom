@@ -113,6 +113,10 @@ async def lifespan(app: FastAPI):
     from graph.decision_slots import get_slots
 
     get_slots()
+    # An unknown MAILROOM_CONFIDENCE_PROFILE would fail every run: refuse to start.
+    from pipeline.config import confidence_profile_name
+
+    confidence_profile_name()
     _ensure_dirs()
     from audit.sinks.sql import warn_if_ephemeral
 

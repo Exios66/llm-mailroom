@@ -247,6 +247,14 @@ cost_models:
     output_per_million: 0.0
 
 confidence:
+  # Profile `calibrated_v1` (2026-11-17), the active default. Fitted from runs already
+  # made, not from a new sweep: docs/reports/evaluations/2026-11-17-confidence-calibration.md
+  # has the data, the per-class reliability tables and how solid each value is.
+  # The pre-calibration values are kept verbatim as `confidence_profiles.legacy_v0`;
+  # MAILROOM_CONFIDENCE_PROFILE=legacy_v0 selects them for an A/B arm (recorded as
+  # `confidence_profile` in trace metadata). Refit once new prompts or models land:
+  # self-reported confidence moves with both.
+  #
   # Global fallbacks (used before doc_type is known). Per-class severity overrides
   # live under by_class and win once classification is set — see
   # pipeline/config.py:get_confidence_thresholds.
@@ -299,27 +307,95 @@ confidence:
   # escalate via deterministic same-class field comparison in
   # graph/build_graph.py:_detect_conflict — not an extraction-confidence gap.
   conflict_threshold: 0.3
+  # `auto_archive` (per class, default true): false sends every document of the
+  # class that would archive to a person instead (review cause
+  # `class_requires_review`), after the report is compiled so the reviewer gets the
+  # draft. Fields a person applies or corrects archive; a class approval with no
+  # parked fields re-extracts, so the new draft parks again for review
+  # (graph/routing.py:after_report). A legacy approve+resume on parked fields is
+  # refused (pipeline/review_resolve.py:plan_resolution).
   by_class:
     contract:
+      # Sorter `high` stays 0.98 on purpose. The sorter answers 0.95 on ~80% of contracts
+      # and 18% of those are indentures / rights instruments (wrong class), so 0.98 sends
+      # them through retry_classify and Lane A, which costs about a third of correct
+      # contracts a person. On the 323-document held-out test, 0.95 would triple wrong-class
+      # archives (3 -> 9); the prompt fix (sorter_condensed_v5) is not yet measured on
+      # held-out data. Revisit after a test-split sorter run on v5.
       high: 0.98
       low: 0.90
       judge_band_high: 0.97
     merger_agreement:
       high: 0.98
       low: 0.90
-      judge_band_high: 0.97
+      # No merger extraction has met the quality bar in any study run (MAUD
+      # accuracy ~0.10-0.15), so an archive is always a wrong archive. Park every
+      # merger for a person and skip the judge loop (judge_band_high == low: empty
+      # band), which spent about a third (22-50% by round) of a merger run's tokens without changing the outcome.
+      judge_band_high: 0.90
+      arbiter_retry_max: 1
+      judge_max_passes: 2
+      auto_archive: false
     insurance_claim:
-      high: 0.98
+      # Sorter `high` 0.98 -> 0.95: 0 class errors in 1,100 insurance predictions
+      # (266 of them at 0.95). Solid.
+      high: 0.95
       low: 0.90
       judge_band_high: 0.97
     corporate_record:
-      high: 0.96
+      # Sorter `high` 0.96 -> 0.95: 0 class errors in 353 corporate predictions
+      # (208 at 0.95). Solid. Judge band unchanged on purpose: judging every
+      # corporate record (E2) added cost and review, not quality.
+      high: 0.95
       low: 0.86
       judge_band_high: 0.94
     correspondence:
       high: 0.95
       low: 0.85
       judge_band_high: 0.92
+
+# Named alternative `confidence` blocks for A/B runs. Each is a complete block
+# (same keys as `confidence`, not a patch). Select one with
+# MAILROOM_CONFIDENCE_PROFILE=<name>; unset, empty or `calibrated_v1` uses the
+# `confidence` block above. An unknown name is an error, never a silent fallback.
+confidence_profiles:
+  # The values in force before the 2026-11-17 calibration, verbatim.
+  legacy_v0:
+    high: 0.97
+    low: 0.88
+    retry_max: 2
+    judge_band_high: 0.95
+    arbiter_retry_max: 2
+    judge_max_passes: 3
+    judge_rejudge_retry: false
+    keep_best_attempt: false
+    # Archive checks are not part of the calibration A/B. false (same as the active
+    # profile, and the same as a missing key) still parks a doubted approval.
+    judge_complete_archives: false
+    arbiter_accept_archives: false
+    judge_clears_low_confidence: false
+    conflict_threshold: 0.3
+    by_class:
+      contract:
+        high: 0.98
+        low: 0.90
+        judge_band_high: 0.97
+      merger_agreement:
+        high: 0.98
+        low: 0.90
+        judge_band_high: 0.97
+      insurance_claim:
+        high: 0.98
+        low: 0.90
+        judge_band_high: 0.97
+      corporate_record:
+        high: 0.96
+        low: 0.86
+        judge_band_high: 0.94
+      correspondence:
+        high: 0.95
+        low: 0.85
+        judge_band_high: 0.92
 
 # Routing inputs beyond the observed run (pipeline/config.py:oracle_routing_enabled).
 routing:
@@ -331,6 +407,22 @@ routing:
   # transfer to production. MAILROOM_ORACLE_ROUTING=1|0 overrides this for one run.
   # Cause labelling (class_miss, subclass_miss) and scoring read GT either way.
   use_ground_truth: false
+
+# Prompt source: `repo` (default) serves the prompts shipped in this repository (the active
+# prompt set below) and never consults Langfuse. `langfuse` is an explicit opt-in where a
+# Langfuse prompt labelled `production` overrides the repo text. MAILROOM_PROMPT_SOURCE
+# overrides this for one process.
+prompt_source: repo
+
+# Prompt sets (llm/prompt_sets/catalog.yaml): which versioned system prompt each agent
+# serves. deploy_v1 = the condensed front-runners plus the label-guide fixes; frozen_v1 =
+# every agent's code default (the A/B baseline); deploy_v1_examples = deploy_v1 plus
+# synthetic correspondence examples. MAILROOM_PROMPT_SET overrides `active` for one process.
+# by_agent pins single agents to another set for a per-agent A/B arm
+# (e.g. {correspondence_specialist: frozen_v1}); the env var, when set, wins over it.
+prompt_set:
+  active: deploy_v1
+  by_agent: {}
 
 # Lane A reviewer mode (see pipeline/decision_review.py). Every class keeps
 # the LLM sorter_reviewer unless its by_class entry sets `mode: decision_only`
@@ -479,6 +571,7 @@ review_queue:
     judge_complete_unverified: 1.5 # decision slot: the gate could not confirm a judge "complete"
     boss_check_unsupported: 2.5    # decision slot: the gate disagreed with a boss approval
     boss_approval_unverified: 1.5  # decision slot: the gate could not confirm a boss approval
+    class_requires_review: 1.0     # policy park (auto_archive: false), not a failure
   class_tier_weight:               # cost of a wrong answer per class
     contract: 1.3
     merger_agreement: 1.4

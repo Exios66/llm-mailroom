@@ -64,6 +64,10 @@ JUDGE_CHECK_UNSUPPORTED = "judge_check_unsupported"
 JUDGE_COMPLETE_UNVERIFIED = "judge_complete_unverified"
 BOSS_CHECK_UNSUPPORTED = "boss_check_unsupported"
 BOSS_APPROVAL_UNVERIFIED = "boss_approval_unverified"
+CLASS_REQUIRES_REVIEW = "class_requires_review"
+
+# Cause tokens that come from comparing against ground truth, not from a routing decision.
+_GROUND_TRUTH_ONLY_CAUSES = frozenset({CLASS_MISS, SUBCLASS_MISS, EXTRACTION_MISS})
 
 CAUSE_LABELS: dict[str, str] = {
     CLASS_MISS: "classification miss vs ground truth",
@@ -111,6 +115,7 @@ CAUSE_LABELS: dict[str, str] = {
     JUDGE_COMPLETE_UNVERIFIED: "the archive gate could not confirm the judge's complete verdict",
     BOSS_CHECK_UNSUPPORTED: "the archive gate found values the source does not support in an extraction the boss approved",
     BOSS_APPROVAL_UNVERIFIED: "the archive gate could not confirm the boss's approval",
+    CLASS_REQUIRES_REVIEW: "this class never archives without a person (auto_archive: false)",
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})
@@ -768,6 +773,24 @@ def collect_review_causes(
         if token not in seen:
             seen.add(token)
             ordered.append(token)
+
+    # The policy park (taxonomy `auto_archive: false`) names itself only when no real
+    # routing cause explains the park, so the label never hides a failure. Causes that
+    # only a ground-truth comparison can produce never reached the router: ignore them.
+    from pipeline.config import is_extractable_doc_type
+
+    doc_type = data.get("doc_type")
+    if (
+        not (set(ordered) - _GROUND_TRUTH_ONLY_CAUSES)
+        and isinstance(doc_type, str)
+        and is_extractable_doc_type(doc_type)
+        and data.get("extracted_data")
+        and not (data.get("review_decision") == "human_applied" and data.get("extraction_source") == "human")
+    ):
+        from pipeline.config import class_auto_archives
+
+        if not class_auto_archives(doc_type):
+            ordered.append(CLASS_REQUIRES_REVIEW)
     return ordered
 
 

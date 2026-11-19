@@ -783,3 +783,51 @@ def test_verify_script_doc_mode_reads_only_the_requested_chain(tmp_path, monkeyp
 
     assert requested == ["doc-b"]
     assert "1 chain(s) checked, 0 broken" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("field", "claim"),
+    [("stage", "extraction"), ("attempt_no", 99), ("attempt_no", "1")],
+)
+async def test_parent_reference_stage_and_attempt_no_must_match_the_subrow(audit_db, field, claim):
+    """A parent reference whose stage or attempt_no disagrees with its sub-row fails, as in the diagnostics reader.
+
+    The reference is part of the parent's hashed detail, so the parent hash is recomputed and only
+    the reference/sub-row agreement is broken.
+    """
+    from audit.verify import verify_audit_db
+    from audit.writer import get_row, hash_entry, write_terminal_row
+
+    await write_terminal_row(_row("doc-p", attempts=[_attempt(1, stage="classification", tag="p")]))
+    row = await get_row("doc-p")
+    detail = dict(row["detail"])
+    detail["attempts"] = [dict(ref) for ref in detail["attempts"]]
+    assert detail["attempts"][0]["stage"] == "classification"
+    detail["attempts"][0][field] = claim
+    digest = hash_entry(
+        prev_hash=row["prev_hash"], doc_id="doc-p", entry_id=row["entry_id"], event=row["event"],
+        detail=detail, matter_id=row["matter_id"], actor=row["actor"], timestamp=row["timestamp"],
+    )
+    with sqlite3.connect(audit_db) as conn:
+        conn.execute(
+            "UPDATE audit_log SET detail = ?, entry_hash = ? WHERE doc_id = 'doc-p'",
+            (json.dumps(detail), digest),
+        )
+
+    report = await verify_audit_db()
+
+    assert report.main.ok is True
+    assert report.subrows.ok is False
+    assert [f for f in report.subrows.failures if f["kind"] == "reference_envelope_mismatch"] == [
+        {"kind": "reference_envelope_mismatch", "parent_id": row["entry_id"],
+         "attempt_id": row["sub_rows"][0]["attempt_id"], "field": field}
+    ]
+
+
+async def test_an_untampered_reference_has_no_envelope_mismatch(audit_db):
+    from audit.verify import verify_audit_db
+    from audit.writer import write_terminal_row
+
+    await write_terminal_row(_row("doc-ok", attempts=[_attempt(1, tag="ok"), _attempt(2, tag="ok2")]))
+    report = await verify_audit_db()
+    assert report.subrows.ok is True

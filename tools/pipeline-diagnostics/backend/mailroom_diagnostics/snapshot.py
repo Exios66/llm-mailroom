@@ -211,9 +211,9 @@ def _git(repo: Path, *args: str) -> str | None:
 
 
 def _workspace_thresholds() -> Thresholds:
-    from pipeline.config import load_config
+    from pipeline.config import confidence_block
 
-    block = load_config().get("confidence", {})
+    block = confidence_block()  # the profile in force (MAILROOM_CONFIDENCE_PROFILE)
     if not isinstance(block, dict):
         raise DiagnosticsError("invalid-schema", "taxonomy confidence block must be an object")
     return Thresholds.from_confidence(block)

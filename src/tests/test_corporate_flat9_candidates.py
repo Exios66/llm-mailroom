@@ -135,7 +135,9 @@ def test_keys_are_explicit_local_experiments_and_not_canonical_v8_v9():
     assert "corporate_records_specialist_v9" not in registry.PROMPT_VERSIONS
 
 
-def test_live_eval_defaults_and_managed_sync_catalog_remain_frozen():
+def test_live_eval_defaults_and_managed_sync_catalog_remain_frozen(monkeypatch):
+    # The frozen lineage is the frozen_v1 prompt set; deploy_v1 is covered in test_prompt_sets.py.
+    monkeypatch.setenv("MAILROOM_PROMPT_SET", "frozen_v1")
     live = load_specialist_v1("corporate_records_specialist")
     assert _sha(live) == PARENT_SHA
     assert registry.get_prompt("corporate_records_specialist") == live

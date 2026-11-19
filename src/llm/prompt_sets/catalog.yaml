@@ -1,0 +1,71 @@
+# Prompt sets: the single source of truth for which system prompt each agent serves.
+#
+# A set maps agents to versioned prompt files in this directory. An agent a set does not
+# list serves its code default (the frozen v1 specialist stem, or the agent's production
+# prompt). The served prompt id is "<agent>@<set>" for a listed agent and "<agent>@code"
+# otherwise; it is the Langfuse prompt name too ("mailroom-<agent>--<set>"), so a managed
+# copy of one set never overrides another. Selection: MAILROOM_PROMPT_SET (one process),
+# else taxonomy prompt_set.active, else default_set. taxonomy prompt_set.by_agent pins a
+# single agent to another set for an A/B arm.
+#
+# status: adopted = beat its reference in a recorded A/B; candidate = built from adopted
+# parents plus fixes, not yet A/B'd on its own; carried = unchanged code default.
+default_set: deploy_v1
+
+sets:
+  frozen_v1:
+    description: Every agent serves its code default (the A/B baseline arm and the pre-2026-11-17 production prompts).
+    agents: {}
+
+  deploy_v1:
+    description: Best condensed front-runners plus the label-guide fixes (2026-11-17 prompt alignment plan).
+    agents:
+      contracts_specialist:
+        file: deploy_v1/contracts_specialist.txt
+        parent: frozen v1 contracts_specialist (no condensed lineage exists)
+        fixes: defines the 7 v2 fields v1 never names (party_roles with the Dojo CONTRACT_PARTY_ROLES vocabulary, signatories, agreement_date, expiration_date, termination_notice_period, dispute_forum, payment_terms) plus territory; empty-value lists; long-document anchors
+        status: candidate
+      correspondence_specialist:
+        file: deploy_v1/correspondence_specialist.txt
+        parent: sandbox correspondence_specialist_condensed_v3 (adopted, mean +0.015 vs v2 on 40 held-out docs)
+        fixes: top-message rule (reply above quoted mail, forward stamp, bare forward, no header, calendar entries); recipient vs generic salutation; demand only of the recipient; reader-directed action items; urgency definitions; promotional mail
+        status: candidate
+      corporate_records_specialist:
+        file: deploy_v1/corporate_records_specialist.txt
+        parent: sandbox corporate_records_specialist_condensed_v1 (adopted, mean +0.075 vs frozen)
+        fixes: effective-date fallback to adoption/filing date; jurisdiction of organisation; execution-block signatories; long-document anchors; filing_number read when printed on powers of attorney, resolutions and officer certificates (interim labels carry a printed number for 11 of them; still null for rights, indenture, subsidiary list)
+        status: candidate
+      insurance_claims_specialist:
+        file: deploy_v1/insurance_claims_specialist.txt
+        parent: sandbox insurance_claims_specialist_condensed_v5 (v4 adopted + llm-mailroom #280 claim_type rule)
+        fixes: scope line names the in-scope templates (claims decision letters included) instead of excluding every letter; otherwise v5 as is (the interim labels add only derived cms_source_table)
+        status: candidate
+      judge:
+        file: deploy_v1/judge.txt
+        parent: production judge (completeness) prompt
+        fixes: class conventions section so the judge grades by the same labeling rules the specialists follow
+        status: candidate
+      judge-correctness:
+        file: deploy_v1/judge-correctness.txt
+        parent: production judge-correctness prompt
+        fixes: the same class conventions section
+        status: candidate
+    carried:
+      sorter: sorter_condensed_v5 (already the production pin; the sandbox front-runner)
+      sorter_reviewer: production chat reviewer (the baseline; decision-model reviewers run through the Decisions API, not this prompt)
+      merger_agreement_specialist: frozen v1 (lowest priority; no label-driven fix yet)
+      boss: production (no extracted fields to align)
+      arbiter: production (no extracted fields to align)
+      judge-classification: production (classification labels unchanged)
+      intake: production
+      gmail_triage: production
+
+  deploy_v1_examples:
+    description: deploy_v1 plus four synthetic correspondence worked examples (invented names, no corpus text or label value).
+    extends: deploy_v1
+    agents:
+      correspondence_specialist:
+        file: deploy_v1_examples/correspondence_specialist.txt
+        parent: deploy_v1 correspondence_specialist
+        fixes: worked examples for the top-reply rule, the forward stamp, promotional mail and a defined-group salutation
+        status: candidate

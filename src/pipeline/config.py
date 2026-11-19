@@ -105,16 +105,49 @@ def get_doc_class(doc_type: str) -> dict | None:
     return None
 
 
+CONFIDENCE_PROFILE_ENV = "MAILROOM_CONFIDENCE_PROFILE"
+DEFAULT_CONFIDENCE_PROFILE = "calibrated_v1"
+
+
+def confidence_profile_name() -> str:
+    """Name of the confidence profile in force (``MAILROOM_CONFIDENCE_PROFILE``).
+
+    Unset, empty or ``calibrated_v1`` means the taxonomy's own ``confidence`` block.
+    Any other value must name an entry of ``confidence_profiles``; an unknown name
+    raises ``ValueError`` so an A/B arm can never silently run the default.
+    """
+    raw = os.environ.get(CONFIDENCE_PROFILE_ENV, "").strip()
+    if not raw or raw == DEFAULT_CONFIDENCE_PROFILE:
+        return DEFAULT_CONFIDENCE_PROFILE
+    profiles = load_config().get("confidence_profiles") or {}
+    if not isinstance(profiles, dict) or not isinstance(profiles.get(raw), dict):
+        known = sorted([DEFAULT_CONFIDENCE_PROFILE, *(profiles if isinstance(profiles, dict) else {})])
+        raise ValueError(f"{CONFIDENCE_PROFILE_ENV}={raw!r} is not a confidence profile; known: {known}")
+    return raw
+
+
+def confidence_block():
+    """The ``confidence`` block of the profile in force (a shallow copy; ``by_class`` included).
+
+    A malformed (non-mapping) block is returned as it is, so validating callers can reject it.
+    """
+    cfg = load_config()
+    name = confidence_profile_name()
+    block = cfg.get("confidence", {}) if name == DEFAULT_CONFIDENCE_PROFILE else cfg["confidence_profiles"][name]
+    return dict(block) if isinstance(block, dict) else block
+
+
 def get_confidence_thresholds(doc_type: str | None = None) -> dict:
     """Return confidence / Lane B budgets, optionally merged with per-class severity.
 
     Global keys always present. When ``doc_type`` resolves to a ``by_class``
     entry, that class's ``high`` / ``low`` / ``judge_band_high`` override the
     globals. Retry budgets (``retry_max``, ``arbiter_retry_max``,
-    ``judge_max_passes``) stay global unless a class entry sets them.
+    ``judge_max_passes``) stay global unless a class entry sets them. The block
+    comes from the profile :func:`confidence_profile_name` selects.
     """
-    cfg = load_config()
-    base = dict(cfg.get("confidence", {}) or {})
+    block = confidence_block()
+    base = dict(block) if isinstance(block, dict) else {}
     by_class = base.pop("by_class", None) or {}
     if doc_type:
         resolved = resolve_extract_class(doc_type) or doc_type
@@ -124,6 +157,26 @@ def get_confidence_thresholds(doc_type: str | None = None) -> dict:
                 if value is not None:
                     base[key] = value
     return base
+
+
+def policy_expected_stage(doc_class: str | None, expected_stage: str | None) -> str | None:
+    """The terminal stage a healthy run reaches under the profile in force.
+
+    Ground truth says ``archived`` for every clean document, but a class with
+    ``auto_archive: false`` parks by design, so ``review`` is its correct outcome.
+    Any other expectation is returned unchanged.
+    """
+    if expected_stage == "archived" and not class_auto_archives(doc_class):
+        return "review"
+    return expected_stage
+
+
+def class_auto_archives(doc_type: str | None) -> bool:
+    """False when the class's ``auto_archive`` is false: its documents always go to a person.
+
+    Default true (no key, no class, or an unknown class).
+    """
+    return get_confidence_thresholds(doc_type).get("auto_archive", True) is not False
 
 
 ORACLE_ROUTING_ENV = "MAILROOM_ORACLE_ROUTING"

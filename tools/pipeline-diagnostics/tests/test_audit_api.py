@@ -1095,6 +1095,8 @@ def _minimal_unified_store(
     attempt_trigger: str = "initial",
     ref_stage: str = "extraction",
     ref_attempt_no: int = 1,
+    row_id: str | None = None,
+    attempt_parent_id: str | None = None,
 ) -> Path:
     """One unified document whose every stored detail is the object ``{}``.
 
@@ -1117,14 +1119,15 @@ def _minimal_unified_store(
                 json.dumps({"migrated_at": "2026-11-09T08:00:00+00:00", "legacy_rows": 0}),
             ),
         )
-        row_id = f"row-{DOC}"
+        row_id = row_id if row_id is not None else f"row-{DOC}"
+        parent_id = attempt_parent_id if attempt_parent_id is not None else row_id
         timestamp = "2026-11-09T12:00:00+00:00"
         main_detail: dict = {}
         if with_attempt:
             attempt_id = f"{DOC}-attempt-1"
             sub = {
                 "attempt_id": attempt_id,
-                "parent_id": row_id,
+                "parent_id": parent_id,
                 "doc_id": DOC,
                 "stage": attempt_stage,
                 "attempt_no": 1,
@@ -1139,7 +1142,7 @@ def _minimal_unified_store(
                 "INSERT INTO audit_attempts VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     attempt_id,
-                    row_id,
+                    parent_id,
                     DOC,
                     attempt_stage,
                     1,
@@ -2043,3 +2046,180 @@ def test_legacy_only_document_with_a_missing_subrow_table_is_never_verified(
     assert verification["status"] == "unverified"
     assert not verification["failures"]
     assert any(table in note for note in verification["notes"])
+
+
+def test_padded_row_id_is_matched_raw_by_its_attempts(client, tmp_path, monkeypatch):
+    """A legitimately padded entry_id is the identity the writer hashed; attempts naming it verify."""
+    _minimal_unified_store(tmp_path, monkeypatch, with_attempt=True, row_id=f"row-{DOC} ")
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["verification"]["status"] == "verified"
+    assert payload["verification"]["failures"] == []
+    assert payload["record"]["attempts_total"] == 1
+
+
+def test_attempt_naming_the_trimmed_parent_id_is_an_orphan_not_a_match(client, tmp_path, monkeypatch):
+    """The display trim of an id must not make a different parent id compare equal.
+
+    The row id is ``"row-<doc> "`` (padded); the attempt names ``"row-<doc>"``.
+    Both rows hash correctly on their own, so only an identity comparison on the
+    raw values can tell they were not written together.
+    """
+    _minimal_unified_store(
+        tmp_path,
+        monkeypatch,
+        with_attempt=True,
+        row_id=f"row-{DOC} ",
+        attempt_parent_id=f"row-{DOC}",
+    )
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["verification"]["status"] == "failed"
+    assert any(f["reason"] == "attempt-orphan" for f in payload["verification"]["failures"])
+    # The projection must not attach the attempt to the row either.
+    assert payload["record"]["attempts"] == []
+    assert payload["record"]["attempts_total"] == 0
+
+
+@pytest.fixture
+def locked_store(make_store, monkeypatch):
+    """A seeded store that a second connection holds under an exclusive lock."""
+    from mailroom_diagnostics import audit
+
+    db = make_store("unified")
+    # Small bound so the test is fast; the module default is asserted separately.
+    monkeypatch.setattr(audit, "LOOKUP_TIMEOUT_SECONDS", 0.3, raising=False)
+    locker = sqlite3.connect(db, isolation_level=None)
+    locker.execute("PRAGMA journal_mode=DELETE")
+    locker.execute("BEGIN EXCLUSIVE")
+    try:
+        yield db
+    finally:
+        locker.execute("ROLLBACK")
+        locker.close()
+
+
+def test_locked_store_times_out_as_unverified_with_a_reason(client, locked_store):
+    import time
+
+    started = time.monotonic()
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 2.0, f"the lookup was not bounded ({elapsed:.1f}s)"
+    assert payload["verification"]["status"] == "unverified"
+    assert payload["record"] == {"state": "unavailable", "reason": "timeout"}
+    assert payload["store"]["reason"] == "timeout"
+    assert any("did not answer" in note for note in payload["verification"]["notes"])
+    assert not payload["verification"]["failures"]
+
+
+def test_locked_store_listing_reports_the_timeout(client, locked_store):
+    import time
+
+    started = time.monotonic()
+    payload = client.get("/v1/diagnostics/audit/documents").json()
+    assert time.monotonic() - started < 2.0
+    assert payload["store"]["state"] == "unavailable"
+    assert payload["store"]["reason"] == "timeout"
+    assert payload["documents"] == []
+
+
+def test_lookup_timeout_default_is_small_and_bounded():
+    from mailroom_diagnostics import audit
+
+    assert 0 < audit.LOOKUP_TIMEOUT_SECONDS <= 5
+
+
+def test_event_cap_truncation_is_stated_in_the_status(client, make_store, monkeypatch):
+    """Not just ``unverified``: the payload must name the cap that cut the document."""
+    from mailroom_diagnostics import audit
+
+    make_store("event-chain")
+    full = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    total = full["record"]["entries"]
+    assert total > 2
+    assert full["record"]["truncated"] is False
+    assert full["verification"]["status"] == "verified"
+
+    monkeypatch.setattr(audit, "MAX_EVENTS", 2)
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    verification = payload["verification"]
+    assert verification["status"] == "unverified"
+    assert verification["truncated"] is True
+    assert verification["checked"]["main"] == 0
+    assert payload["record"]["truncated"] is True
+    assert payload["record"]["events_shown"] == 2
+    joined = " ".join(verification["notes"] + payload["notes"])
+    assert f"2 of {total} events" in joined
+    assert "MAX_EVENTS" in joined
+
+
+def test_legacy_only_truncation_is_not_reported_as_an_event_truncation(client, make_store, monkeypatch):
+    from mailroom_diagnostics import audit
+
+    db = make_store("event-chain")
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE audit_log_legacy AS SELECT * FROM audit_log WHERE doc_id=?", (DOC,))
+    total = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["record"]["entries"]
+    monkeypatch.setattr(audit, "MAX_EVENTS", total)  # events fit exactly; legacy copy fits too
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["record"]["truncated"] is False
+    assert payload["verification"]["status"] == "verified"
+
+
+def test_a_legacy_copy_longer_than_the_cap_truncates_only_the_legacy_section(client, make_store, monkeypatch):
+    from mailroom_diagnostics import audit
+
+    db = make_store("event-chain")
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE audit_log_legacy AS SELECT * FROM audit_log WHERE doc_id=?", (DOC,))
+        conn.execute(
+            "INSERT INTO audit_log_legacy SELECT * FROM audit_log_legacy "
+            "WHERE rowid = (SELECT MIN(rowid) FROM audit_log_legacy)"
+        )
+    total = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()["record"]["entries"]
+    monkeypatch.setattr(audit, "MAX_EVENTS", total)  # the event chain fits; the legacy copy has one row more
+    payload = client.get(f"/v1/diagnostics/audit/documents/{DOC}").json()
+    assert payload["record"]["truncated"] is False
+    assert payload["verification"]["status"] == "unverified"
+    notes = " ".join(payload["verification"]["notes"] + payload["notes"])
+    assert "legacy section exceeds the bounded read" in notes
+    assert "capped by MAX_EVENTS" not in notes
+
+
+def test_a_lock_inside_the_schema_probes_is_a_timeout_not_a_guess():
+    """``_migration_info`` and ``_schema_mode`` swallow ordinary errors, but a lock must reach the timeout handler."""
+    from mailroom_diagnostics import audit
+    from sqlalchemy.exc import OperationalError
+
+    class _Conn:
+        def __init__(self, exc):
+            self.exc = exc
+
+        def execute(self, *a, **kw):
+            raise self.exc
+
+    locked = OperationalError("SELECT", {}, Exception("database is locked"))
+    with pytest.raises(OperationalError):
+        audit._migration_info(_Conn(locked), {"audit_meta"})
+    other = OperationalError("SELECT", {}, Exception("no such table: audit_meta"))
+    assert audit._migration_info(_Conn(other), {"audit_meta"})["reason"] == "migration-marker-unreadable"
+
+
+def test_a_lock_while_inspecting_indexes_is_a_timeout_not_an_event_chain(monkeypatch):
+    from mailroom_diagnostics import audit
+    from sqlalchemy.exc import OperationalError
+
+    class _Inspector:
+        def __init__(self, exc):
+            self.exc = exc
+
+        def get_unique_constraints(self, table):
+            raise self.exc
+
+    locked = OperationalError("PRAGMA", {}, Exception("database is locked"))
+    monkeypatch.setattr(audit, "inspect", lambda conn: _Inspector(locked))
+    with pytest.raises(OperationalError):
+        audit._schema_mode(object(), set(), {"migrated": False})
+    other = RuntimeError("boom")
+    monkeypatch.setattr(audit, "inspect", lambda conn: _Inspector(other))
+    assert audit._schema_mode(object(), set(), {"migrated": False}) == "event-chain"
