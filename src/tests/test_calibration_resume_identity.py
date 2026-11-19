@@ -213,3 +213,115 @@ def test_negative_limit_is_a_usage_error_and_a_saved_negative_limit_is_refused(t
     assert exc.value.code == 2
     why = sw.resume_mismatch([_row(seed=1, per_class=5, limit=-1)], [], {**_CURRENT, "limit": 1})
     assert why is not None and "limit: saved -1 is not a valid limit" in why
+
+
+def test_a_saved_bool_limit_is_not_a_valid_limit():
+    """``isinstance(True, int)`` is true; a recorded ``true`` must not pass as the limit 1."""
+    why = sw.resume_mismatch([_row(seed=1, per_class=5, limit=True)], [], {**_CURRENT, "limit": 1})
+    assert why is not None and "limit: saved True is not a valid limit" in why
+    # a real integer still passes, and False is refused like True
+    assert sw.resume_mismatch([_row(seed=1, per_class=5, limit=1)], [], {**_CURRENT, "limit": 1}) is None
+    why = sw.resume_mismatch([_row(seed=1, per_class=5, limit=False)], [], {**_CURRENT, "limit": 1})
+    assert why is not None and "not a valid limit" in why
+
+
+@pytest.mark.parametrize("key,saved,now", [("seed", True, 1), ("per_class", True, 1), ("seed", False, 0)])
+def test_a_saved_bool_never_equals_an_integer_selection_setting(key, saved, now):
+    """``True == 1`` in Python; a bool in the saved row is a different identity from the integer."""
+    current = {**_CURRENT, key: now}
+    run = {"seed": 1, "per_class": 5, "limit": None, key: saved}
+    why = sw.resume_mismatch([_row(**run)], [], current)
+    assert why is not None and f"{key}: saved {saved!r}, now {now!r}" in why
+    # the same integer still matches
+    run[key] = now
+    assert sw.resume_mismatch([_row(**run)], [], current) is None
+
+
+@pytest.mark.parametrize("key,saved,now", [("judge_attempts", True, 1), ("max_extraction_candidates", True, 1),
+                                           ("max_extraction_candidates", False, 0)])
+def test_a_saved_bool_never_equals_an_integer_diagnostics_setting(key, saved, now):
+    """The diagnostics settings share the ``True == 1`` hole of the selection settings."""
+    row = _row(seed=1, per_class=5, limit=None)
+    row["diagnostics"] = {"judge_attempts": "first", "max_extraction_candidates": 2, key: saved}
+    why = sw.resume_mismatch([row], [], {**_CURRENT, key: now})
+    assert why is not None and f"{key}: saved {saved!r}, now {now!r}" in why
+    row["diagnostics"][key] = now
+    assert sw.resume_mismatch([row], [], {**_CURRENT, key: now}) is None
+
+
+def _manifest_current(manifest):
+    docs, ds = sw.load_manifest_docs(manifest, None)
+    return docs, {**_CURRENT, "dataset_id": ds["dataset_id"], "legacy_dataset_id": ds["legacy_dataset_id"],
+                  "seed": None, "per_class": None}
+
+
+def _write_manifest(folder):
+    folder.mkdir(parents=True)
+    path = folder / "manifest.csv"
+    path.write_text("id,filename,subdir,expected_doc_class,expected_stage\nd1,a.txt,,invoice,archive\n")
+    return path
+
+
+def test_manifests_with_the_same_name_in_different_folders_are_different_datasets(tmp_path):
+    first, second = _write_manifest(tmp_path / "one"), _write_manifest(tmp_path / "two")
+    _, ds1 = sw.load_manifest_docs(first, None)
+    _, ds2 = sw.load_manifest_docs(second, None)
+    assert ds1["dataset_id"] != ds2["dataset_id"]
+    assert ds1["legacy_dataset_id"] == ds2["legacy_dataset_id"] == "manifest:manifest.csv"
+
+    docs, current = _manifest_current(second)
+    saved = _row(seed=None, per_class=None, limit=None, dataset_id=ds1["dataset_id"])
+    why = sw.resume_mismatch([saved], docs, current)
+    assert why is not None and "dataset_id" in why
+
+
+def test_a_full_path_manifest_id_resumes_itself(tmp_path):
+    manifest = _write_manifest(tmp_path / "one")
+    docs, current = _manifest_current(manifest)
+    saved = _row(seed=None, per_class=None, limit=None, dataset_id=current["dataset_id"])
+    assert sw.resume_mismatch([saved], docs, current) is None
+
+
+def test_a_saved_name_only_manifest_id_still_resumes_a_manifest_of_that_name(tmp_path):
+    manifest = _write_manifest(tmp_path / "one")
+    docs, current = _manifest_current(manifest)
+    saved = _row(seed=None, per_class=None, limit=None, dataset_id="manifest:manifest.csv")
+    assert sw.resume_mismatch([saved], docs, current) is None
+
+
+def test_a_saved_name_only_id_does_not_resume_a_manifest_with_another_name(tmp_path):
+    manifest = _write_manifest(tmp_path / "one")
+    docs, current = _manifest_current(manifest)
+    saved = _row(seed=None, per_class=None, limit=None, dataset_id="manifest:other.csv")
+    why = sw.resume_mismatch([saved], docs, current)
+    assert why is not None and "dataset_id" in why
+
+
+def test_the_name_only_fallback_never_accepts_a_non_string_or_other_dataset_kind(tmp_path):
+    manifest = _write_manifest(tmp_path / "one")
+    docs, current = _manifest_current(manifest)
+    for bogus in (None, ["manifest:manifest.csv"], "fixtures"):
+        saved = _row(seed=None, per_class=None, limit=None, dataset_id=bogus)
+        assert sw.resume_mismatch([saved], docs, current) is not None
+
+
+def test_cli_resume_accepts_a_name_only_file_but_refuses_a_same_named_manifest_elsewhere(
+    tmp_path, capsys, temp_base_dir
+):
+    one, two = _write_manifest(tmp_path / "one"), _write_manifest(tmp_path / "two")
+    for folder in (one.parent, two.parent):
+        (folder / "a.txt").write_text("Invoice number 1\nTotal due: 10.00\n")
+    out = tmp_path / "records.jsonl"
+    assert _run(["--manifest", str(one), "--mock", "--out", str(out)], capsys)[0] == 0
+    rows = _lines(out)
+    assert rows[0]["run"]["dataset_id"] == f"manifest:{one.resolve().as_posix()}"
+
+    # The same-named manifest in another folder is a different dataset.
+    code, cap = _run(["--manifest", str(two), "--mock", "--out", str(out), "--resume"], capsys)
+    assert code == 2 and "dataset_id" in cap.err
+
+    # A file written before the full-path id recorded only the name; it still resumes.
+    for row in rows:
+        row["run"]["dataset_id"] = "manifest:manifest.csv"
+    out.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    assert _run(["--manifest", str(one), "--mock", "--out", str(out), "--resume"], capsys)[0] == 0

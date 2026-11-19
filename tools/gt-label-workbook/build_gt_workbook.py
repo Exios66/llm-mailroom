@@ -33,6 +33,7 @@ follows the scorer when the Dojo pin moves.
 from __future__ import annotations
 
 import argparse
+import ast
 import datetime as _dt
 import io
 import json
@@ -231,6 +232,55 @@ def _derived_fields() -> dict[str, str]:
 _DERIVED = _derived_fields()
 
 
+def _fallback_maud_answer_status(question: str, record: Any) -> tuple[str, bool]:
+    """Stand-in for the Dojo's ``_label_answer_status`` (blank, ``nan`` and empty containers are
+    unanswered; the Hub class ``"None"`` is an answer), used only if the Dojo renames that helper."""
+    answer = record.get("answer") if isinstance(record, dict) else record
+    if answer is None or (isinstance(answer, (list, tuple, dict, set)) and not answer):
+        return "", False
+    text = str(answer).strip()
+    return ("", False) if text.lower() in {"", "nan"} else (text, False)
+
+
+def _maud_answered(question: str, record: Any) -> bool:
+    """True when ``record`` (one ``maud_clause_labels`` entry) holds an answer by the Dojo's rules.
+
+    Not ``is_empty``: that treats the Hub class ``"None"`` (no matching right) as blank, and a
+    ``{"answer": ""}`` record as a value. A record the Dojo skips as ambiguous (several distinct
+    answers) still holds an answer, so it stays populated here.
+    """
+    try:
+        from llm_dojo_scoring.schemas.maud_schema import _label_answer_status
+    except ImportError:  # pragma: no cover - the Dojo renamed its private helper
+        _label_answer_status = _fallback_maud_answer_status
+    answer, ambiguous = _label_answer_status(question, record)
+    return bool(answer) or ambiguous
+
+
+def _maud_consideration(gt: dict, subclass: str | None = None) -> str | None:
+    """The ``merger_consideration`` the Dojo scores for this row, or ``None`` when it scores none.
+
+    ``hub_merger_expected_fields`` takes the token of the MAUD ``Type of Consideration`` answer, then of
+    ``subclass``; a blank answer, a label map marked absent and the unannotated ``other`` subclass give
+    no gold. An unreadable ``gt_fields`` also gives ``None``."""
+    from llm_dojo_scoring.schemas.maud_schema import hub_merger_expected_fields
+
+    try:
+        return hub_merger_expected_fields({**gt, "expected_subclass": None}, subclass).get("merger_consideration")
+    except (ValueError, TypeError):
+        return None
+
+
+def _derived_value(cls: str, gt: dict, subclass: str) -> str | None:
+    """The value of the field the Dojo derives for ``cls``, or ``None`` when the Dojo scores none.
+
+    A merger's ``merger_consideration`` is the MAUD answer first, then the subclass; for the unannotated
+    ``other`` subclass with no answer the Dojo leaves it unscored, so there is nothing to show."""
+    if cls == "merger_agreement":
+        return _maud_consideration(gt, subclass)
+    return normalize_corpus_subclass(cls, subclass)
+
+
 def carried_fields(sub: pd.DataFrame) -> set[str]:
     """Fields the dataset's ground truth carries for these rows: a non-empty value or a gt_presence key."""
     carried: set[str] = set()
@@ -314,9 +364,15 @@ def cell_for(cls: str, key: str, gt: dict, presence: dict, subclass: str) -> tup
             # documented absence of the clause, not a labelling gap.
             return "", "schema_documented_absence"
     if cls == "merger_agreement" and key.startswith("maud::"):
+        if presence.get("maud_clause_labels") == "pending_annotation":
+            return "", "pending_annotation"
         maud = _json(gt.get("maud_clause_labels")) or {}
         value = maud.get(key[6:]) if isinstance(maud, dict) else None
-        return (render(value), "populated") if not is_empty(value) else ("", "UNLABELED")
+        closed = presence.get("maud_clause_labels")
+        if closed in ("not_applicable", "schema_documented_absence"):
+            # the Dojo closed the whole field: keep the status (and any retained answer) so To Label never lists it
+            return render(value) if _maud_answered(key[6:], value) else "", closed
+        return (render(value), "populated") if _maud_answered(key[6:], value) else ("", "UNLABELED")
     if cls == "corporate_record" and key not in extraction_schema(cls).field_types:
         if key not in entity_field_types(subclass) and key not in ENTITY_CORE_FIELDS:
             return "", "not_applicable"
@@ -325,8 +381,15 @@ def cell_for(cls: str, key: str, gt: dict, presence: dict, subclass: str) -> tup
         return (table, "populated") if table else ("", "not_applicable")
     if _DERIVED.get(cls) == key and is_empty(gt.get(key)) and presence.get(key) not in (
             "not_applicable", "schema_documented_absence", "pending_annotation"):
-        # the Dojo derives this field from the subclass: it is never a labelling gap
-        return normalize_corpus_subclass(cls, subclass), "populated"
+        # the Dojo derives this field (merger_consideration: from the MAUD answer first): never a labelling gap
+        derived = _derived_value(cls, gt, subclass)
+        if derived:
+            return derived, "populated"
+        if cls == "merger_agreement" and presence.get("maud_clause_labels") == "pending_annotation":
+            # the pending MAUD map may still answer Type of Consideration: outstanding, not closed
+            return "", "pending_annotation"
+        # the Dojo scores no value here (merger subclass ``other``, no MAUD answer): not a labelling gap either
+        return "", "not_applicable"
     value, status = gt.get(key), presence.get(key)
     if status in ("not_applicable", "schema_documented_absence", "pending_annotation"):
         return render(value), status
@@ -421,7 +484,10 @@ def _meta(value: Any) -> dict:
         try:
             value = json.loads(value)
         except ValueError:
-            return {}
+            try:  # the ``default.metadata`` column is a Python dict repr; same fallback as the Dojo's parser
+                value = ast.literal_eval(value)
+            except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+                return {}
     return dict(value) if isinstance(value, dict) else {}
 
 
@@ -671,6 +737,283 @@ def _to_label_readme(tl: dict[str, Any], *, truncated_texts: int) -> list[tuple[
     return lines
 
 
+def _gt_dict(raw: Any) -> dict:
+    """A row's ``gt_fields`` (a JSON string or a mapping) as a dict."""
+    return json.loads(raw) if isinstance(raw, str) else dict(raw)
+
+
+def _to_label_cells(cls: str, cols: list[tuple[str, str, str]], gt: dict, presence: dict, subclass: str,
+                    parts_fn: Callable[[Any], Any]) -> list:
+    """One ``(key, header, ftype, value, status, flags)`` tuple per column of ``cls`` for one row."""
+    cells = []
+    for key, header, ftype in cols:
+        value, status = cell_for(cls, key, gt, presence, subclass)
+        flags = ()
+        if ftype.startswith("date"):
+            flags = tuple(date_flag(sp, status, parts_fn)[0] for sp in (value.split(" || ") if value else [""]))
+        cells.append((key, header, ftype, value, status, flags))
+    return cells
+
+
+def _docs_to_label(rows: pd.DataFrame, cls: str, cols: list[tuple[str, str, str]], *,
+                   parts_fn: Callable[[Any], Any], dataset: str, commit: str | None,
+                   hub_files: set[str] | None) -> list[_Doc]:
+    """The documents of ``cls`` with a field still to label, sorted by subclass then document_id."""
+    docs: list[_Doc] = []
+    for _, row in rows[rows.expected == cls].iterrows():
+        gt = _gt_dict(row.gt_fields)
+        presence = _json(gt.get("gt_presence")) or {}
+        subclass = str(row.expected_subclass)
+        cells = _to_label_cells(cls, cols, gt, presence, subclass, parts_fn)
+        need = [i for i, c in enumerate(cells) if c[4] in MISSING or _date_problem(c)]
+        if need:
+            meta = row.metadata if "metadata" in row.index else None
+            docs.append(_Doc(row, subclass, cells, need, original_link(meta, dataset, commit, hub_files)))
+    docs.sort(key=lambda d: (d.subclass, str(d.row.document_id)))
+    return docs
+
+
+def _doc_text(doc: _Doc) -> str:
+    text = doc.row.doc_text
+    return text if isinstance(text, str) else ""
+
+
+def _chunk_class_texts(docs: list[_Doc], tl: dict[str, Any]) -> list[tuple[str, list[str], int]]:
+    """``(raw text, chunks, first Text-sheet row)`` per document; updates the text counters in ``tl``."""
+    chunked = []
+    text_row = 2
+    for d in docs:
+        raw = _doc_text(d)
+        if not raw:
+            tl["empty_texts"] += 1
+        safe, replaced = sanitize_text(raw)
+        chunks = chunk_text(safe)
+        if "".join(chunks) != safe or any(_utf16_len(c) > EXCEL_CELL_MAX for c in chunks):
+            tl["text_truncated"] += 1
+        tl["text_chars"] += len(raw)
+        tl["text_chunks"] += len(chunks)
+        tl["controls_replaced"] += replaced
+        chunked.append((raw, chunks, text_row))
+        text_row += 1 + len(chunks)
+    return chunked
+
+
+class _ToLabelLayout(NamedTuple):
+    """Column numbers of a "To Label" sheet (1-based)."""
+
+    has_original: bool
+    c_open: int
+    c_sub: int
+    first: int
+    last: int
+    live: int
+    flag_col: int
+    built: int
+    orig_col: int
+    mask_col: int
+
+
+def _write_to_label_headers(ws, cols: list[tuple[str, str, str]], used: list[int],
+                            has_original: bool) -> _ToLabelLayout:
+    """Header row: identity columns, links, subclass, a value + status pair per field, counters, helpers."""
+    heads = [("document_id", 22, HEAD_ID), ("filename", 30, HEAD_ID), ("split", 7, HEAD_ID)]
+    if has_original:
+        heads.append(("Open original", 14, HEAD_LINK))
+    heads.append(("Open text", 11, HEAD_LINK))
+    heads.append(("subclass", 20, HEAD_VAL))
+    for i, (name, width, fill) in enumerate(heads, start=1):
+        _header(ws, i, name, fill, width=width)
+    first = len(heads) + 1
+    for j, idx in enumerate(used):
+        vc = first + 2 * j
+        _, header, ftype = cols[idx]
+        _header(ws, vc, header, HEAD_VAL, f"Scored field type: {ftype}. Edit the value here.", _value_width(ftype))
+        _header(ws, vc + 1, f"{header} | status", HEAD_ST, "Set it to 'populated' when you add a value.", 18)
+    last = first + 2 * len(used) - 1
+    lay = _ToLabelLayout(has_original, len(heads) - 1, len(heads), first, last, last + 1, last + 2,
+                         last + 3, last + 4, last + 5)
+    _header(ws, lay.live, "still missing (live)", HEAD_ID,
+            "Formula: this row's fields whose status is UNLABELED or pending_annotation, plus flagged dates "
+            "still 'populated'.", 12)
+    _header(ws, lay.flag_col, "date flags", HEAD_ID, "Date labels that lack a year, a day/month, or do not parse.", 38)
+    _header(ws, lay.built, "fields needing labels (as built)", HEAD_HELP, "Helper: how many fields needed a label "
+            "when the workbook was built.", 14)
+    _header(ws, lay.orig_col, "dataset subclass (helper)", HEAD_HELP, "Helper: the subclass the dataset carries; "
+            "the subclass cell turns green when you change it.", 18)
+    _header(ws, lay.mask_col, "needs mask (helper)", HEAD_HELP, "Helper: one character per field pair, left to right: "
+            "1 = the dataset had no label, 2 = date problem, 0 = nothing missing. Drives the green highlight.", 14)
+    if has_original:
+        ws.cell(row=1, column=4).comment = Comment(
+            "Source document. Corporate records link to the SEC EDGAR exhibit named in the dataset "
+            "metadata (exhibit_url).", "gt-label-workbook")
+    return lay
+
+
+class _ToLabelSheet(NamedTuple):
+    """What the row writers of one "To Label" sheet share."""
+
+    ws: Any
+    class_sheet: Any
+    class_rows: dict
+    tl_name: str
+    tx_name: str
+    used: list[int]
+    lay: _ToLabelLayout
+    clip: Callable[[str, str], str]
+    file_links: str | None  # "<texts folder>/<class>" when the texts are .txt files, else None
+
+
+def _mirror_class_cell(sheet: _ToLabelSheet, class_row: int, class_col: int, input_col: int, r: int) -> None:
+    """Make a class-sheet cell a locked, linked view of its one editable input on the To Label sheet."""
+    # One editable copy: compact inputs feed the class view and its Summary.
+    # Locked links prevent a person from replacing a mirror with a conflicting value.
+    ref = f"'{sheet.tl_name}'!{get_column_letter(input_col)}{r}"
+    cell = sheet.class_sheet.cell(class_row, class_col)
+    cell.value = f'=IF({ref}="","",{ref})'
+    cell.protection = Protection(locked=True)
+    cell.hyperlink = Hyperlink(ref=cell.coordinate, location=ref)
+    cell.comment = Comment(f"Linked view. Edit {ref}; this is the only input for this label.", "gt-label-workbook")
+
+
+def _write_to_label_fields(sheet: _ToLabelSheet, r: int, d: _Doc, class_row: int) -> tuple[list[str], list[str]]:
+    """Value + status cells (and their class-sheet mirrors) of one row; returns the mask and date status columns."""
+    mask: list[str] = []
+    date_cols: list[str] = []
+    for j, idx in enumerate(sheet.used):
+        _, header, _, value, status, _ = d.cells[idx]
+        vc = sheet.lay.first + 2 * j
+        vcell = _data_cell(sheet.ws, r, vc)
+        _set_str(vcell, sheet.clip(value, f"{sheet.tl_name}:{d.row.document_id}:{header}"))
+        _data_cell(sheet.ws, r, vc + 1, status)
+        _mirror_class_cell(sheet, class_row, len(ID_COLS) + 1 + 2 * idx, vc, r)
+        _mirror_class_cell(sheet, class_row, len(ID_COLS) + 2 + 2 * idx, vc + 1, r)
+        if _date_problem(d.cells[idx]):
+            mask.append("2")
+            date_cols.append(get_column_letter(vc + 1))
+        else:
+            mask.append("1" if status in MISSING else "0")
+        if idx in d.need:
+            vcell.fill = TODO
+    return mask, date_cols
+
+
+def _write_open_text_link(sheet: _ToLabelSheet, r: int, d: _Doc, trow: int) -> None:
+    lc = _data_cell(sheet.ws, r, sheet.lay.c_open, wrap=False)
+    if sheet.file_links is not None:
+        lc.value = "open text"
+        lc.hyperlink = f"{sheet.file_links}/{quote(text_file_name(d.row.document_id))}"
+        lc.font = LINK
+    else:
+        _goto(lc, sheet.tx_name, f"A{trow}", "open text")
+
+
+def _write_to_label_row(sheet: _ToLabelSheet, r: int, d: _Doc, trow: int) -> None:
+    ws, lay = sheet.ws, sheet.lay
+    for i, v in enumerate([d.row.document_id, d.row.filename, d.row.split], start=1):
+        _set_str(_data_cell(ws, r, i, fill=IDFILL, wrap=i == 2), str(v))
+    if lay.has_original:
+        oc = _data_cell(ws, r, 4, wrap=False)
+        if d.link:
+            _url(oc, *d.link)
+    _write_open_text_link(sheet, r, d, trow)
+    _set_str(_data_cell(ws, r, lay.c_sub, wrap=False), d.subclass)
+    class_row = sheet.class_rows[d.row.name]
+    _mirror_class_cell(sheet, class_row, 4, lay.c_sub, r)
+    mask, date_cols = _write_to_label_fields(sheet, r, d, class_row)
+    f, l_ = get_column_letter(lay.first), get_column_letter(lay.last)
+    _data_cell(ws, r, lay.live, _missing_formula(f, l_, r, date_cols), font=BOLD, wrap=False)
+    problems = dict.fromkeys(f"{d.cells[i][1]}: {fl}" for i in d.need for fl in d.cells[i][5] if fl in DATE_PROBLEMS)
+    _set_str(_data_cell(ws, r, lay.flag_col), "; ".join(problems))
+    _data_cell(ws, r, lay.built, len(d.need), font=BOLD, wrap=False)
+    _set_str(_data_cell(ws, r, lay.orig_col, wrap=False), d.subclass)
+    _set_str(_data_cell(ws, r, lay.mask_col, wrap=False), "".join(mask))
+    ws.row_dimensions[r].height = ROW_HEIGHT
+
+
+def _write_text_files(folder: Path, docs: list[_Doc], chunked: list[tuple[str, list[str], int]]) -> None:
+    """Write each document's exact text as ``<folder>/<quoted document_id>.txt``."""
+    folder.mkdir(parents=True, exist_ok=True)
+    for d, (raw, _, _) in zip(docs, chunked):
+        target = folder / text_file_name(d.row.document_id)
+        if target.resolve().parent != folder.resolve():  # cannot happen with quote(safe=""); fail loudly
+            raise ValueError(f"text file for {d.row.document_id!r} would leave {folder}")
+        target.write_bytes(_SURROGATE.sub("�", raw).encode("utf-8"))
+
+
+def _write_text_sheet(wb: Workbook, tx_name: str, tl_name: str, docs: list[_Doc],
+                      chunked: list[tuple[str, list[str], int]]) -> None:
+    """The "Text" sheet: per document a header row with a link back, then its text in ``part i/n`` rows."""
+    tx = wb.create_sheet(tx_name)
+    tx.sheet_properties.tabColor = "A6A6A6"
+    for i, (name, width) in enumerate((("document_id", 22), ("part", 20), ("text", 130)), start=1):
+        _header(tx, i, name, HEAD_ID, width=width)
+    for k, (d, (raw, chunks, trow)) in enumerate(zip(docs, chunked)):
+        doc_id = str(d.row.document_id)
+        a = tx.cell(row=trow, column=1)
+        _set_str(a, doc_id)
+        _goto(tx.cell(row=trow, column=2), tl_name, f"A{k + 2}", "back to To Label")
+        info = tx.cell(row=trow, column=3)
+        _set_str(info, f"{d.row.filename}  |  {d.subclass}  |  {d.row.split}  |  {len(raw):,} characters"
+                       f"  |  {len(chunks)} part{'s' if len(chunks) != 1 else ''}")
+        a.font = info.font = BOLD
+        for c in (a, tx.cell(row=trow, column=2), info):
+            c.fill, c.border = HEAD_TXT, BORDER
+        tx.cell(row=trow, column=2).font = LINK
+        for p, chunk in enumerate(chunks, start=1):
+            g = tx.cell(row=trow + p, column=1)
+            _set_str(g, doc_id)
+            g.font = GREY
+            g.alignment = Alignment(vertical="top")
+            n_ = tx.cell(row=trow + p, column=2, value=f"part {p}/{len(chunks)}")
+            n_.font, n_.alignment = GREY, Alignment(vertical="top")
+            t = tx.cell(row=trow + p, column=3)
+            _set_str(t, chunk)
+            t.font, t.alignment = FONT, WRAP_TOP
+    tx.freeze_panes = "A2"
+    tx.auto_filter.ref = f"A1:C{trow + len(chunks)}"
+    tx.row_dimensions[1].height = 22
+
+
+def _add_class_to_label(wb: Workbook, rows: pd.DataFrame, cls: str, title: str, docs: list[_Doc],
+                        cols: list[tuple[str, str, str]], tl: dict[str, Any], *, external: bool,
+                        out: Path, clip: Callable[[str, str], str], lists: _Lists) -> None:
+    """One class's "To Label" sheet, its mirrors on the class sheet, and its text (sheet or .txt files)."""
+    class_sheet = wb[title]
+    class_rows = {
+        idx: r for r, (idx, _) in enumerate(
+            rows[rows.expected == cls].sort_values(["split", "expected_subclass", "filename"]).iterrows(),
+            start=2,
+        )
+    }
+    tl_name, tx_name = f"To Label – {title}", f"Text – {title}"
+    chunked = _chunk_class_texts(docs, tl)
+    used = sorted({i for d in docs for i in d.need})
+    has_original = any(d.link for d in docs)
+    tl["has_original"] = tl["has_original"] or has_original
+    ws = wb.create_sheet(tl_name)
+    ws.sheet_properties.tabColor = "FFC000"
+    lay = _write_to_label_headers(ws, cols, used, has_original)
+    sheet = _ToLabelSheet(ws, class_sheet, class_rows, tl_name, tx_name, used, lay, clip,
+                          f"{tl['text_dir']}/{cls}" if external else None)
+    n = len(docs)
+    for r, (d, (_, _, trow)) in enumerate(zip(docs, chunked), start=2):
+        _write_to_label_row(sheet, r, d, trow)
+    _decorate(ws, lists, cls=cls, fields=[cols[i] for i in used], first=lay.first, n_rows=n, sub_col=lay.c_sub,
+              orig_col=lay.orig_col, mask_col=lay.mask_col,
+              sub_values=subclass_choices(cls, rows.loc[rows.expected == cls, "expected_subclass"].astype(str)))
+    _group_hidden(ws, lay.built, lay.mask_col)
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(lay.flag_col)}{n + 1}"
+    ws.row_dimensions[1].height = 48
+    class_sheet.protection.sheet = True
+    class_sheet.protection.autoFilter = False
+    tl["sheets"].append((tl_name, n, get_column_letter(lay.live), get_column_letter(lay.built)))
+    if external:
+        _write_text_files(out.parent / tl["text_dir"] / cls, docs, chunked)
+    else:
+        _write_text_sheet(wb, tx_name, tl_name, docs, chunked)
+
+
 def _add_to_label(wb: Workbook, rows: pd.DataFrame, class_cols: dict, to_label: tuple[str, ...], *,
                   parts_fn: Callable[[Any], Any], dataset: str, commit: str | None,
                   hub_files: Iterable[str] | None, out: Path, max_mb: float,
@@ -679,38 +1022,19 @@ def _add_to_label(wb: Workbook, rows: pd.DataFrame, class_cols: dict, to_label: 
     tl: dict[str, Any] = {"sheets": [], "text_mode": "sheet", "text_docs": 0, "text_chars": 0, "text_chunks": 0,
                           "text_truncated": 0, "controls_replaced": 0, "empty_texts": 0, "has_original": False,
                           "text_dir": ""}
-    hub_files = None if hub_files is None else set(hub_files)
+    hub_set = None if hub_files is None else set(hub_files)
     plan = []
     for cls, title in CLASSES:
         if cls not in to_label or cls not in class_cols:
             continue
-        docs: list[_Doc] = []
-        for _, row in rows[rows.expected == cls].iterrows():
-            gt = json.loads(row.gt_fields) if isinstance(row.gt_fields, str) else dict(row.gt_fields)
-            presence = _json(gt.get("gt_presence")) or {}
-            subclass = str(row.expected_subclass)
-            cells = []
-            for key, header, ftype in class_cols[cls]:
-                value, status = cell_for(cls, key, gt, presence, subclass)
-                flags = ()
-                if ftype.startswith("date"):
-                    flags = tuple(date_flag(sp, status, parts_fn)[0] for sp in (value.split(" || ") if value else [""]))
-                cells.append((key, header, ftype, value, status, flags))
-            need = [i for i, c in enumerate(cells) if c[4] in MISSING or _date_problem(c)]
-            if need:
-                meta = row.metadata if "metadata" in row.index else None
-                docs.append(_Doc(row, subclass, cells, need, original_link(meta, dataset, commit, hub_files)))
-        docs.sort(key=lambda d: (d.subclass, str(d.row.document_id)))
+        docs = _docs_to_label(rows, cls, class_cols[cls], parts_fn=parts_fn, dataset=dataset, commit=commit,
+                              hub_files=hub_set)
         if docs:
             plan.append((cls, title, docs))
     if not plan:
         return tl
 
-    def text_of(doc: _Doc) -> str:
-        t = doc.row.doc_text
-        return t if isinstance(t, str) else ""
-
-    est = sum(len(text_of(d).encode("utf-8", errors="replace")) for _, _, docs in plan for d in docs)
+    est = sum(len(_doc_text(d).encode("utf-8", errors="replace")) for _, _, docs in plan for d in docs)
     external = est > max_mb * 1_000_000
     if external:
         tl["text_mode"] = "files"
@@ -718,170 +1042,8 @@ def _add_to_label(wb: Workbook, rows: pd.DataFrame, class_cols: dict, to_label: 
     tl["text_docs"] = sum(len(docs) for _, _, docs in plan)
 
     for cls, title, docs in plan:
-        class_sheet = wb[title]
-        class_rows = {
-            idx: r for r, (idx, _) in enumerate(
-                rows[rows.expected == cls].sort_values(["split", "expected_subclass", "filename"]).iterrows(),
-                start=2,
-            )
-        }
-        tl_name, tx_name = f"To Label – {title}", f"Text – {title}"
-        chunked = []
-        text_row = 2
-        for d in docs:
-            raw = text_of(d)
-            if not raw:
-                tl["empty_texts"] += 1
-            safe, replaced = sanitize_text(raw)
-            chunks = chunk_text(safe)
-            if "".join(chunks) != safe or any(_utf16_len(c) > EXCEL_CELL_MAX for c in chunks):
-                tl["text_truncated"] += 1
-            tl["text_chars"] += len(raw)
-            tl["text_chunks"] += len(chunks)
-            tl["controls_replaced"] += replaced
-            chunked.append((raw, chunks, text_row))
-            text_row += 1 + len(chunks)
-
-        cols = class_cols[cls]
-        used = sorted({i for d in docs for i in d.need})
-        has_original = any(d.link for d in docs)
-        tl["has_original"] = tl["has_original"] or has_original
-        ws = wb.create_sheet(tl_name)
-        ws.sheet_properties.tabColor = "FFC000"
-        # identity columns, then links, then subclass, then a value + status pair per field
-        heads = [("document_id", 22, HEAD_ID), ("filename", 30, HEAD_ID), ("split", 7, HEAD_ID)]
-        if has_original:
-            heads.append(("Open original", 14, HEAD_LINK))
-        heads.append(("Open text", 11, HEAD_LINK))
-        heads.append(("subclass", 20, HEAD_VAL))
-        for i, (name, width, fill) in enumerate(heads, start=1):
-            _header(ws, i, name, fill, width=width)
-        c_open = len(heads) - 1
-        c_sub = len(heads)
-        first = len(heads) + 1
-        for j, idx in enumerate(used):
-            vc = first + 2 * j
-            _, header, ftype = cols[idx]
-            _header(ws, vc, header, HEAD_VAL, f"Scored field type: {ftype}. Edit the value here.", _value_width(ftype))
-            _header(ws, vc + 1, f"{header} | status", HEAD_ST, "Set it to 'populated' when you add a value.", 18)
-        last = first + 2 * len(used) - 1
-        live, flag_col = last + 1, last + 2
-        built, orig_col, mask_col = last + 3, last + 4, last + 5
-        _header(ws, live, "still missing (live)", HEAD_ID,
-                "Formula: this row's fields whose status is UNLABELED or pending_annotation, plus flagged dates "
-                "still 'populated'.", 12)
-        _header(ws, flag_col, "date flags", HEAD_ID, "Date labels that lack a year, a day/month, or do not parse.", 38)
-        _header(ws, built, "fields needing labels (as built)", HEAD_HELP, "Helper: how many fields needed a label "
-                "when the workbook was built.", 14)
-        _header(ws, orig_col, "dataset subclass (helper)", HEAD_HELP, "Helper: the subclass the dataset carries; "
-                "the subclass cell turns green when you change it.", 18)
-        _header(ws, mask_col, "needs mask (helper)", HEAD_HELP, "Helper: one character per field pair, left to right: "
-                "1 = the dataset had no label, 2 = date problem, 0 = nothing missing. Drives the green highlight.", 14)
-        if has_original:
-            ws.cell(row=1, column=4).comment = Comment(
-                "Source document. Corporate records link to the SEC EDGAR exhibit named in the dataset "
-                "metadata (exhibit_url).", "gt-label-workbook")
-        n = len(docs)
-        for r, (d, (raw, _, trow)) in enumerate(zip(docs, chunked), start=2):
-            for i, v in enumerate([d.row.document_id, d.row.filename, d.row.split], start=1):
-                _set_str(_data_cell(ws, r, i, fill=IDFILL, wrap=i == 2), str(v))
-            if has_original:
-                oc = _data_cell(ws, r, 4, wrap=False)
-                if d.link:
-                    _url(oc, *d.link)
-            lc = _data_cell(ws, r, c_open, wrap=False)
-            if external:
-                disk = text_file_name(d.row.document_id)
-                lc.value = "open text"
-                lc.hyperlink = f"{tl['text_dir']}/{cls}/{quote(disk)}"
-                lc.font = LINK
-            else:
-                _goto(lc, tx_name, f"A{trow}", "open text")
-            _set_str(_data_cell(ws, r, c_sub, wrap=False), d.subclass)
-            # One editable copy: compact inputs feed the class view and its Summary.
-            # Locked links prevent a person from replacing a mirror with a conflicting value.
-            class_row = class_rows[d.row.name]
-            def mirror_class_cell(class_col: int, input_col: int) -> None:
-                ref = f"'{tl_name}'!{get_column_letter(input_col)}{r}"
-                cell = class_sheet.cell(class_row, class_col)
-                cell.value = f'=IF({ref}="","",{ref})'
-                cell.protection = Protection(locked=True)
-                cell.hyperlink = Hyperlink(ref=cell.coordinate, location=ref)
-                cell.comment = Comment(f"Linked view. Edit {ref}; this is the only input for this label.", "gt-label-workbook")
-
-            mirror_class_cell(4, c_sub)
-            mask, date_cols = [], []
-            for j, idx in enumerate(used):
-                _, header, _, value, status, _ = d.cells[idx]
-                vcell = _data_cell(ws, r, first + 2 * j)
-                _set_str(vcell, clip(value, f"{tl_name}:{d.row.document_id}:{header}"))
-                _data_cell(ws, r, first + 2 * j + 1, status)
-                mirror_class_cell(len(ID_COLS) + 1 + 2 * idx, first + 2 * j)
-                mirror_class_cell(len(ID_COLS) + 2 + 2 * idx, first + 2 * j + 1)
-                if _date_problem(d.cells[idx]):
-                    mask.append("2")
-                    date_cols.append(get_column_letter(first + 2 * j + 1))
-                else:
-                    mask.append("1" if status in MISSING else "0")
-                if idx in d.need:
-                    vcell.fill = TODO
-            f, l_ = get_column_letter(first), get_column_letter(last)
-            _data_cell(ws, r, live, _missing_formula(f, l_, r, date_cols), font=BOLD, wrap=False)
-            problems = dict.fromkeys(f"{d.cells[i][1]}: {fl}" for i in d.need for fl in d.cells[i][5] if fl in DATE_PROBLEMS)
-            _set_str(_data_cell(ws, r, flag_col), "; ".join(problems))
-            _data_cell(ws, r, built, len(d.need), font=BOLD, wrap=False)
-            _set_str(_data_cell(ws, r, orig_col, wrap=False), d.subclass)
-            _set_str(_data_cell(ws, r, mask_col, wrap=False), "".join(mask))
-            ws.row_dimensions[r].height = ROW_HEIGHT
-        _decorate(ws, lists, cls=cls, fields=[cols[i] for i in used], first=first, n_rows=n, sub_col=c_sub,
-                  orig_col=orig_col, mask_col=mask_col,
-                  sub_values=subclass_choices(cls, rows.loc[rows.expected == cls, "expected_subclass"].astype(str)))
-        _group_hidden(ws, built, mask_col)
-        ws.freeze_panes = "B2"
-        ws.auto_filter.ref = f"A1:{get_column_letter(flag_col)}{n + 1}"
-        ws.row_dimensions[1].height = 48
-        class_sheet.protection.sheet = True
-        class_sheet.protection.autoFilter = False
-        tl["sheets"].append((tl_name, n, get_column_letter(live), get_column_letter(built)))
-
-        if external:
-            folder = out.parent / tl["text_dir"] / cls
-            folder.mkdir(parents=True, exist_ok=True)
-            for d, (raw, _, _) in zip(docs, chunked):
-                target = folder / text_file_name(d.row.document_id)
-                if target.resolve().parent != folder.resolve():  # cannot happen with quote(safe=""); fail loudly
-                    raise ValueError(f"text file for {d.row.document_id!r} would leave {folder}")
-                target.write_bytes(_SURROGATE.sub("�", raw).encode("utf-8"))
-            continue
-        tx = wb.create_sheet(tx_name)
-        tx.sheet_properties.tabColor = "A6A6A6"
-        for i, (name, width) in enumerate((("document_id", 22), ("part", 20), ("text", 130)), start=1):
-            _header(tx, i, name, HEAD_ID, width=width)
-        for k, (d, (raw, chunks, trow)) in enumerate(zip(docs, chunked)):
-            doc_id = str(d.row.document_id)
-            a = tx.cell(row=trow, column=1)
-            _set_str(a, doc_id)
-            _goto(tx.cell(row=trow, column=2), tl_name, f"A{k + 2}", "back to To Label")
-            info = tx.cell(row=trow, column=3)
-            _set_str(info, f"{d.row.filename}  |  {d.subclass}  |  {d.row.split}  |  {len(raw):,} characters"
-                           f"  |  {len(chunks)} part{'s' if len(chunks) != 1 else ''}")
-            a.font = info.font = BOLD
-            for c in (a, tx.cell(row=trow, column=2), info):
-                c.fill, c.border = HEAD_TXT, BORDER
-            tx.cell(row=trow, column=2).font = LINK
-            for p, chunk in enumerate(chunks, start=1):
-                g = tx.cell(row=trow + p, column=1)
-                _set_str(g, doc_id)
-                g.font = GREY
-                g.alignment = Alignment(vertical="top")
-                n_ = tx.cell(row=trow + p, column=2, value=f"part {p}/{len(chunks)}")
-                n_.font, n_.alignment = GREY, Alignment(vertical="top")
-                t = tx.cell(row=trow + p, column=3)
-                _set_str(t, chunk)
-                t.font, t.alignment = FONT, WRAP_TOP
-        tx.freeze_panes = "A2"
-        tx.auto_filter.ref = f"A1:C{trow + len(chunks)}"
-        tx.row_dimensions[1].height = 22
+        _add_class_to_label(wb, rows, cls, title, docs, class_cols[cls], tl, external=external, out=out,
+                            clip=clip, lists=lists)
 
     for pos, (name, *_rest) in enumerate(tl["sheets"], start=2):
         wb.move_sheet(name, offset=pos - wb.sheetnames.index(name))
@@ -954,7 +1116,8 @@ def _readme_rows(*, dataset: str, revision: str, resolved: str | None, n_rows: i
         ("not_applicable - the field does not apply to this class/subclass.", "p"),
         ("UNLABELED - the Dojo scores this field but the dataset carries no label for it (not scored today).", "p"),
         ("Derived fields (communication_type, cuad_family, merger_consideration, cms_source_table) are derived "
-         "from the subclass and shown as populated; they are never gaps.", "p"),
+         "from the subclass (merger_consideration from the MAUD 'Type of Consideration' answer first) and shown "
+         "as populated; they are never gaps.", "p"),
         ("", "p"),
         ("COLUMNS AND COUNTS", "h"),
         ("Columns: a value column and a status column for each field the Dojo scores for that class "
@@ -977,6 +1140,138 @@ def _readme_rows(*, dataset: str, revision: str, resolved: str | None, n_rows: i
     return lines
 
 
+class _ClassLayout(NamedTuple):
+    """Column numbers of a class sheet (1-based): the first value column and the trailing counters."""
+
+    first: int
+    last: int
+    miss: int
+    orig_col: int
+    mask_col: int
+
+
+def _write_class_headers(ws, cols: list[tuple[str, str, str]]) -> _ClassLayout:
+    """Header row of a class sheet: identity columns, a value + status pair per field, counter, helpers."""
+    for i, (name, width) in enumerate(ID_COLS, start=1):
+        fill = HEAD_VAL if name == "expected_subclass" else HEAD_LINK if name == "Hub viewer" else HEAD_ID
+        _header(ws, i, name, fill, width=width)
+    first = len(ID_COLS) + 1
+    for j, (_, header, ftype) in enumerate(cols):
+        vc = first + 2 * j
+        _header(ws, vc, header, HEAD_VAL, f"Scored field type: {ftype}. Edit the value here.", _value_width(ftype))
+        _header(ws, vc + 1, f"{header} | status", HEAD_ST,
+                "Presence code. Set it to 'populated' when you add a value.", 18)
+    last = first + 2 * len(cols) - 1
+    lay = _ClassLayout(first, last, last + 1, last + 2, last + 3)
+    _header(ws, lay.miss, "Labels missing", HEAD_ID,
+            "Formula: this row's fields whose status is UNLABELED or pending_annotation.", 12)
+    _header(ws, lay.orig_col, "dataset subclass (helper)", HEAD_HELP, "Helper: the subclass the dataset carries.", 18)
+    _header(ws, lay.mask_col, "needs mask (helper)", HEAD_HELP, "Helper: one character per field pair; 1 = the "
+            "dataset had no label. Drives the green highlight.", 14)
+    return lay
+
+
+def _write_class_fields(ws, r: int, row, cols: list[tuple[str, str, str]], lay: _ClassLayout, *, cls: str,
+                        title: str, gt: dict, presence: dict, subclass: str, parts_fn: Callable[[Any], Any],
+                        clip: Callable[[str, str], str], date_rows: list[list]) -> str:
+    """Value + status cells of one row (editable, unlocked); returns the row's needs mask.
+    Date labels also add their spans to ``date_rows`` (the Date Audit sheet)."""
+    mask = []
+    for j, (key, header, ftype) in enumerate(cols):
+        value, status = cell_for(cls, key, gt, presence, subclass)
+        vcell = _data_cell(ws, r, lay.first + 2 * j)
+        _set_str(vcell, clip(value, f"{title}:{row.document_id}:{header}"))
+        _data_cell(ws, r, lay.first + 2 * j + 1, status)
+        vcell.protection = Protection(locked=False)
+        ws.cell(r, lay.first + 2 * j + 1).protection = Protection(locked=False)
+        mask.append("1" if status in MISSING else "0")
+        if status in MISSING:
+            vcell.fill = TODO
+        if ftype.startswith("date"):
+            for span in (value.split(" || ") if value else [""]):
+                flag, stated = date_flag(span, status, parts_fn)
+                date_rows.append([title, row.document_id, row.filename, row.split, subclass,
+                                  header, span, status, *stated, flag])
+    return "".join(mask)
+
+
+def _write_class_row(ws, r: int, row, cols: list[tuple[str, str, str]], lay: _ClassLayout, *, cls: str,
+                     title: str, dataset: str, parts_fn: Callable[[Any], Any], clip: Callable[[str, str], str],
+                     date_rows: list[list]) -> None:
+    gt = _gt_dict(row.gt_fields)
+    presence = _json(gt.get("gt_presence")) or {}
+    subclass = str(row.expected_subclass)
+    for i, v in enumerate([row.document_id, row.filename, row.split, subclass,
+                           row.source_corpus, row.annotation_method], start=1):
+        _set_str(_data_cell(ws, r, i, fill=None if i == 4 else IDFILL, wrap=i == 2), str(v))
+    ws.cell(r, 4).protection = Protection(locked=False)
+    link = _data_cell(ws, r, 7, wrap=False)
+    _url(link, f"https://huggingface.co/datasets/{dataset}/viewer/default/{row.split}"
+               f"?q={quote(str(row.filename), safe='')}", "open")
+    mask = _write_class_fields(ws, r, row, cols, lay, cls=cls, title=title, gt=gt, presence=presence,
+                               subclass=subclass, parts_fn=parts_fn, clip=clip, date_rows=date_rows)
+    f, l_ = get_column_letter(lay.first), get_column_letter(lay.last)
+    _data_cell(ws, r, lay.miss, _missing_formula(f, l_, r), font=BOLD, wrap=False)
+    _set_str(_data_cell(ws, r, lay.orig_col, wrap=False), subclass)
+    _set_str(_data_cell(ws, r, lay.mask_col, wrap=False), mask)
+    ws.row_dimensions[r].height = ROW_HEIGHT
+
+
+def _write_class_sheet(wb: Workbook, cls: str, title: str, sub: pd.DataFrame, *, dataset: str,
+                       parts_fn: Callable[[Any], Any], clip: Callable[[str, str], str], lists: _Lists,
+                       date_rows: list[list]) -> tuple[list[tuple[str, str, str]], tuple[str, int, str, str]]:
+    """One class sheet; returns its columns and its ``(title, rows, first col, last col)`` Summary entry."""
+    ws = wb.create_sheet(title)
+    cols = class_columns(cls, sub)
+    lay = _write_class_headers(ws, cols)
+    for r, (_, row) in enumerate(sub.iterrows(), start=2):
+        _write_class_row(ws, r, row, cols, lay, cls=cls, title=title, dataset=dataset, parts_fn=parts_fn,
+                         clip=clip, date_rows=date_rows)
+    _decorate(ws, lists, cls=cls, fields=cols, first=lay.first, n_rows=len(sub), sub_col=4, orig_col=lay.orig_col,
+              mask_col=lay.mask_col, sub_values=subclass_choices(cls, sub.expected_subclass.astype(str)))
+    _group_hidden(ws, lay.orig_col, lay.mask_col)
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(lay.miss)}{len(sub) + 1}"
+    ws.row_dimensions[1].height = 48
+    return cols, (title, len(sub), get_column_letter(lay.first), get_column_letter(lay.last))
+
+
+def _check_to_label(rows: pd.DataFrame, to_label: tuple[str, ...]) -> None:
+    unknown = sorted(set(to_label) - {c for c, _ in CLASSES})
+    if unknown:
+        raise ValueError(f"unknown class in to_label: {unknown}; choose from {[c for c, _ in CLASSES]}")
+    if to_label and "doc_text" not in rows.columns:
+        raise ValueError("to_label needs a doc_text column (the 'default' config joined on filename)")
+
+
+def _clipper(truncated: list[str]) -> Callable[[str, str], str]:
+    """A ``clip(text, where)`` that keeps a cell inside Excel's cap and records each cut in ``truncated``."""
+
+    def clip(text: str, where: str) -> str:
+        text = sanitize_text(text)[0]
+        if _utf16_len(text) > CELL_MAX:  # Excel counts UTF-16 units: an astral character is two
+            truncated.append(where)
+            # Keep CELL_MAX UTF-16 units; "ignore" drops a surrogate half the cut may split.
+            head = text.encode("utf-16-le")[:CELL_MAX * 2].decode("utf-16-le", errors="ignore")
+            return head + " …[TRUNCATED: full value on the Hub]"
+        return text
+
+    return clip
+
+
+def _write_readme_sheet(readme, lines: list[tuple[str, str]]) -> None:
+    for i, (text, kind) in enumerate(lines, start=1):
+        c = readme.cell(row=i, column=1, value=text)
+        c.font = {"title": TITLE, "h": SECTION}.get(kind, FONT)
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+        if kind == "yellow":
+            c.fill = TODO
+        elif kind == "green":
+            c.fill = DONE
+    readme.column_dimensions["A"].width = 150
+    readme.sheet_view.showGridLines = False
+
+
 def build_workbook(rows: pd.DataFrame, out: Path, *, dataset: str, revision: str,
                    resolved: str | None = None, to_label: Iterable[str] = (),
                    hub_files: Iterable[str] | None = None,
@@ -991,21 +1286,9 @@ def build_workbook(rows: pd.DataFrame, out: Path, *, dataset: str, revision: str
     parts_fn, parts_source = _date_parts_impl()
     rows = rows.reset_index(drop=True)
     to_label = tuple(to_label)
-    unknown = sorted(set(to_label) - {c for c, _ in CLASSES})
-    if unknown:
-        raise ValueError(f"unknown class in to_label: {unknown}; choose from {[c for c, _ in CLASSES]}")
-    if to_label and "doc_text" not in rows.columns:
-        raise ValueError("to_label needs a doc_text column (the 'default' config joined on filename)")
+    _check_to_label(rows, to_label)
     truncated: list[str] = []
-
-    def clip(text: str, where: str) -> str:
-        text = sanitize_text(text)[0]
-        if _utf16_len(text) > CELL_MAX:  # Excel counts UTF-16 units: an astral character is two
-            truncated.append(where)
-            # Keep CELL_MAX UTF-16 units; "ignore" drops a surrogate half the cut may split.
-            head = text.encode("utf-16-le")[:CELL_MAX * 2].decode("utf-16-le", errors="ignore")
-            return head + " …[TRUNCATED: full value on the Hub]"
-        return text
+    clip = _clipper(truncated)
 
     wb = Workbook()
     readme = wb.active
@@ -1021,82 +1304,17 @@ def build_workbook(rows: pd.DataFrame, out: Path, *, dataset: str, revision: str
         sub = rows[rows.expected == cls].sort_values(["split", "expected_subclass", "filename"])
         if sub.empty:
             continue
-        ws = wb.create_sheet(title)
-        cols = class_cols[cls] = class_columns(cls, sub)
-        for i, (name, width) in enumerate(ID_COLS, start=1):
-            fill = HEAD_VAL if name == "expected_subclass" else HEAD_LINK if name == "Hub viewer" else HEAD_ID
-            _header(ws, i, name, fill, width=width)
-        c_sub = 4
-        first = len(ID_COLS) + 1
-        for j, (_, header, ftype) in enumerate(cols):
-            vc = first + 2 * j
-            _header(ws, vc, header, HEAD_VAL, f"Scored field type: {ftype}. Edit the value here.", _value_width(ftype))
-            _header(ws, vc + 1, f"{header} | status", HEAD_ST,
-                    "Presence code. Set it to 'populated' when you add a value.", 18)
-        last = first + 2 * len(cols) - 1
-        miss, orig_col, mask_col = last + 1, last + 2, last + 3
-        _header(ws, miss, "Labels missing", HEAD_ID,
-                "Formula: this row's fields whose status is UNLABELED or pending_annotation.", 12)
-        _header(ws, orig_col, "dataset subclass (helper)", HEAD_HELP, "Helper: the subclass the dataset carries.", 18)
-        _header(ws, mask_col, "needs mask (helper)", HEAD_HELP, "Helper: one character per field pair; 1 = the "
-                "dataset had no label. Drives the green highlight.", 14)
-        f, l_ = get_column_letter(first), get_column_letter(last)
-        for r, (_, row) in enumerate(sub.iterrows(), start=2):
-            gt = json.loads(row.gt_fields) if isinstance(row.gt_fields, str) else dict(row.gt_fields)
-            presence = _json(gt.get("gt_presence")) or {}
-            subclass = str(row.expected_subclass)
-            for i, v in enumerate([row.document_id, row.filename, row.split, subclass,
-                                   row.source_corpus, row.annotation_method], start=1):
-                _set_str(_data_cell(ws, r, i, fill=None if i == 4 else IDFILL, wrap=i == 2), str(v))
-            ws.cell(r, c_sub).protection = Protection(locked=False)
-            link = _data_cell(ws, r, 7, wrap=False)
-            _url(link, f"https://huggingface.co/datasets/{dataset}/viewer/default/{row.split}"
-                       f"?q={quote(str(row.filename), safe='')}", "open")
-            mask = []
-            for j, (key, header, ftype) in enumerate(cols):
-                value, status = cell_for(cls, key, gt, presence, subclass)
-                vcell = _data_cell(ws, r, first + 2 * j)
-                _set_str(vcell, clip(value, f"{title}:{row.document_id}:{header}"))
-                _data_cell(ws, r, first + 2 * j + 1, status)
-                vcell.protection = Protection(locked=False)
-                ws.cell(r, first + 2 * j + 1).protection = Protection(locked=False)
-                mask.append("1" if status in MISSING else "0")
-                if status in MISSING:
-                    vcell.fill = TODO
-                if ftype.startswith("date"):
-                    for span in (value.split(" || ") if value else [""]):
-                        flag, stated = date_flag(span, status, parts_fn)
-                        date_rows.append([title, row.document_id, row.filename, row.split, subclass,
-                                          header, span, status, *stated, flag])
-            _data_cell(ws, r, miss, _missing_formula(f, l_, r), font=BOLD, wrap=False)
-            _set_str(_data_cell(ws, r, orig_col, wrap=False), subclass)
-            _set_str(_data_cell(ws, r, mask_col, wrap=False), "".join(mask))
-            ws.row_dimensions[r].height = ROW_HEIGHT
-        _decorate(ws, lists, cls=cls, fields=cols, first=first, n_rows=len(sub), sub_col=c_sub, orig_col=orig_col,
-                  mask_col=mask_col, sub_values=subclass_choices(cls, sub.expected_subclass.astype(str)))
-        _group_hidden(ws, orig_col, mask_col)
-        ws.freeze_panes = "B2"
-        ws.auto_filter.ref = f"A1:{get_column_letter(miss)}{len(sub) + 1}"
-        ws.row_dimensions[1].height = 48
-        sheets.append((title, len(sub), f, l_))
+        class_cols[cls], entry = _write_class_sheet(wb, cls, title, sub, dataset=dataset, parts_fn=parts_fn,
+                                                    clip=clip, lists=lists, date_rows=date_rows)
+        sheets.append(entry)
 
     tl = _add_to_label(wb, rows, class_cols, to_label, parts_fn=parts_fn, dataset=dataset, commit=resolved,
                        hub_files=hub_files, out=out, max_mb=max_workbook_mb, clip=clip, lists=lists)
 
     _date_audit(dates, date_rows, parts_source)
     _summary(summary, sheets, tl, len(date_rows))
-
-    for i, (text, kind) in enumerate(_readme_rows(dataset=dataset, revision=revision, resolved=resolved,
-                                                 n_rows=len(rows), tl=tl, truncated=len(truncated)), start=1):
-        c = readme.cell(row=i, column=1, value=text)
-        c.font = {"title": TITLE, "h": SECTION}.get(kind, FONT)
-        c.alignment = Alignment(wrap_text=True, vertical="top")
-        if kind == "yellow":
-            c.fill = TODO
-        elif kind == "green":
-            c.fill = DONE
-    readme.column_dimensions["A"].width = 150
-    readme.sheet_view.showGridLines = False
+    _write_readme_sheet(readme, _readme_rows(dataset=dataset, revision=revision, resolved=resolved,
+                                             n_rows=len(rows), tl=tl, truncated=len(truncated)))
 
     lists.write(wb)
     wb.active = 0
