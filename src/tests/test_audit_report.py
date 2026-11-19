@@ -104,12 +104,13 @@ def test_langfuse_scoring_emission_names(monkeypatch):
     registered = {c["name"] for c in scores.SCORE_CONFIGS}
     assert all(n in registered and n in load_registry().metrics for n, _, _ in sent)
     assert all(kw["data_type"] == "NUMERIC" and kw["score_id"] == f"t-1-{n}" for n, _, kw in sent)
-    # No Langfuse: nothing is attached, the numbers still come back.
+    # Langfuse off: the numbers still come back. score_trace is still called so
+    # validation and non-Langfuse sinks run (the real sink no-ops when disabled).
     sent.clear()
     monkeypatch.setattr(scores, "is_enabled", lambda: False)
     assert scores.emit_scoring_scores(_scoring(0.5, 0.6, 0.7), None) == {
         "extraction_overall_score": 0.5, "extraction_f1": 0.6, "extraction_f2": 0.7}
-    assert sent == []
+    assert [n for n, _, _ in sent] == ["extraction_overall_score", "extraction_f1", "extraction_f2"]
     assert scores.emit_scoring_scores(None, None) == {}
 
 

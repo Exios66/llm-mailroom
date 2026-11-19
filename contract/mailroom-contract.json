@@ -731,7 +731,9 @@
     "configs": [
       {
         "name": "amount_exactness",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "class_correct",
@@ -739,123 +741,198 @@
       },
       {
         "name": "classification_attempts",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0
       },
       {
         "name": "classification_confidence",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "classification_correct",
         "data_type": "CATEGORICAL",
         "categories": [
-          "correct",
-          "ambiguous",
-          "incorrect"
+          {
+            "label": "correct",
+            "value": 1.0
+          },
+          {
+            "label": "ambiguous",
+            "value": 0.5
+          },
+          {
+            "label": "incorrect",
+            "value": 0.0
+          }
         ]
       },
       {
         "name": "classification_quality",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "completeness",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "completeness_label",
         "data_type": "CATEGORICAL",
         "categories": [
-          "complete",
-          "partial",
-          "incomplete"
+          {
+            "label": "complete",
+            "value": 1.0
+          },
+          {
+            "label": "partial",
+            "value": 0.5
+          },
+          {
+            "label": "incomplete",
+            "value": 0.0
+          }
         ]
       },
       {
         "name": "confidence_calibration_error",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "content_topic_accuracy",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "content_topic_f1_macro",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "determination_consistency",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "deterministic_verdict",
         "data_type": "CATEGORICAL",
         "categories": [
-          "CORRECT",
-          "PARTIAL",
-          "MISS"
+          {
+            "label": "CORRECT",
+            "value": 1.0
+          },
+          {
+            "label": "PARTIAL",
+            "value": 0.5
+          },
+          {
+            "label": "MISS",
+            "value": 0.0
+          }
         ]
       },
       {
         "name": "entity_list_f1",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "entity_list_precision",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "entity_list_recall",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "estimated_cost_usd",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0
       },
       {
         "name": "expected_field_presence",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_attempts",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0
       },
       {
         "name": "extraction_category_presence",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_confidence",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_correctness",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_correctness_label",
         "data_type": "CATEGORICAL",
         "categories": [
-          "accurate",
-          "partial",
-          "inaccurate"
+          {
+            "label": "accurate",
+            "value": 1.0
+          },
+          {
+            "label": "partial",
+            "value": 0.5
+          },
+          {
+            "label": "inaccurate",
+            "value": 0.0
+          }
         ]
       },
       {
         "name": "extraction_f1",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_f2",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_field_score",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_hallucination_rate",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_needs_judge_review",
@@ -863,19 +940,27 @@
       },
       {
         "name": "extraction_overall_score",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_overall_verified_precision",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_precision",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "extraction_recall",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "guardrail_triggered",
@@ -883,23 +968,31 @@
       },
       {
         "name": "intake_changed_rate",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "intake_collapsed_blanks",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0
       },
       {
         "name": "intake_hyphen_unwraps",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0
       },
       {
         "name": "intake_messy_rate",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "intake_prep_completeness",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "judge_notes",
@@ -907,19 +1000,26 @@
       },
       {
         "name": "legalbench_accuracy",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "legalbench_calibration_error",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "legalbench_macro_f1",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "legalbench_n_questions",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0
       },
       {
         "name": "legalbench_task",
@@ -927,27 +1027,38 @@
       },
       {
         "name": "llm_call_count",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0
       },
       {
         "name": "maud_category_accuracy",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "maud_clause_presence",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "maud_question_accuracy",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "maud_question_macro_accuracy",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "maud_valid_class_rate",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "parse_error",
@@ -959,11 +1070,14 @@
       },
       {
         "name": "run_duration_seconds",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0
       },
       {
         "name": "schema_adherence",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "schema_valid",
@@ -971,11 +1085,15 @@
       },
       {
         "name": "sentiment_accuracy",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "sentiment_f1_macro",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0,
+        "max_value": 1.0
       },
       {
         "name": "stage_completed",
@@ -991,7 +1109,8 @@
       },
       {
         "name": "total_tokens",
-        "data_type": "NUMERIC"
+        "data_type": "NUMERIC",
+        "min_value": 0.0
       }
     ]
   },
