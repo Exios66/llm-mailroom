@@ -491,6 +491,15 @@ class TestArchiveChecks:
         assert "retry_unjudged" in collect_review_causes(unjudged)
         assert after_retry_extraction_gated(unjudged) == "human_review"
 
+    def test_a_slot_park_from_an_earlier_attempt_is_not_a_cause(self):
+        """A gate park another rule overrode (a retry followed) does not follow the document."""
+        stale = {"archive_gate": {"node": "extract", "attempt": 1, "route": "human_review",
+                                  "cause": "archive_gate_unsupported"}}
+        state = {"doc_type": "contract", "extraction_confidence": 0.99, "extraction_attempts": 2,
+                 "decision_slot_outcomes": stale}
+        assert "archive_gate_unsupported" not in collect_review_causes(state)
+        assert "archive_gate_unsupported" in collect_review_causes({**state, "extraction_attempts": 1})
+
     def test_a_boss_approval_does_not_judge_a_doubted_retry(self):
         """A doubted retry that finds a matter conflict goes to the Boss, not the judge."""
         from graph.routing import after_boss

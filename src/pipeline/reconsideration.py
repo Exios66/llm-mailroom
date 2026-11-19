@@ -643,17 +643,21 @@ def _decision_slot_causes(data: Mapping[str, Any]) -> list[str]:
     """The cause of each decision-slot outcome that parked the document (``route`` = human_review).
 
     ``graph.decision_slots`` rewrites a node's entries on every pass of that node, so a
-    parking entry is about the pass that routed the document here.
+    parking entry is about the pass that routed the document here. An entry recorded for an
+    earlier extraction attempt (another route rule won that pass and a retry followed) is not.
     """
     outcomes = data.get("decision_slot_outcomes")
     if not isinstance(outcomes, Mapping):
         return []
+    current = data.get("extraction_attempts")
     return [
         record["cause"]
         for record in outcomes.values()
         if isinstance(record, Mapping)
         and record.get("route") == "human_review"
         and record.get("cause") in _DECISION_SLOT_CAUSES
+        and not (isinstance(record.get("attempt"), int) and isinstance(current, int)
+                 and record["attempt"] != current)
     ]
 
 
