@@ -1522,6 +1522,38 @@ async def test_a_recovered_detail_addendums_attempts_are_checked_against_their_h
     assert reasons & {"missing_attempt", "attempt_hash", "attempt_malformed", "extra_attempt"}
 
 
+@pytest.mark.parametrize("field,bad_value", [
+    ("entry_hash", "tampered-hash"),
+    ("parent_id", "foreign-parent"),
+    ("doc_id", "foreign-document"),
+])
+async def test_reconcile_rejects_tampered_carried_subrow_before_gap_close(sinks, db_down, field, bad_value):
+    """A full spool copy cannot close a partial gap with forged sub-row identity or hash."""
+    from audit.reconcile import hash_ok, reconcile
+    from audit.verify import verify_audit_db
+    from audit.writer import decisions_only_record, pending_record
+
+    _save_manifest()
+    row = _row(big=True)
+    full = pending_record(row)
+    partial = decisions_only_record(row, full)
+    assert hash_ok(full) and hash_ok(partial)
+    sql = sinks[0]
+    sql.capture_pending(partial)
+    db_down[0] = None
+    assert (await reconcile()).partial == 1
+
+    full["sub_rows"][0][field] = bad_value
+    assert not hash_ok(full)
+    sql.capture_pending(full)
+    report = await reconcile()
+
+    assert (report.gap_closed, report.rejected_hash) == (0, 1)
+    assert len(sql.fetch_pending()) == 2  # the bad full copy is retained for investigation
+    assert _manifest().audit_written == "pending_partial"
+    assert (await verify_audit_db()).ok  # the partial row is valid; its gap remains visible
+
+
 # ---------------------------------------------------------------- #303: a stale sweep never overwrites the manifest
 
 

@@ -35,7 +35,7 @@ def test_inspect_artifact_is_labelled_as_artifact(run_cli, repo_contract, contra
     assert provenance["kind"] == "artifact"
     assert provenance["active_worker"] is False
     assert provenance["git_sha"] is None
-    assert provenance["contract_version"] == "1.0.0"
+    assert provenance["contract_version"] == "2.0.0"
     assert provenance["artifact_bytes"] > 0
     assert len(provenance["artifact_sha256"]) == 64
     assert payload["graph"] == repo_contract["graph"]

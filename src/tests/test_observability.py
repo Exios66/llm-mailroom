@@ -3,6 +3,7 @@ import pytest
 from observability import tracing
 from observability import langfuse_setup
 from observability import braintrust_setup
+from observability import phoenix_setup
 
 
 @pytest.fixture(autouse=True)
@@ -31,6 +32,9 @@ def _clear_observability_env(monkeypatch):
     monkeypatch.delenv("HF_SPACE_ID", raising=False)
     monkeypatch.setattr(langfuse_setup, "_langfuse_client", None)
     monkeypatch.setattr(braintrust_setup, "_configured", False)
+    # These tests inspect routing and local behavior, not an OTLP collector.
+    # A Phoenix-selected graph now opens node spans, so keep export hermetic.
+    monkeypatch.setattr(phoenix_setup, "_init_opentelemetry", lambda: None)
 
 
 

@@ -385,6 +385,10 @@ def _install_step_recorder(store: dict[str, Any]) -> None:
                 )
                 return result
 
+            # build_graph checks these on the callable it registered. The
+            # recording wrapper sits outside traced_node, so copy them through.
+            wrapper.mailroom_span_name = decorated.mailroom_span_name
+            wrapper.mailroom_observation_type = decorated.mailroom_observation_type
             return wrapper
 
         return recording

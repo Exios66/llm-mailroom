@@ -76,9 +76,7 @@ def test_score_and_log_omits_category_presence_without_expectations():
         from unittest.mock import patch
         from observability.langfuse_field_scoring import score_and_log_extraction
 
-        with patch("observability.scores.is_enabled", return_value=True), patch(
-            "observability.scores.create_trace_score"
-        ) as scored:
+        with patch("observability.scores.score_trace") as scored:
             score_and_log_extraction(
                 trace_id="t-cat",
                 doc_class="contract",
@@ -107,9 +105,7 @@ def test_score_and_log_emits_category_presence_when_wired():
             },
             "contract",
         )
-        with patch("observability.scores.is_enabled", return_value=True), patch(
-            "observability.scores.create_trace_score"
-        ) as scored:
+        with patch("observability.scores.score_trace") as scored:
             score_and_log_extraction(
                 trace_id="t-cat-2",
                 doc_class="contract",

@@ -51,16 +51,23 @@ def test_artifact_and_workspace_agree_on_the_topology(contract_path):
 
 
 def test_node_rows_keep_the_as_type_override():
+    """A canonical binding is what the row records.
+
+    ``as_type`` cannot rewrite a bound observation: ``classify-document`` is
+    an agent, and a disagreeing override is rejected before a row is built.
+    """
     from observability.tracing import NODE_OBSERVATION_TYPES, traced_node
 
     span = "classify-document"
     default = NODE_OBSERVATION_TYPES[span]
-    override = "evaluator" if default != "evaluator" else "retriever"
     plain = traced_node(span)(lambda state: state)
-    overridden = traced_node(span, as_type=override)(lambda state: state)
-    assert graph_contract.node_row("plain", plain)["observation_type"] == default
-    assert graph_contract.node_row("overridden", overridden) == {
-        "id": "overridden",
+    assert graph_contract.node_row("classify", plain) == {
+        "id": "classify",
         "span": span,
-        "observation_type": override,
+        "observation_type": default,
     }
+    with pytest.raises(
+        ValueError,
+        match="observation 'classify-document' must be 'agent', got 'evaluator'",
+    ):
+        traced_node(span, as_type="evaluator")

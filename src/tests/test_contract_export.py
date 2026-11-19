@@ -45,24 +45,41 @@ def test_every_graph_node_has_a_typed_span(contract):
         assert node["observation_type"] == func.mailroom_observation_type, node
 
 
-def test_node_row_uses_the_as_type_override():
-    """A node opened with ``as_type`` is listed with that type, not the default."""
-    span = "classify-document"
-    default = NODE_OBSERVATION_TYPES[span]
-    override = "evaluator" if default != "evaluator" else "retriever"
-
-    plain = traced_node(span)(lambda state: state)
-    overridden = traced_node(span, as_type=override)(lambda state: state)
-
-    assert export_contract.node_row("plain", plain)["observation_type"] == default
-    row = export_contract.node_row("overridden", overridden)
-    assert row == {"id": "overridden", "span": span, "observation_type": override}
+def test_node_row_rejects_decorator_drift():
+    """A valid type on the wrong graph node cannot rewrite the contract."""
+    plain = traced_node("classify-document")(lambda state: state)
+    with pytest.raises(ValueError, match="must bind"):
+        export_contract.node_row("extract", plain)
+    with pytest.raises(ValueError, match="must be"):
+        traced_node("classify-document", as_type="evaluator")
 
 
 def test_node_row_rejects_an_untraced_node():
     """A graph node without ``traced_node`` cannot be mapped to a span."""
     with pytest.raises(RuntimeError, match="not wrapped by traced_node"):
         export_contract.node_row("bare", lambda state: state)
+
+
+def test_contract_is_provider_neutral(contract):
+    assert contract["contract_version"] == "2.0.0"
+    assert "langfuse_aliases" not in contract["scores"]
+    def keys(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                yield key
+                yield from keys(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from keys(item)
+    assert not {"provider", "model", "sdk", "langfuse_aliases"} & set(keys(contract))
+    scores = {row["name"]: row for row in contract["scores"]["configs"]}
+    assert scores["classification_confidence"]["min_value"] == 0.0
+    assert scores["classification_confidence"]["max_value"] == 1.0
+    assert scores["deterministic_verdict"]["categories"] == [
+        {"label": "CORRECT", "value": 1.0},
+        {"label": "PARTIAL", "value": 0.5},
+        {"label": "MISS", "value": 0.0},
+    ]
 
 
 def test_edges_connect_known_nodes(contract):

@@ -1530,19 +1530,23 @@ class Watcher:
         """
         stale = list_stale_processing_files(stale_minutes=STALE_CLAIM_MINUTES)
         for f in stale:
-            if _is_claim_in_flight(f):
-                logger.info("stale_claim_skipped_in_flight", file=str(f))
-                continue
-            try:
-                action, dest = reconcile_stale_processing_file(f)
-                logger.warning(
-                    "stale_claim_reconciled",
-                    file=str(f),
-                    action=action,
-                    dest=str(dest),
-                )
-            except Exception:
-                logger.exception("stale_claim_requeue_failed", file=str(f))
+            # A claimant also holds this gate while replacing a same-name orphan
+            # and registering the new path. Keep the inactive check and move in
+            # one critical section so the sweep cannot move that new live claim.
+            with _claim_gate:
+                if _is_claim_in_flight(f):
+                    logger.info("stale_claim_skipped_in_flight", file=str(f))
+                    continue
+                try:
+                    action, dest = reconcile_stale_processing_file(f)
+                    logger.warning(
+                        "stale_claim_reconciled",
+                        file=str(f),
+                        action=action,
+                        dest=str(dest),
+                    )
+                except Exception:
+                    logger.exception("stale_claim_requeue_failed", file=str(f))
 
     def _rescan_loop(self):
         import time as _time

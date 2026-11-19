@@ -3953,6 +3953,13 @@ def build_graph(checkpointer=None):
 
     add_scoring_nodes(workflow, wrap=lambda span, fn: traced_node(span)(_bounded(fn)))
 
+    # Fail at runtime graph construction if a decorator drifts from the
+    # provider-neutral contract; export checks use the same assertion.
+    from graph.contract import node_row
+
+    for node_id, spec in workflow.nodes.items():
+        node_row(node_id, getattr(spec.runnable, "func", spec.runnable))
+
     # Edge topology is declared once, in graph/route_spec.py (ROUTE_SPECS / PLAIN_EDGES):
     # validated against the nodes above, then wired. Routers keep their names and logic.
     wire_edges(workflow)

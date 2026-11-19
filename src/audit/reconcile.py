@@ -93,20 +93,23 @@ def _attempts(record: dict[str, Any]):
 
 
 def hash_ok(record: dict[str, Any]) -> bool:
-    """Check the captured detail and sub-row hashes; reject malformed records."""
+    """Check captured detail and every carried sub-row against the canonical writer output."""
     from audit.digests import detail_sha256
-    from audit.writer import _build_sub_rows
+    from audit.writer import _build_sub_rows, _sub_row_dict
 
     try:
         detail = record["detail"]
         if detail_sha256(detail) != record["detail_sha256"]:
             return False
-        _, listed = _build_sub_rows(
+        subs, listed = _build_sub_rows(
             _attempts(record), parent_id=record["entry_id"], doc_id=record["doc_id"],
             matter_id=record["matter_id"], actor=record["actor"],
         )
-        return listed == detail.get("attempts") and [x["entry_hash"] for x in listed] == list(
-            record.get("sub_row_hashes") or [])
+        carried = record.get("sub_rows")
+        return (isinstance(carried, list)
+                and carried == [_sub_row_dict(sub) for sub in subs]
+                and listed == detail.get("attempts")
+                and [x["entry_hash"] for x in listed] == list(record.get("sub_row_hashes") or []))
     except Exception:
         return False
 

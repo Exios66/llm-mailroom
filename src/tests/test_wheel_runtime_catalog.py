@@ -31,6 +31,8 @@ def test_built_wheel_contains_and_loads_its_runtime_prompt_catalog(tmp_path):
     with zipfile.ZipFile(wheel) as archive:
         names = archive.namelist()
         assert "config/taxonomy.yaml" in names
+        assert "mailroom_contract/__init__.py" in names
+        assert "mailroom_contract/scores.py" in names
         assert archive.read("config/taxonomy.yaml") == (root / "src/config/taxonomy.yaml").read_bytes()
         assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)
         # Checkout-only trees: shipped code must not need them at runtime.
@@ -49,7 +51,10 @@ def offline(event, args):
         raise RuntimeError("external I/O forbidden in wheel smoke")
 sys.addaudithook(offline)
 from pipeline import config
+from mailroom_contract import NODE_BINDINGS, validate_score
 from llm.prompts import prompt_templates
+assert len(NODE_BINDINGS) == 22
+assert validate_score("deterministic_verdict", "PARTIAL")["data_type"] == "CATEGORICAL"
 assert config.CONFIG_PATH.resolve().is_relative_to(pathlib.Path(wheel).resolve())
 templates = prompt_templates()
 assert len(templates) == 25

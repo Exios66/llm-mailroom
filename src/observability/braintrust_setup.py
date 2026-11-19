@@ -13,10 +13,9 @@ with ``type=llm``, ``name="Chat Completion"``, ``input`` = the messages and
 ``metadata`` carrying the model.
 
 Structured pipeline tracing: `braintrust_pipeline_trace()` opens one root
-``task`` observation per document, and `braintrust_observation()` opens typed
-child observations (agent / evaluator / retriever / span / generation) with
-verb-first stable names. LLM generations created inside a node's observation
-automatically nest under it.
+``task`` observation per document. Child observations translate Mailroom
+semantic types into supported Braintrust native types while recording the
+canonical type in metadata. LLM generations nest under the active node.
 
 Routing: this module opens a *Logger* for the project (via
 ``braintrust.init_logger``), NOT an Experiment (``braintrust.init`` is only for
@@ -190,6 +189,20 @@ def _event_metadata(metadata, *, session_id=None, environment=None, user_id=None
     return meta
 
 
+_NATIVE_TYPES = {
+    "chain": "task", "agent": "task", "generation": "llm",
+    "evaluator": "eval", "retriever": "tool", "span": "function",
+}
+
+
+def _native_type(semantic_type: str) -> str:
+    from mailroom_contract import OBSERVATION_TYPES
+
+    if semantic_type not in OBSERVATION_TYPES:
+        raise ValueError(f"unknown Mailroom observation type: {semantic_type!r}")
+    return _NATIVE_TYPES[semantic_type]
+
+
 @contextmanager
 def braintrust_pipeline_trace(
     *,
@@ -201,7 +214,7 @@ def braintrust_pipeline_trace(
     tags=None,
     environment=None,
     user_id=None,
-    as_type="task",
+    as_type="chain",
 ):
     """Open the root observation of a document's trace (Braintrust backend).
 
@@ -220,26 +233,14 @@ def braintrust_pipeline_trace(
         yield _noop_span
         return
 
-    try:
-        import braintrust
-
-        meta = _event_metadata(
-            metadata,
-            session_id=session_id,
-            environment=environment,
-            user_id=user_id,
-        )
-        with braintrust.start_span(
-            name=name,
-            type=as_type or "task",
-            input=input,
-            metadata=meta or None,
-            tags=list(tags) if tags else None,
-        ) as root:
-            yield _BTSpan(root)
-    except Exception:
-        logger.warning("braintrust_pipeline_trace_failed", exc_info=True)
-        yield _noop_span
+    import braintrust
+    meta = _event_metadata(metadata, session_id=session_id, environment=environment, user_id=user_id)
+    meta["mailroom.semantic_type"] = as_type
+    with braintrust.start_span(
+        name=name, type=_native_type(as_type), input=input,
+        metadata=meta, tags=list(tags) if tags else None,
+    ) as root:
+        yield _BTSpan(root)
 
 
 @contextmanager
@@ -262,17 +263,10 @@ def braintrust_observation(
         yield _noop_span
         return
 
-    try:
-        import braintrust
-
-        meta = _event_metadata(metadata, model=model)
-        with braintrust.start_span(
-            name=name,
-            type=as_type or "span",
-            input=input,
-            metadata=meta or None,
-        ) as span:
-            yield _BTSpan(span)
-    except Exception:
-        logger.warning("braintrust_observation_failed", exc_info=True)
-        yield _noop_span
+    import braintrust
+    meta = _event_metadata(metadata, model=model)
+    meta["mailroom.semantic_type"] = as_type
+    with braintrust.start_span(
+        name=name, type=_native_type(as_type), input=input, metadata=meta,
+    ) as span:
+        yield _BTSpan(span)
