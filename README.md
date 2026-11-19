@@ -341,8 +341,8 @@ flowchart TD
     ARBITER -- "accept_with_caveats (arbiter_accept_archives false)" --> REVIEW
     ARBITER -- "re-extraction ordered" --> RETRY_EXTRACT
     ARBITER -- "unresolvable" --> REVIEW
-    BOSS -- "approved" --> REPORT
-    BOSS -- "review" --> REVIEW
+    BOSS -- "approved (grounded, not a doubted retry)" --> REPORT
+    BOSS -- "review, a blind approval (boss_ungrounded)<br/>or a doubted retry (retry_unjudged)" --> REVIEW
     REVIEW -- "approved" --> REPORT
     REVIEW -- "rejected" --> AUDIT_FAILED --> FAILED --> ENDX
 
@@ -418,7 +418,7 @@ flowchart TB
     JUDGE -. "Lane B: partial" .-> ARBITER
     SPECIALISTS -- "conflict" --> BOSS
     SPECIALISTS --> REPORTER
-    JUDGE -- "skipped (complete only with judge_complete_archives)" --> REPORTER
+    JUDGE -- "skipped (complete only with judge_complete_archives<br/>or a capped archive_gate release)" --> REPORTER
     REPORTER --> ARCHIVIST
     ARCHIVIST --> RELATIONS
 ```

@@ -1994,6 +1994,12 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
 
     guard, confidence = apply_extraction_guard(doc_type, result, confidence, attempts=attempts)
 
+    # Decision slot closed_field_resolver (baseline by default): off-list closed labels are
+    # resolved or suggested before conflict detection and the gate see the extraction.
+    from graph import decision_slots
+
+    result, slot_updates = decision_slots.resolve_closed_fields(state, doc_type, result, attempts)
+
     # Deterministic conflict detection against archived matter records: a
     # materially different value for the same schema field (governing law,
     # parties, effective date, amounts) is escalated to the Boss for
@@ -2019,13 +2025,7 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
-    # Decision slot closed_field_resolver (baseline by default): off-list closed labels are
-    # resolved or suggested before the gate reviews the extraction.
-    from graph import decision_slots
-
-    result, slot_updates = decision_slots.resolve_closed_fields(state, doc_type, result, attempts)
     if slot_updates:
-        result_dict["extracted_data"] = result
         result_dict.update(slot_updates)
     gate = _review_extraction(state, doc_type, result, attempts)
     if gate is not None:
@@ -2244,6 +2244,10 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
 
     guard, confidence = apply_extraction_guard(doc_type, result, confidence, attempts=attempts)
 
+    from graph import decision_slots
+
+    # The closed-field resolver runs before conflict detection, as in extract_node.
+    result, slot_updates = decision_slots.resolve_closed_fields(state, doc_type, result, attempts)
     conflict_detected, conflict_details = _detect_conflict(state, result)
 
     logger.info(
@@ -2266,11 +2270,7 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
-    from graph import decision_slots
-
-    result, slot_updates = decision_slots.resolve_closed_fields(state, doc_type, result, attempts)
     if slot_updates:
-        updates["extracted_data"] = result
         updates.update(slot_updates)
     gate = _review_extraction(state, doc_type, result, attempts)
     if gate is not None:

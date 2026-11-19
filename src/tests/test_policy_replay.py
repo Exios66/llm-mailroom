@@ -200,10 +200,13 @@ def test_judge_complete_archives_and_partial_follows_the_arbiter():
         judges=[judge("partial")],
         arbiters=[arbiter("retry_extraction")],
     )
-    out = pr.replay(retry, POLICY)
+    out = pr.replay(retry, LEGACY)
     assert out.outcome == pr.AUTO
     assert out.path.count("retry_extract") == 1 and "arbiter" in out.path
     assert out.path.count("judge_verify") == 1  # judge_rejudge_retry is off by default
+    # By default the unjudged retry parks (retry_unjudged), as the live graph does: replay
+    # carries the judge verdict and arbiter decision into the retry attempt.
+    assert pr.replay(retry, POLICY).outcome == pr.HUMAN
 
 
 def test_opt_in_rejudge_replays_the_second_verdict():
@@ -584,7 +587,7 @@ def test_lost_chunks_are_not_cleared_by_a_complete_judge_verdict():
     an intact payload: a recorded complete, source-verified verdict may not archive a partial
     extraction the live graph retried."""
     judged = _three_low_attempts(1, judges=[judge("complete", attempt=3, verified=True)])
-    out = pr.replay(judged, POLICY)
+    out = pr.replay(judged, LEGACY)  # LEGACY: the default judge-complete park would mask a lost window
     assert out.outcome == pr.HUMAN and out.path[-1] == "human_review"
     # the same route with the windows intact is exactly what the judge verdict is worth
     assert pr.replay(_three_low_attempts(0, judges=[judge("complete", attempt=3, verified=True)]),

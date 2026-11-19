@@ -732,6 +732,18 @@ class TestClosedFieldResolver:
         assert out["closed_field_resolutions"][0]["applied"] is True
         assert route("extract", {**_classified(), **out}) != "human_review"
 
+    def test_conflicts_are_detected_on_the_resolved_value(self, slots, monkeypatch):
+        """A matter conflict is judged on the value that will be archived, not the off-list one."""
+        slots({"closed_field_resolver": {"mode": "resolve", "release_cap": None}})
+        _off_list(monkeypatch)
+        monkeypatch.setattr(bg, "_detect_conflict", lambda state, data: (
+            ((data or {}).get("cuad_family") == "service"), ["cuad_family: service vs master"]
+            if (data or {}).get("cuad_family") == "service" else []))
+        register_closed_field_resolver(Resolver())
+        out = bg.extract_node(_classified())
+        assert out["extracted_data"]["cuad_family"] == "service"
+        assert out["conflict_detected"] is True and out["conflict_details"] == ["cuad_family: service vs master"]
+
     @pytest.mark.parametrize("mode, answer", [
         ("suggest", Resolver()),
         ("resolve", Resolver(probability=0.5)),

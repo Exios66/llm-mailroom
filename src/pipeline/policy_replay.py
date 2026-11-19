@@ -649,6 +649,9 @@ def _replay_walk(record: RunRecord, oracle: bool) -> ReplayOutcome:
     judge_passes = 0
     arbiter_retries = 0
     judge_verified = False  # judge_source_verified persists in state across attempts
+    # So do the last judge verdict and arbiter decision: a retry is routed with them until the
+    # judge runs again (``retry_unjudged`` reads both).
+    carried: dict[str, Any] = {}
     while True:
         att = _att(_for_class(record.extraction, cls), k)
         if att is None:
@@ -679,6 +682,7 @@ def _replay_walk(record: RunRecord, oracle: bool) -> ReplayOutcome:
             "judge_source_verified": judge_verified,
             "judge_pass_count": judge_passes,
             "arbiter_retry_count": arbiter_retries,
+            **carried,
             **w.gt(),
         }
         gated = routing.after_extraction_gated if k == 1 else routing.after_retry_extraction_gated
@@ -698,6 +702,7 @@ def _replay_walk(record: RunRecord, oracle: bool) -> ReplayOutcome:
                 judge_source_verified=judge_verified,
                 judge_pass_count=judge_passes,
             )
+            carried["judge_verdict"] = j.verdict
             dest = routing.after_judge(ex_state)
             if dest == "arbiter":
                 arb = _arbiter_for(record, k, cls)
@@ -707,6 +712,7 @@ def _replay_walk(record: RunRecord, oracle: bool) -> ReplayOutcome:
                 if arb.decision == "retry_extraction":
                     arbiter_retries += 1  # arbiter_node counts approvals, not rulings
                 ex_state.update(arbiter_decision=arb.decision, arbiter_retry_count=arbiter_retries)
+                carried["arbiter_decision"] = arb.decision
                 dest = routing.after_arbiter(ex_state)
                 if dest == "retry_extract":
                     k += 1

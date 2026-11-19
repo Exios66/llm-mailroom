@@ -347,12 +347,19 @@ def retry_unjudged(data: Mapping[str, Any], thresholds: Mapping[str, Any]) -> bo
     own (``judge_complete_archives``). A retry that found a matter conflict matches only once
     the Boss approved it (``after_boss``): the Boss rules on the conflict, not on completeness,
     and while it has not approved the document parks for the conflict anyway. A re-judged retry
-    replaces the verdict, so it never matches; a review resume resets ``arbiter_retry_count`` to 0.
+    replaces the verdict, so it never matches (the latest ``extraction_attempt_history`` entry
+    carries it); a review resume resets ``arbiter_retry_count`` to 0.
     """
     if thresholds.get("judge_complete_archives", False):
         return False
     if str(data.get("judge_verdict") or "") not in ("incomplete", "partial"):
         return False
+    history = data.get("extraction_attempt_history")
+    if isinstance(history, list) and history and isinstance(history[-1], Mapping):
+        # The judge fills in the verdict of the attempt it judged (always the latest): a
+        # retry it judged again carries its own verdict, so it is not unjudged.
+        if history[-1].get("judge_verdict") is not None:
+            return False
     if data.get("arbiter_decision") != "retry_extraction":
         return False
     if _is_true_flag(data.get("conflict_detected")) and data.get("review_decision") != "approved":

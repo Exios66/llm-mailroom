@@ -480,6 +480,17 @@ class TestArchiveChecks:
         state = {**self._RETRY, "judge_verdict": "incomplete", **extra}
         assert "retry_unjudged" not in collect_review_causes(state)
 
+    def test_a_retry_the_judge_judged_again_is_not_unjudged(self):
+        """The latest attempt carries its own verdict: a re-judged partial is not retry_unjudged."""
+        judged = {**self._RETRY, "judge_verdict": "partial", "extraction_attempts": 3, "arbiter_retry_count": 2,
+                  "extraction_attempt_history": [{"attempt_no": n, "judge_verdict": "partial"} for n in (1, 2, 3)]}
+        assert "retry_unjudged" not in collect_review_causes(judged)
+        unjudged = {**judged, "extraction_attempt_history": [
+            {"attempt_no": 1, "judge_verdict": "partial"}, {"attempt_no": 2, "judge_verdict": "partial"},
+            {"attempt_no": 3, "judge_verdict": None}]}
+        assert "retry_unjudged" in collect_review_causes(unjudged)
+        assert after_retry_extraction_gated(unjudged) == "human_review"
+
     def test_a_boss_approval_does_not_judge_a_doubted_retry(self):
         """A doubted retry that finds a matter conflict goes to the Boss, not the judge."""
         from graph.routing import after_boss

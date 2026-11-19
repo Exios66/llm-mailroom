@@ -38,7 +38,9 @@ The gate answers one "is this value supported by the source" question per key fi
 a field below `gate_support_min` (default 0.5) is unsupported, and an extraction with any
 unsupported field is not supported. The answer counts only for the extraction attempt it
 judged (`extraction_gate.attempt` equals `extraction_attempts`); an error, a skip, a stale
-or malformed answer is `unavailable`, and the slot then follows the baseline.
+or malformed answer is `unavailable`, and the slot then follows the baseline, except that
+`arbiter_veto`, `judge_check` and `boss_check` with `on_unverified: park` park the approval
+instead (within `park_cap`).
 
 ### Key fields
 
@@ -104,6 +106,9 @@ or watcher worker keeps its own. `graph.decision_slots.reset_ledger()` starts a 
 - A parked document's `_review.review_focus` under `field_review: annotate`.
 
 ## Example (Set B: enforcing gate, judge replaced)
+
+Change only these entries of the shipped block and keep its `gate_key_fields`: without key
+fields no class has coverage, so the judge is never replaced and nothing releases.
 
 ```yaml
 decision_slots:

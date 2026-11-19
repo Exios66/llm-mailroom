@@ -240,7 +240,7 @@ Retired from the live pipeline in v0.5.0 / PR #21. The sorter emits `unknown` (h
 | Attribute       | Value                                                                         |
 | --------------- | ----------------------------------------------------------------------------- |
 | **Node**        | `compile_report`                                                              |
-| **Trigger**     | Extraction confident enough (a judge `complete` or arbiter `accept_with_caveats` only where the class sets `judge_complete_archives` / `arbiter_accept_archives`) |
+| **Trigger**     | Extraction confident enough (a judge `complete` or arbiter `accept_with_caveats` only where the class sets `judge_complete_archives` / `arbiter_accept_archives`, or a judge `complete` an enforcing `archive_gate` releases within its cap) |
 | **Input**       | Specialist extraction + optional arbiter caveats                              |
 | **Output**      | Deterministic `_report` string on `extracted_data`                            |
 | **Personality** | none — procedural                                                             |

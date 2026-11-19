@@ -64,8 +64,8 @@ flowchart TD
     ARBITER -- "accept_with_caveats (arbiter_accept_archives false)" --> REVIEW
     ARBITER -- "re-extraction ordered" --> RETRY_EXTRACT
     ARBITER -- "unresolvable" --> REVIEW
-    BOSS -- "approved" --> REPORT
-    BOSS -- "review" --> REVIEW
+    BOSS -- "approved (grounded, not a doubted retry)" --> REPORT
+    BOSS -- "review, a blind approval (boss_ungrounded)<br/>or a doubted retry (retry_unjudged)" --> REVIEW
     REVIEW -- "approved (fresh extraction)" --> EXTRACT
     REVIEW -- "approve_as_is / correct (fields)" --> REPORT
     REVIEW -- "rejected" --> FAILED --> ENDX

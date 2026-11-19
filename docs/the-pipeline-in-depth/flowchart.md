@@ -135,8 +135,8 @@ flowchart TD
     N_ARBITER -- "human_review, arbiter failure,<br/>or retry bound exceeded" --> N_HUMAN
 
     N_BOSS -. "transient" .-> N_BOSS
-    N_BOSS -- "review_decision = approved" --> N_REPORT
-    N_BOSS -- "any other decision" --> N_HUMAN
+    N_BOSS -- "review_decision = approved,<br/>grounded, not a doubted retry" --> N_REPORT
+    N_BOSS -- "any other decision, a blind approval<br/>(boss_ungrounded) or a doubted retry (retry_unjudged)" --> N_HUMAN
 
     %% ---------------- Human review ----------------
     subgraph HITL["Human review"]
