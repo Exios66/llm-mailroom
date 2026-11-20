@@ -507,8 +507,14 @@ def _proposal(node: str, state: Mapping[str, Any]) -> str | None:
 
 def _release_blocker(state: Mapping[str, Any]) -> str | None:
     """Why the gate may not release this parking document (``None`` = it may)."""
+    from pipeline.config import class_auto_archives
     from pipeline.reconsideration import collect_review_causes
 
+    # A class with ``auto_archive: false`` always needs a person. Never spend the
+    # release budget rewriting its route to ``compile_report`` — ``after_report``
+    # would park it again and the 3% release cap would be wasted on a no-op.
+    if not class_auto_archives(state.get("doc_type") if isinstance(state.get("doc_type"), str) else None):
+        return "class_requires_review"
     if state.get("judge_verdict") in ("incomplete", "judge_error"):
         return f"judge_{state.get('judge_verdict')}"
     if state.get("conflict_detected"):

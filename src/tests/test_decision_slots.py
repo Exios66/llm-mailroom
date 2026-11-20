@@ -319,6 +319,29 @@ class TestArchiveGate:
         assert state["decision_slot_outcomes"]["archive_gate"]["action"] == "release"
         assert route("judge_verify", state) == "compile_report"
 
+    def test_release_never_spends_budget_on_a_class_that_cannot_archive(self, slots):
+        # merger_agreement has auto_archive: false. A soft park with full gate
+        # support must hold, not release: after_report would park again and the
+        # release cap would be burned on a no-op.
+        cfg = slots({
+            "gate_key_fields": {"merger_agreement": ["parties"]},
+            "archive_gate": {"mode": "enforce", "release": True, "release_cap": 0.03},
+        })
+        for _ in range(20):
+            ds._charge("archive_gate", "seen", None, 0, [])
+        base = self._soft_park(doc_type="merger_agreement")
+        assert route("judge_verify", base) == "human_review"
+        state = run_wrapped(
+            "judge_verify",
+            {"extraction_gate": gate({"parties": 0.99}, attempt=3)},
+            base,
+            cfg,
+        )
+        rec = state["decision_slot_outcomes"]["archive_gate"]
+        assert rec["action"] == "hold" and rec["hold_reason"] == "class_requires_review"
+        assert route("judge_verify", state) == "human_review"
+        assert ds.ledger_snapshot()["archive_gate"]["release"] == 0
+
     @pytest.mark.parametrize("overrides, reason", [
         ({"judge_verdict": "incomplete", "judge_pass_count": 3}, "judge_incomplete"),
         ({"conflict_detected": True}, "conflict"),

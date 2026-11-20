@@ -10,6 +10,8 @@ calibration delta).
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from graph.routing import (
@@ -138,6 +140,21 @@ def test_calibrated_values():
     assert [c for c in CLASSES if not class_auto_archives(c)] == ["merger_agreement"]
     assert class_auto_archives(None) is True
     assert class_auto_archives("unknown") is True
+
+
+def test_class_auto_archives_accepts_common_false_spellings(monkeypatch):
+    import pipeline.config as config
+
+    base = copy.deepcopy(config.load_config())
+
+    def with_value(raw):
+        cfg = copy.deepcopy(base)
+        cfg["confidence"]["by_class"]["merger_agreement"]["auto_archive"] = raw
+        monkeypatch.setattr(config, "load_config", lambda: cfg)
+        assert class_auto_archives("merger_agreement") is False
+
+    for raw in (False, 0, "false", "FALSE", "no", "off", "0"):
+        with_value(raw)
 
 
 # --- routing: sorter band ----------------------------------------------------------

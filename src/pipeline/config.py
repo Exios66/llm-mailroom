@@ -174,9 +174,16 @@ def policy_expected_stage(doc_class: str | None, expected_stage: str | None) -> 
 def class_auto_archives(doc_type: str | None) -> bool:
     """False when the class's ``auto_archive`` is false: its documents always go to a person.
 
-    Default true (no key, no class, or an unknown class).
+    Default true (no key, no class, or an unknown class). Accepts boolean ``False``
+    and the common YAML / env spellings ``0``, ``false``, ``no``, ``off`` so a
+    mistyped taxonomy value cannot silently re-enable auto-archive.
     """
-    return get_confidence_thresholds(doc_type).get("auto_archive", True) is not False
+    raw = get_confidence_thresholds(doc_type).get("auto_archive", True)
+    if raw is False or raw == 0:
+        return False
+    if isinstance(raw, str) and raw.strip().lower() in _ORACLE_FALSE:
+        return False
+    return True
 
 
 ORACLE_ROUTING_ENV = "MAILROOM_ORACLE_ROUTING"
