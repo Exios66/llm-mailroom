@@ -71,7 +71,7 @@ Details: [Data and corpora](data-and-corpora.md). Full dataset section: [Mailroo
 
 `llm-dojo-scoring` owns all metrics, scoring formulas, normalization rules, and suites. Consumers call its APIs and report its results; scoring fixes are implemented in dojo first. It scores fields by type (dates are normalized before comparison, names use Jaro-Winkler, lists use Hungarian matching, free text uses token F1) rather than exact-matching everything.
 
-* llm-mailroom pins it as a git dependency and keeps the pin current with an auto-bump workflow (`.github/workflows/bump-dojo-scoring.yml`).
+* llm-mailroom pins it as a git dependency; the pin is bumped by hand with `src/scripts/bump_dojo_scoring.py` (CI is CircleCI only, no GitHub Actions).
 * eval-environment uses it for its experiment scoring.
 * local-mailroom-sandbox carries a vendored snapshot so it works offline.
 
