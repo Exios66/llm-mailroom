@@ -43,6 +43,11 @@ class DocumentManifest(BaseModel):
     judge_verdict: str | None = None
     judge_score: float | None = None
     judge_findings: list[str] | None = None
+    # #277: windows of the source the judge and each arbiter read, with calls and tokens
+    # ({windows_total, windows_checked, calls, prompt_tokens, completion_tokens}).
+    judge_coverage: dict | None = None
+    arbiter_coverage: dict | None = None
+    classification_arbiter_coverage: dict | None = None
     # #254: every extraction attempt with its judge verdict (None on older
     # manifests), and which one the manifest's extraction came from.
     extraction_attempt_history: list[dict] | None = None
@@ -93,6 +98,9 @@ class DocumentManifest(BaseModel):
     # ``audit_pending_refs`` names the sink copies: [{sink, ref, complete, recoverable}].
     audit_written: bool | Literal["pending", "pending_partial"] | None = None
     audit_pending_refs: list[dict] = Field(default_factory=list)
+    # Counts the audit marks applied to this manifest, so a compare-and-set sees a mark that wrote the same
+    # status and refs as before (``audit.row.mark_manifest``).
+    audit_mark_seq: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

@@ -49,6 +49,25 @@ JUDGE_INCOMPLETE = "judge_incomplete"
 JUDGE_ERROR = "judge_error"
 RETRIES_EXHAUSTED = "retries_exhausted"
 CHUNK_FAILED = "chunk_failed"
+OUT_OF_VOCABULARY = "out_of_vocabulary"
+# Default archive checks (graph/routing.py): an approval that is not evidence enough to archive.
+JUDGE_COMPLETE_UNCONFIRMED = "judge_complete_unconfirmed"
+ARBITER_ACCEPT_UNCONFIRMED = "arbiter_accept_unconfirmed"
+BOSS_UNGROUNDED = "boss_ungrounded"
+RETRY_UNJUDGED = "retry_unjudged"
+# Decision-model slots (graph/decision_slots.py), each parking a document the router would archive.
+ARCHIVE_GATE_UNSUPPORTED = "archive_gate_unsupported"
+ARBITER_VETO_GATE = "arbiter_veto_gate"
+GATE_INCOMPLETE = "gate_incomplete"
+ARBITER_ACCEPT_UNVERIFIED = "arbiter_accept_unverified"
+JUDGE_CHECK_UNSUPPORTED = "judge_check_unsupported"
+JUDGE_COMPLETE_UNVERIFIED = "judge_complete_unverified"
+BOSS_CHECK_UNSUPPORTED = "boss_check_unsupported"
+BOSS_APPROVAL_UNVERIFIED = "boss_approval_unverified"
+CLASS_REQUIRES_REVIEW = "class_requires_review"
+
+# Cause tokens that come from comparing against ground truth, not from a routing decision.
+_GROUND_TRUTH_ONLY_CAUSES = frozenset({CLASS_MISS, SUBCLASS_MISS, EXTRACTION_MISS})
 
 CAUSE_LABELS: dict[str, str] = {
     CLASS_MISS: "classification miss vs ground truth",
@@ -83,6 +102,20 @@ CAUSE_LABELS: dict[str, str] = {
     JUDGE_ERROR: "judge verification failed",
     RETRIES_EXHAUSTED: "confidence retry budget spent without a settled answer",
     CHUNK_FAILED: "one or more extraction windows failed",
+    OUT_OF_VOCABULARY: "a closed-label field holds a value off its vocabulary",
+    JUDGE_COMPLETE_UNCONFIRMED: "the judge called a doubted extraction complete; a judge verdict alone does not archive",
+    ARBITER_ACCEPT_UNCONFIRMED: "the arbiter accepted with caveats what the judge found lacking",
+    BOSS_UNGROUNDED: "the boss approved a matter conflict without seeing any matter record",
+    RETRY_UNJUDGED: "a retry of an extraction the judge found lacking was not judged again",
+    ARCHIVE_GATE_UNSUPPORTED: "the archive gate found extracted values the source does not support",
+    ARBITER_VETO_GATE: "the archive gate disagreed with the arbiter's accept_with_caveats",
+    GATE_INCOMPLETE: "the arbiter accepted an extraction the gate (as judge) called incomplete",
+    ARBITER_ACCEPT_UNVERIFIED: "the archive gate could not confirm the arbiter's accept_with_caveats",
+    JUDGE_CHECK_UNSUPPORTED: "the archive gate found values the source does not support in an extraction the judge called complete",
+    JUDGE_COMPLETE_UNVERIFIED: "the archive gate could not confirm the judge's complete verdict",
+    BOSS_CHECK_UNSUPPORTED: "the archive gate found values the source does not support in an extraction the boss approved",
+    BOSS_APPROVAL_UNVERIFIED: "the archive gate could not confirm the boss's approval",
+    CLASS_REQUIRES_REVIEW: "this class never archives without a person (auto_archive: false)",
 }
 
 _PUBLIC_SKIP = frozenset({"reasoning", "confidence", "mock_extraction"})
@@ -309,6 +342,43 @@ def _is_falsey_flag(value: Any) -> bool:
     return value in _TRUTHY_ZERO
 
 
+def retry_unjudged(data: Mapping[str, Any], thresholds: Mapping[str, Any]) -> bool:
+    """A retry the arbiter ordered after the judge found the extraction lacking, with no new verdict.
+
+    The one predicate behind the ``retry_unjudged`` park (``graph/routing.py``
+    ``retry_after_judge_doubt``) and its review cause: the judge said ``incomplete`` or
+    ``partial``, the arbiter approved a re-extraction within ``arbiter_retry_max`` and it ran
+    (``extraction_attempts`` >= 2), and the class does not let a judge verdict archive on its
+    own (``judge_complete_archives``). A retry that found a matter conflict matches only once
+    the Boss approved it (``after_boss``): the Boss rules on the conflict, not on completeness,
+    and while it has not approved the document parks for the conflict anyway. A re-judged retry
+    replaces the verdict, so it never matches (the latest ``extraction_attempt_history`` entry
+    carries it); a review resume resets ``arbiter_retry_count`` to 0.
+    """
+    if thresholds.get("judge_complete_archives", False):
+        return False
+    if str(data.get("judge_verdict") or "") not in ("incomplete", "partial"):
+        return False
+    history = data.get("extraction_attempt_history")
+    if isinstance(history, list) and history and isinstance(history[-1], Mapping):
+        # The judge fills in the verdict of the attempt it judged (always the latest): a
+        # retry it judged again carries its own verdict, so it is not unjudged.
+        if history[-1].get("judge_verdict") is not None:
+            return False
+    if data.get("arbiter_decision") != "retry_extraction":
+        return False
+    if _is_true_flag(data.get("conflict_detected")) and data.get("review_decision") != "approved":
+        return False
+    try:
+        attempts = int(data.get("extraction_attempts") or 0)
+        retries = int(data.get("arbiter_retry_count") or 0)
+        raw_max = thresholds.get("arbiter_retry_max")
+        retry_max = int(raw_max) if raw_max is not None else 2
+    except (TypeError, ValueError):
+        return False
+    return attempts >= 2 and 1 <= retries <= retry_max
+
+
 def _is_true_flag(value: Any) -> bool:
     if value is None:
         return False
@@ -353,6 +423,18 @@ def _failed_chunks(extracted: Mapping[str, Any]) -> int:
     if isinstance(value, (list, tuple, set, dict)):
         return len(value)
     return _as_int(value)
+
+
+def _off_vocabulary(doc_type: Any, extracted: Mapping[str, Any]) -> dict[str, Any]:
+    """Closed-label fields off their taxonomy vocabulary (#285); never raises."""
+    if not isinstance(doc_type, str):
+        return {}
+    try:
+        from pipeline.label_vocab import out_of_vocabulary_fields
+
+        return out_of_vocabulary_fields(doc_type, extracted)
+    except Exception:  # noqa: BLE001 - a config problem must not break parking
+        return {}
 
 
 def _state_derived_causes(
@@ -456,6 +538,9 @@ def _state_derived_causes(
     if _failed_chunks(extracted) > 0:
         add(CHUNK_FAILED)
 
+    if not stub and extracted and _off_vocabulary(doc_type, extracted):
+        add(OUT_OF_VOCABULARY)
+
     attempts = _as_int(data.get("extraction_attempts"))
     schema_probe = (
         isinstance(data.get("extracted_data"), dict)
@@ -478,7 +563,8 @@ def _state_derived_causes(
     if not stub and ("extraction_attempts" in data or data.get("extracted_data")):
         ext_conf = _as_float(data.get("extraction_confidence"))
         judged = bool(data.get("judge_verdict")) or _as_int(data.get("judge_pass_count")) > 0
-        unsure = (ext_conf is None or ext_conf < low) and not data.get("judge_source_verified")
+        cleared = bool(data.get("judge_source_verified")) and bool(thresholds.get("judge_clears_low_confidence", False))
+        unsure = (ext_conf is None or ext_conf < low) and not cleared
         if unsure and (attempts > retry_max or judged):
             add(LOW_EXTRACTION_CONFIDENCE)
             retry_driven = retry_driven or attempts > retry_max
@@ -495,7 +581,22 @@ def _state_derived_causes(
     ) >= max_passes:
         add(RETRIES_EXHAUSTED)
 
+    if str(data.get("judge_verdict") or "") == "complete" and not thresholds.get("judge_complete_archives", False):
+        add(JUDGE_COMPLETE_UNCONFIRMED)
+    # Only a retry that would otherwise have archived: a low-confidence retry parks for that.
+    if retry_unjudged(data, thresholds) and LOW_EXTRACTION_CONFIDENCE not in out and LOW_EXTRACTION_CONFIDENCE not in known:
+        add(RETRY_UNJUDGED)
+    if data.get("boss_context_records") is not None and data.get("review_decision") == "approved":
+        try:
+            blind = int(data.get("boss_context_records")) <= 0
+        except (TypeError, ValueError):
+            blind = True
+        if blind:
+            add(BOSS_UNGROUNDED)
+
     arbiter = data.get("arbiter_decision")
+    if arbiter == "accept_with_caveats" and not thresholds.get("arbiter_accept_archives", False):
+        add(ARBITER_ACCEPT_UNCONFIRMED)
     if arbiter and arbiter != "accept_with_caveats":
         arbiter_max = _as_int(thresholds.get("arbiter_retry_max", 2))
         if arbiter != "retry_extraction":
@@ -535,6 +636,34 @@ def _decision_point_causes(data: Mapping[str, Any]) -> list[str]:
         if isinstance(tokens, (list, tuple)):
             out.extend(f"{DECISION_POINT_PREFIX}{slot}:{t}" for t in tokens if isinstance(t, str) and t)
     return out
+
+
+_DECISION_SLOT_CAUSES = frozenset({
+    ARCHIVE_GATE_UNSUPPORTED, ARBITER_VETO_GATE, GATE_INCOMPLETE, ARBITER_ACCEPT_UNVERIFIED,
+    JUDGE_CHECK_UNSUPPORTED, JUDGE_COMPLETE_UNVERIFIED, BOSS_CHECK_UNSUPPORTED, BOSS_APPROVAL_UNVERIFIED,
+})
+
+
+def _decision_slot_causes(data: Mapping[str, Any]) -> list[str]:
+    """The cause of each decision-slot outcome that parked the document (``route`` = human_review).
+
+    ``graph.decision_slots`` rewrites a node's entries on every pass of that node, so a
+    parking entry is about the pass that routed the document here. An entry recorded for an
+    earlier extraction attempt (another route rule won that pass and a retry followed) is not.
+    """
+    outcomes = data.get("decision_slot_outcomes")
+    if not isinstance(outcomes, Mapping):
+        return []
+    current = data.get("extraction_attempts")
+    return [
+        record["cause"]
+        for record in outcomes.values()
+        if isinstance(record, Mapping)
+        and record.get("route") == "human_review"
+        and record.get("cause") in _DECISION_SLOT_CAUSES
+        and not (isinstance(record.get("attempt"), int) and isinstance(current, int)
+                 and record["attempt"] != current)
+    ]
 
 
 def collect_review_causes(
@@ -636,6 +765,7 @@ def collect_review_causes(
         causes.extend(t for t in reviewer_causes if isinstance(t, str) and t)
 
     causes.extend(_decision_point_causes(data))
+    causes.extend(_decision_slot_causes(data))
 
     seen: set[str] = set()
     ordered: list[str] = []
@@ -643,6 +773,24 @@ def collect_review_causes(
         if token not in seen:
             seen.add(token)
             ordered.append(token)
+
+    # The policy park (taxonomy `auto_archive: false`) names itself only when no real
+    # routing cause explains the park, so the label never hides a failure. Causes that
+    # only a ground-truth comparison can produce never reached the router: ignore them.
+    from pipeline.config import is_extractable_doc_type
+
+    doc_type = data.get("doc_type")
+    if (
+        not (set(ordered) - _GROUND_TRUTH_ONLY_CAUSES)
+        and isinstance(doc_type, str)
+        and is_extractable_doc_type(doc_type)
+        and data.get("extracted_data")
+        and not (data.get("review_decision") == "human_applied" and data.get("extraction_source") == "human")
+    ):
+        from pipeline.config import class_auto_archives
+
+        if not class_auto_archives(doc_type):
+            ordered.append(CLASS_REQUIRES_REVIEW)
     return ordered
 
 

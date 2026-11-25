@@ -114,7 +114,8 @@ KNOWN_GAPS = [
     "gate forced open; the live graph judges whichever attempt the router stopped on",
     "extraction handoff context carries the classification confidence of the candidate's source "
     "stage; candidates sharing a class are collapsed onto the first source",
-    "reviewer and judge truncate long inputs exactly as live (see diagnostics.downstream_truncation)",
+    "the reviewer truncates long inputs exactly as live and the judge reads every window of them "
+    "(see diagnostics.downstream_truncation)",
     "arbiter nodes (classification_arbiter, Lane B arbiter) are never run: routes that need an arbiter "
     "ruling stay unobserved even when full_information is true",
     "candidates that share a class are extracted once, on the first source; when their subclass differs "
@@ -145,6 +146,9 @@ class Doc:
     expected_fields: dict | None = None
     content_sha256: str | None = None
     source_corpus: str | None = None  # corpus the row came from (e.g. sec_edgar), for --source filtering
+    # #258: True when the row's text matches the pinned content_sha256; None when the corpus
+    # was not integrity-checked (manifest and fixture sources).
+    content_verified: bool | None = None
     gold_meta: dict = field(default_factory=dict)
 
 
@@ -444,6 +448,7 @@ def build_initial_state(file_path: Path, matter_id: str) -> dict:
         "retry_count": 0,
         "conflict_detected": False,
         "boss_conflict_fingerprint": None,
+        "boss_context_records": None,
         "file_path": str(file_path),
         "doc_text": "",
         "doc_pages": [],
@@ -689,6 +694,8 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
         "gold_meta": doc.gold_meta,
         "node_errors": [],
     }
+    if doc.content_verified is not None:
+        diag["content_verified"] = doc.content_verified
     record.diagnostics = diag
     complete = True
     transient: list[str] = []  # stages whose transient-error retries were exhausted
@@ -713,11 +720,14 @@ def sweep_document(doc: Doc, ctx: SweepContext) -> RunRecord:
             diag["node_errors"].append(f"intake: {state['error_message']}")
 
         reviewer_cfg_chars = int(get_agent_config("sorter_reviewer").get("max_input_chars", 25000))
-        from agents.judge import JUDGE_SOURCE_CHARS
+        from agents.source_windows import windows_for_budget
 
+        judge_cfg_chars = int(get_agent_config("judge").get("max_input_chars", 25000))
         diag["downstream_truncation"] = {
             "reviewer": len(text) > reviewer_cfg_chars, "reviewer_max_input_chars": reviewer_cfg_chars,
-            "judge": len(text) > JUDGE_SOURCE_CHARS, "judge_source_chars": JUDGE_SOURCE_CHARS,
+            # The judge reads every window (#277), so it never truncates; this is how many it takes.
+            "judge": False, "judge_max_input_chars": judge_cfg_chars,
+            "judge_windows": len(windows_for_budget(text, judge_cfg_chars)),
         }
 
         if not bg._has_readable_text(state):
@@ -948,18 +958,28 @@ def load_manifest_docs(manifest: Path, samples_dir: Path | None) -> tuple[list[D
             expected_stage=want.get("expected_stage") or None,
             expected_fields=want.get("expected_fields"),
         ))
-    return docs, {"dataset_id": f"manifest:{manifest.name}", "dataset_revision": None, "split": "unsplit"}
+    # Identified by the resolved path, so two manifests with the same file name in different folders
+    # are different datasets. ``legacy_dataset_id`` is the name-only id earlier sweeps recorded; it is
+    # never written to rows, only accepted when resuming such a file (see ``resume_mismatch``).
+    return docs, {
+        "dataset_id": f"manifest:{manifest.resolve().as_posix()}",
+        "legacy_dataset_id": f"manifest:{manifest.name}",
+        "dataset_revision": None, "split": "unsplit",
+    }
 
 
-def load_hf_docs(split: str, per_class: int, seed: int) -> tuple[list[Doc], dict]:
+def load_hf_docs(split: str, per_class: int, seed: int, strict: bool = False) -> tuple[list[Doc], dict]:
     """Seeded per-class sample of the pinned corpus via ``pipeline.hf_corpus_loader.load_corpus``.
 
-    Full document text, never truncated. Network only through the loader.
+    Full document text, never truncated. Network only through the loader. Every row is
+    sampled whether or not its text matches ``content_sha256`` (#258): each ``Doc`` carries
+    ``content_verified`` and the returned provenance carries the loader's ``integrity`` block.
+    ``strict=True`` (``--strict-integrity``) makes the loader raise on any mismatch instead.
     """
     from pipeline import hf_corpus_loader as loader
     from scripts import run_hf_pilot as hp
 
-    frame, prov = loader.load_corpus(split=split)
+    frame, prov = loader.load_corpus(split=split, **({"strict": True} if strict else {}))
     by_class: dict[str, list[dict]] = {}
     for rec in frame.to_dict("records"):
         rec = {k: _clean(v) for k, v in rec.items()}
@@ -984,11 +1004,15 @@ def load_hf_docs(split: str, per_class: int, seed: int) -> tuple[list[Doc], dict
                 review_expected=_as_bool(review_expected),
                 expected_fields=fields or None,
                 content_sha256=_clean(rec.get("content_sha256")),
+                content_verified=_as_bool(rec["content_verified"]) if "content_verified" in rec else None,
                 source_corpus=_clean(rec.get("source_corpus")) or None,
                 gold_meta={k: meta.get(k) for k in ("sources", "n_fields", "n_posthoc", "coverage", "specialist")},
             ))
     revision = (prov.get("revision_requested") or prov.get("hub_sha_tip")) if isinstance(prov, dict) else None
-    return docs, {"dataset_id": loader.FULL_CORPUS_ID, "dataset_revision": revision, "split": split}
+    ds = {"dataset_id": loader.FULL_CORPUS_ID, "dataset_revision": revision, "split": split}
+    if isinstance(prov, dict) and prov.get("integrity") is not None:
+        ds["integrity"] = prov["integrity"]
+    return docs, ds
 
 
 # --------------------------------------------------------------------------------------
@@ -1015,10 +1039,11 @@ def _taxonomy_sha256() -> str | None:
 
 def thresholds_snapshot() -> dict:
     """Every threshold the router reads, as configured now (JSON-safe copy)."""
-    from pipeline.config import load_config
+    from pipeline.config import confidence_block, confidence_profile_name, load_config
 
     cfg = load_config()
-    snap = {"confidence": cfg.get("confidence") or {}, "reviewer": cfg.get("reviewer") or {},
+    snap = {"confidence": confidence_block() or {}, "confidence_profile": confidence_profile_name(),
+            "reviewer": cfg.get("reviewer") or {},
             "judge_verify": os.environ.get("MAILROOM_JUDGE_VERIFY", "on")}
     return json.loads(json.dumps(snap, default=str))
 
@@ -1095,8 +1120,42 @@ LEGACY_RUN_KEYS = ("seed", "per_class", "limit")
 
 
 def legacy_rows(existing: list[dict]) -> int:
-    """How many saved rows predate the #247 selection settings (lack any of ``LEGACY_RUN_KEYS``)."""
+    """How many saved rows predate the #247 selection settings (lack any of ``LEGACY_RUN_KEYS``).
+
+    A row is legacy when its ``run`` block has no ``seed``, ``per_class`` or ``limit`` key at all,
+    which includes a row with no ``run`` block (a missing or null block reads as ``{}``). A key that
+    is present counts as recorded even when its value is ``None`` (``limit=None`` means "no limit",
+    ``seed``/``per_class`` are ``None`` for fixtures and manifests), so such a row is not legacy.
+
+    This is also the only legacy shape ``resume_mismatch(..., allow_legacy=True)`` waives, and only
+    for those three keys. A legacy row must still record ``mode``, ``dataset_id``,
+    ``dataset_revision``, ``split``, ``taxonomy_sha256``, ``diagnostics.judge_attempts``,
+    ``diagnostics.max_extraction_candidates`` and ``thresholds_in_force``; older rows lacking any of
+    those are refused whatever the flag says.
+    """
     return sum(1 for row in existing if any(k not in (row.get("run") or {}) for k in LEGACY_RUN_KEYS))
+
+
+def _same_setting(saved: Any, now: Any) -> bool:
+    """Equality for a recorded setting, where a bool is never the integer it compares equal to.
+
+    ``True == 1`` and ``False == 0`` in Python, so a saved ``seed: true`` would otherwise resume a
+    run whose seed is 1.
+    """
+    return isinstance(saved, bool) == isinstance(now, bool) and saved == now
+
+
+def _legacy_manifest_id_matches(saved: Any, current: dict) -> bool:
+    """A saved name-only manifest id (``manifest:<file name>``) continues this run's manifest of that name.
+
+    Sweeps before the full-path id recorded only the file name, so such rows cannot say which folder
+    they came from. They keep resuming when the name matches. That is the trust level resume always had for them: the
+    ``content_sha256`` check below catches a changed document under the same ``doc_id``, but a
+    same-named manifest whose ids do not overlap is not detected. Rows this version
+    writes carry the full path, which a same-named manifest elsewhere does not match.
+    """
+    legacy = current.get("legacy_dataset_id")
+    return isinstance(saved, str) and isinstance(legacy, str) and saved == legacy
 
 
 def resume_mismatch(
@@ -1107,7 +1166,8 @@ def resume_mismatch(
     A resume skips documents by ``doc_id`` alone, so it is only sound when the saved records
     came from the same inputs and settings. ``current`` holds this run's ``mode``,
     ``dataset_id``, ``dataset_revision``, ``split``, ``taxonomy_sha256``, ``judge_attempts``,
-    ``max_extraction_candidates`` and ``thresholds``, plus the selection settings ``seed`` and
+    ``max_extraction_candidates`` and ``thresholds`` (and, for a manifest, ``legacy_dataset_id``, the
+    name-only id older sweeps recorded), plus the selection settings ``seed`` and
     ``per_class`` (``None`` unless the HF corpus is sampled) and ``limit``. A saved record that lacks
     a recorded value cannot be validated and is refused too: start a new output file. ``limit`` is
     a prefix of the document list, so a resume may raise it (or drop it) to sweep more of the same
@@ -1126,24 +1186,28 @@ def resume_mismatch(
             if key not in run:
                 if not (allow_legacy and key in LEGACY_RUN_KEYS):
                     diffs.setdefault(key, "not recorded in the saved records")
-            elif run[key] != current.get(key):
+            elif key == "dataset_id" and _legacy_manifest_id_matches(run[key], current):
+                continue
+            elif not _same_setting(run[key], current.get(key)):
                 diffs.setdefault(key, f"saved {run[key]!r}, now {current.get(key)!r}")
         if "limit" not in run:
             if not allow_legacy:
                 diffs.setdefault("limit", "not recorded in the saved records")
         else:
             saved_limit, new_limit = run["limit"], current.get("limit")
-            if saved_limit is not None and (not isinstance(saved_limit, int) or saved_limit < 0):
+            if saved_limit is not None and (
+                isinstance(saved_limit, bool) or not isinstance(saved_limit, int) or saved_limit < 0
+            ):
                 diffs.setdefault("limit", f"saved {saved_limit!r} is not a valid limit")
             elif new_limit is not None and (saved_limit is None or new_limit < saved_limit):
                 diffs.setdefault("limit", f"saved {saved_limit!r}, now {new_limit!r} (it can only be raised)")
         if "judge_attempts" not in diag:
             diffs.setdefault("judge_attempts", "not recorded in the saved records")
-        elif diag["judge_attempts"] != current["judge_attempts"]:
+        elif not _same_setting(diag["judge_attempts"], current["judge_attempts"]):
             diffs.setdefault("judge_attempts", f"saved {diag['judge_attempts']!r}, now {current['judge_attempts']!r}")
         if "max_extraction_candidates" not in diag:
             diffs.setdefault("max_extraction_candidates", "not recorded in the saved records")
-        elif diag["max_extraction_candidates"] != current["max_extraction_candidates"]:
+        elif not _same_setting(diag["max_extraction_candidates"], current["max_extraction_candidates"]):
             diffs.setdefault("max_extraction_candidates",
                              f"saved {diag['max_extraction_candidates']!r}, now {current['max_extraction_candidates']!r}")
         if "thresholds_in_force" not in row:
@@ -1272,6 +1336,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     mode.add_argument("--real", action="store_true", help=f"Real LLM; refused unless {ALLOW_REAL_ENV}=1.")
     p.add_argument("--out", type=Path, required=True, help="Output JSONL (appended to).")
     p.add_argument("--per-class", type=int, default=5, help="HF: documents per class.")
+    p.add_argument("--strict-integrity", action="store_true",
+                   help="HF: refuse (exit non-zero) if any row's text fails its pinned content_sha256 or has no text. "
+                        "Default: score every row, flag it content_verified in diagnostics, report the verified subset.")
     p.add_argument("--seed", type=int, default=0, help="HF: sampling seed.")
     p.add_argument("--samples-dir", type=Path, default=None, help="Manifest: root for sample files.")
     p.add_argument("--limit", type=_nonneg_int, default=None, help="Sweep only the first N documents.")
@@ -1324,7 +1391,9 @@ def main(argv: list[str] | None = None) -> int:
 
                 configure(field_scoring__embedding_enabled=False)
         if args.hf_split:
-            docs, ds = load_hf_docs(args.hf_split, args.per_class, args.seed)
+            docs, ds = load_hf_docs(
+                args.hf_split, args.per_class, args.seed, **({"strict": True} if args.strict_integrity else {})
+            )
         elif args.manifest:
             docs, ds = load_manifest_docs(args.manifest, args.samples_dir)
         else:
@@ -1346,6 +1415,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.resume:
             current = {
                 "mode": "mock" if mock else "real", "dataset_id": ds["dataset_id"],
+                "legacy_dataset_id": ds.get("legacy_dataset_id"),
                 "dataset_revision": ds["dataset_revision"], "split": ds["split"],
                 "taxonomy_sha256": _taxonomy_sha256(), "judge_attempts": args.judge_attempts,
                 "max_extraction_candidates": args.max_extraction_candidates, "thresholds": thresholds,
@@ -1408,7 +1478,7 @@ def main(argv: list[str] | None = None) -> int:
               f"concurrency={args.concurrency}, base_dir={base_dir}", flush=True)
         records = _run_all(todo, ctx, args.out, mock)
 
-    return _summarise(records, len(docs) - len(todo))
+    return _summarise(records, len(docs) - len(todo), integrity=ds.get("integrity"))
 
 
 def _dojo_version() -> str | None:
@@ -1444,7 +1514,24 @@ def _run_all(todo: list[Doc], ctx: SweepContext, out: Path, mock: bool) -> list[
     return records
 
 
-def _summarise(records: list[RunRecord], skipped: int) -> int:
+def _integrity_unclean(integrity: dict | None) -> bool:
+    """True when some row of the corpus is not content-verified (#258)."""
+    return bool(integrity) and bool(
+        integrity.get("mismatched") or integrity.get("missing_text") or integrity.get("unverifiable")
+    )
+
+
+def _headline(records: list[RunRecord]) -> dict:
+    n = len(records)
+    errors = sum(1 for r in records if r.error)
+    full = sum(1 for r in records if r.observed.full_information)
+    return {
+        "docs": n, "errors": errors, "full_information": full,
+        "full_information_share": round(full / n, 4) if n else None,
+    }
+
+
+def _summarise(records: list[RunRecord], skipped: int, integrity: dict | None = None) -> int:
     n = len(records)
     errors = sum(1 for r in records if r.error)
     full = sum(1 for r in records if r.observed.full_information)
@@ -1454,6 +1541,13 @@ def _summarise(records: list[RunRecord], skipped: int) -> int:
         "full_information": full, "full_information_share": round(full / n, 4) if n else None,
         "est_cost_usd": round(cost, 6),
     }
+    if integrity is not None:
+        summary["integrity"] = integrity
+    if _integrity_unclean(integrity):
+        # #258: every row was scored; the verified subset is reported next to the all-rows numbers.
+        summary["verified_subset"] = _headline(
+            [r for r in records if r.diagnostics.get("content_verified") is True]
+        )
     print("SUMMARY " + json.dumps(summary, sort_keys=True))
     return 1 if errors else 0
 

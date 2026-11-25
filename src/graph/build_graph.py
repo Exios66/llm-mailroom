@@ -144,6 +144,9 @@ def reset_compiled_graph():
         # the same lock, so a concurrent get_compiled_graph() cannot install a new graph's
         # rules between the drop and the clear and lose them.
         decision_points.clear_rules()
+        from graph import decision_slots
+
+        decision_slots.clear_rules()
 
 
 def _ensure_dirs():
@@ -382,7 +385,7 @@ def _enrich_contract_result(result: dict | None, state: dict) -> dict:
     try:
         from langchain_agents.doc_inventories import enrich_extraction
 
-        return enrich_extraction(
+        payload = enrich_extraction(
             payload,
             doc_type=doc_type,
             extract_class=extract_class,
@@ -390,7 +393,16 @@ def _enrich_contract_result(result: dict | None, state: dict) -> dict:
         )
     except Exception:
         logger.exception("contract_inventory_enrich_failed")
-        return payload
+    # After the inventory step, so a CMS table token on claim_type is already `health` (#280).
+    # Runs even when that step failed: a value that folds onto no token is left for the
+    # routing check (#285), which parks it.
+    try:
+        from pipeline.label_vocab import canonicalize_labels
+
+        payload = canonicalize_labels(doc_type, payload)
+    except Exception:
+        logger.exception("label_canonicalize_failed")
+    return payload
 
 
 def _specialist_extractor_map():
@@ -760,6 +772,7 @@ def intake_node(state: DocumentState) -> dict[str, Any]:
         "retry_count": 0,
         "conflict_detected": False,
         "boss_conflict_fingerprint": None,
+        "boss_context_records": None,
         "error_message": None if text_ok else f"Could not extract text from {file_path.suffix} file",
         "file_sha256": file_hash,
         "size_bytes": _file_size(file_path),
@@ -1185,7 +1198,9 @@ def _call_decision_backend(backend, doc_text, doc_types, catalogs, handoff=None)
     return _run_bounded(lambda: backend(doc_text, doc_types, catalogs))
 
 
-def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, Any]) -> dict[str, Any] | None:
+def _review_extraction(
+    state: DocumentState, doc_type: str, result: dict[str, Any], attempt: int | None = None
+) -> dict[str, Any] | None:
     """Ask the registered extraction gate about ``result``; ``None`` when no gate is registered.
 
     The handoff carries the sorter's subclass (``doc_subclass``, else the contract
@@ -1202,7 +1217,9 @@ def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, An
     # The first non-blank of the sorter's subclass and the contract subtype.
     subclass = next((v.strip() for v in (state.get("doc_subclass"), state.get("contract_subtype"))
                      if isinstance(v, str) and v.strip()), None)
-    record: dict[str, Any] = {"doc_subclass": subclass}
+    # ``attempt`` ties the answer to the extraction it judged: a decision slot reads it only
+    # while ``extraction_attempts`` still names that attempt (graph/decision_slots.gate_view).
+    record: dict[str, Any] = {"doc_subclass": subclass, "attempt": attempt}
     if result.get("_parse_error"):
         return {**record, "skipped": "parse_error"}
     # Same emptiness rule as guard_extraction: only None / empty containers is no extraction.
@@ -1226,7 +1243,7 @@ def _review_extraction(state: DocumentState, doc_type: str, result: dict[str, An
     if not isinstance(answer, Mapping):
         return {**record, "error": f"malformed gate answer ({type(answer).__name__})"}
     keep = ("verdict", "key_field_score", "accept_probability", "human_review_probability",
-            "field_support", "question_set", "model")
+            "field_support", "fields_asked", "question_set", "model")
     try:
         fields = {k: answer[k] for k in keep if k in answer}
         # The answer goes into state and the JSON ``extracted`` audit column: keep only
@@ -1509,6 +1526,9 @@ def classification_arbiter_node(state: DocumentState) -> dict[str, Any]:
         "classification_arbiter_decision": decision if accepted else "human_review",
         "classification_arbiter_confidence": confidence,
         "classification_arbiter_reasoning": reasoning,
+        "classification_arbiter_coverage": (
+            result.get("coverage") if isinstance(result.get("coverage"), dict) else None
+        ),
         "transient_error": False,
     }
     logger.info(
@@ -1556,8 +1576,17 @@ def review_classify_node(state: DocumentState) -> dict[str, Any]:
     from pipeline.config import get_review_mode
 
     if get_review_mode(state.get("doc_type")) == "decision_only":
-        return _decision_review_classify(state)
+        from graph import decision_slots
 
+        # Decision slot sorter_reviewer: past its park cap the chat reviewer decides instead.
+        return decision_slots.cap_reviewer_park(
+            state, _decision_review_classify(state), _llm_review_classify
+        )
+    return _llm_review_classify(state)
+
+
+def _llm_review_classify(state: DocumentState) -> dict[str, Any]:
+    """The chat (LLM) sorter reviewer branch of ``review_classify_node``."""
     from agents.sorter_reviewer import SorterReviewerAgent
     from llm.retry import is_transient_error
     from pipeline.config import get_sorter_label_set
@@ -1965,6 +1994,12 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
 
     guard, confidence = apply_extraction_guard(doc_type, result, confidence, attempts=attempts)
 
+    # Decision slot closed_field_resolver (baseline by default): off-list closed labels are
+    # resolved or suggested before conflict detection and the gate see the extraction.
+    from graph import decision_slots
+
+    result, slot_updates = decision_slots.resolve_closed_fields(state, doc_type, result, attempts)
+
     # Deterministic conflict detection against archived matter records: a
     # materially different value for the same schema field (governing law,
     # parties, effective date, amounts) is escalated to the Boss for
@@ -1990,7 +2025,9 @@ def extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
-    gate = _review_extraction(state, doc_type, result)
+    if slot_updates:
+        result_dict.update(slot_updates)
+    gate = _review_extraction(state, doc_type, result, attempts)
     if gate is not None:
         result_dict["extraction_gate"] = gate
     # #254: every attempt is recorded, whether or not the best one is later kept.
@@ -2207,6 +2244,10 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
 
     guard, confidence = apply_extraction_guard(doc_type, result, confidence, attempts=attempts)
 
+    from graph import decision_slots
+
+    # The closed-field resolver runs before conflict detection, as in extract_node.
+    result, slot_updates = decision_slots.resolve_closed_fields(state, doc_type, result, attempts)
     conflict_detected, conflict_details = _detect_conflict(state, result)
 
     logger.info(
@@ -2229,7 +2270,9 @@ def retry_extract_node(state: DocumentState) -> dict[str, Any]:
         else state.get("escalation_reason"),
         "transient_error": False,
     }
-    gate = _review_extraction(state, doc_type, result)
+    if slot_updates:
+        updates.update(slot_updates)
+    gate = _review_extraction(state, doc_type, result, attempts)
     if gate is not None:
         updates["extraction_gate"] = gate
     updates["extraction_attempt_history"] = attempt_history.record_attempt(
@@ -2249,7 +2292,59 @@ def _clean_fields_for_judge(extracted: dict | None) -> dict:
     }
 
 
+def _judge_failed_windows(verdict: Mapping[str, Any] | None) -> list[int]:
+    """1-based windows of one judge pass whose output did not parse (``[]`` when none or no pass)."""
+    coverage = (verdict or {}).get("coverage") or {}
+    return [int(i) for i in coverage.get("failed_windows") or []]
+
+
+def _judge_coverage(result: Mapping[str, Any], accuracy: Mapping[str, Any] | None) -> dict[str, Any]:
+    """What the judge read on this document: windows total and checked, calls and tokens.
+
+    ``windows_checked`` is the fewest windows any pass that ran checked, so a document counts
+    as covered only when every pass read every window. A judge that reports no coverage
+    (an older or substitute judge) is recorded as having checked nothing.
+    """
+    passes = [p.get("coverage") for p in (result, accuracy) if p is not None]
+    passes = [c for c in passes if isinstance(c, Mapping)]
+    if not passes or len(passes) < (2 if accuracy is not None else 1):
+        return {"windows_total": 0, "windows_checked": 0, "calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+    return {
+        "windows_total": max(int(c.get("windows_total") or 0) for c in passes),
+        "windows_checked": min(int(c.get("windows_checked") or 0) for c in passes),
+        "calls": sum(int(c.get("calls") or 0) for c in passes),
+        "prompt_tokens": sum(int(c.get("prompt_tokens") or 0) for c in passes),
+        "completion_tokens": sum(int(c.get("completion_tokens") or 0) for c in passes),
+    }
+
+
 def judge_verify_node(state: DocumentState) -> dict[str, Any]:
+    """In-pipeline completeness judge; see ``_judge_verify``.
+
+    Window results kept for a node retry (``agents.source_windows``) are dropped as soon as
+    the node returns anything but a transient error.
+    """
+    from agents.source_windows import forget_document, resume_cache
+    from graph import decision_slots
+
+    # Decision slot judge_replacement (baseline by default): the gate's per-field answer on
+    # this attempt is the verdict, and no LLM judge runs. Without one the LLM judge runs.
+    extra: dict[str, Any] = {}
+    if judge_should_run(state):
+        replaced, extra = decision_slots.gate_judge_update(state)
+        if replaced is not None:
+            return replaced
+    scope = str(state.get("doc_id") or "")
+    with resume_cache(scope):
+        update = _judge_verify(state)
+    if not update.get("transient_error"):
+        forget_document(str(state.get("doc_text") or ""), scope)
+        if extra:
+            update = {**update, **extra}
+    return update
+
+
+def _judge_verify(state: DocumentState) -> dict[str, Any]:
     """KANBAN-063 (Lane B): in-pipeline completeness judge.
 
     Reuses the offline-battle-tested ``CompletenessJudge`` rubric against the
@@ -2257,7 +2352,7 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
     `partial`/`incomplete` go to the arbiter, hard failure escalates
     fail-safe). Gated by `_judge_gate` — most documents never see this call.
     """
-    from agents.judge import JUDGE_SOURCE_CHARS, CompletenessJudge
+    from agents.judge import CompletenessJudge
     from llm.retry import is_transient_error
 
     if not judge_should_run(state):
@@ -2277,9 +2372,10 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
             doc_type=doc_type, extracted=extracted, doc_text=doc_text
         )
         # Completeness says nothing about accuracy: a complete verdict must also
-        # hold up against the source before it counts.
+        # hold up against the source before it counts. A window whose verdict did not
+        # parse is not a verdict (below), so it skips this pass too.
         accuracy = None
-        if result.get("completeness_label") == "complete":
+        if result.get("completeness_label") == "complete" and not _judge_failed_windows(result):
             accuracy = judge.judge_extraction_correctness(
                 doc_type=doc_type, extracted=extracted, doc_text=doc_text
             )
@@ -2307,6 +2403,26 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
             "transient_error": False,
         }
 
+    coverage = _judge_coverage(result, accuracy)
+    failed = _judge_failed_windows(result) + _judge_failed_windows(accuracy)
+    if failed:
+        # A window whose verdict did not parse was never judged. Its placeholder
+        # "incomplete" is not evidence about the extraction, and a retry would not
+        # change it, so the document is not archivable: fail closed to a person (#277).
+        logger.error(
+            "judge_window_unchecked",
+            doc_id=state.get("doc_id"),
+            failed_windows=failed,
+            windows_total=coverage["windows_total"],
+        )
+        return {
+            "judge_verdict": "judge_error",
+            "judge_coverage": coverage,
+            "escalation_reason": "judge could not check every part of the document "
+            f"(window {', '.join(str(i) for i in failed)} of {coverage['windows_total']} "
+            "returned no usable verdict) — routing to human review",
+            "transient_error": False,
+        }
     label = result.get("completeness_label", "incomplete")
     score = float(result.get("completeness", 0.0))
     findings = [str(result.get("reasoning", ""))] if result.get("reasoning") else []
@@ -2318,13 +2434,22 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
             findings.append(str(accuracy["reasoning"]))
         if accuracy_label != "accurate":
             label = "partial" if accuracy_label == "partial" else "incomplete"
-        # A judge that saw only part of the document cannot vouch for all of it.
-        source_verified = label == "complete" and len(doc_text) <= JUDGE_SOURCE_CHARS
+        # The judge vouches for the document only when every window of it was checked,
+        # in both passes, and came back clean. Coverage a judge did not report is none.
+        source_verified = (
+            label == "complete"
+            and coverage["windows_total"] > 0
+            and coverage["windows_checked"] == coverage["windows_total"]
+        )
     logger.info(
         "judge_verified",
         doc_id=state.get("doc_id"),
         label=label,
         score=score,
+        windows_checked=coverage["windows_checked"],
+        windows_total=coverage["windows_total"],
+        prompt_tokens=coverage["prompt_tokens"],
+        completion_tokens=coverage["completion_tokens"],
     )
     try:
         from observability.scores import emit_in_pipeline_judge_scores
@@ -2344,12 +2469,14 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
         "judge_score": score,
         "judge_findings": findings,
         "judge_source_verified": source_verified,
+        "judge_coverage": coverage,
         "judge_pass_count": int(state.get("judge_pass_count") or 0) + 1,
         "transient_error": False,
     }
     # #254: the verdict belongs to the attempt just judged (the latest).
     history = attempt_history.record_verdict(
-        state, verdict=label, score=score, findings=findings, source_verified=source_verified
+        state, verdict=label, score=score, findings=findings, source_verified=source_verified,
+        coverage=coverage,
     )
     if history is not None:
         verdict_update[attempt_history.HISTORY_KEY] = history
@@ -2357,6 +2484,18 @@ def judge_verify_node(state: DocumentState) -> dict[str, Any]:
 
 
 def arbiter_node(state: DocumentState) -> dict[str, Any]:
+    """Lane B arbitration; see ``_arbiter``. Drops the retry resume cache once the node is done."""
+    from agents.source_windows import forget_document, resume_cache
+
+    scope = str(state.get("doc_id") or "")
+    with resume_cache(scope):
+        update = _arbiter(state)
+    if not update.get("transient_error"):
+        forget_document(str(state.get("doc_text") or ""), scope)
+    return update
+
+
+def _arbiter(state: DocumentState) -> dict[str, Any]:
     """KANBAN-063 (Lane B): arbitration on a failed judge verdict.
 
     Bounded decisions only (accept_with_caveats / retry with fix-list up to
@@ -2409,6 +2548,7 @@ def arbiter_node(state: DocumentState) -> dict[str, Any]:
         "arbiter_decision": decision,
         "arbiter_reasoning": reasoning,
         "arbiter_handoff": handoff_summary,
+        "arbiter_coverage": result.get("coverage") if isinstance(result.get("coverage"), dict) else None,
         "transient_error": False,
     }
     if decision == "retry_extraction":
@@ -2710,6 +2850,13 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
     logger.info("human_review_required", doc_id=doc_id, reason=esc_reason)
 
     causes = collect_review_causes(state)
+    # #217: trace-driven views read why a document went to review from the trace metadata.
+    try:
+        from observability import tracing
+
+        tracing.set_trace_metadata({"review_causes": list(causes)})
+    except Exception:
+        logger.warning("review_causes_trace_metadata_failed", doc_id=doc_id, exc_info=True)
     cause_line = format_causes(causes)
     if cause_line:
         if esc_reason and cause_line not in str(esc_reason):
@@ -2727,6 +2874,8 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
         "_review": {
             **_review_evidence_fields(state, causes),
             **({"review_entered_at": entered_at.isoformat()} if entered_at else {}),
+            # Decision slot field_review (baseline by default): the few fields to check.
+            **({"review_focus": focus} if (focus := _review_focus(state)) else {}),
         },
     }
     if file_path_str:
@@ -2878,6 +3027,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             "conflict_detected": False,
             "conflict_details": [],
             "boss_conflict_fingerprint": None,
+            "boss_context_records": None,
             "file_path": str(dest) if dest is not None else file_path_str,
             "checkpoint_thread_id": thread_id or None,
             "transient_error": False,
@@ -2910,6 +3060,7 @@ def human_review_node(state: DocumentState) -> dict[str, Any]:
             "conflict_detected": False,
             "conflict_details": [],
             "boss_conflict_fingerprint": None,
+            "boss_context_records": None,
             "file_path": str(dest) if dest is not None else file_path_str,
             "checkpoint_thread_id": thread_id or None,
             "transient_error": False,
@@ -3140,6 +3291,8 @@ def boss_escalation_node(state: DocumentState) -> dict[str, Any]:
         # Bind the ruling to the conflict it ruled on: routing treats a later
         # conflict as adjudicated only when its fingerprint matches this one.
         "boss_conflict_fingerprint": conflict_fingerprint(state.get("conflict_details")),
+        # routing.after_boss parks an approval made without any matter record.
+        "boss_context_records": len(matter_context),
         "transient_error": False,
     }
     # A-1: Boss adjudication is part of the compliance record ("who decided
@@ -3284,6 +3437,9 @@ def _lane_b_manifest_fields(state: Mapping[str, Any] | dict) -> dict[str, Any]:
         "judge_verdict": state.get("judge_verdict"),
         "judge_score": state.get("judge_score"),
         "judge_findings": list(findings) if findings else None,
+        "judge_coverage": state.get("judge_coverage") or None,
+        "arbiter_coverage": state.get("arbiter_coverage") or None,
+        "classification_arbiter_coverage": state.get("classification_arbiter_coverage") or None,
     }
 
 
@@ -3306,6 +3462,17 @@ def _reviewer_cause_tokens() -> frozenset[str]:
             REVIEWER_LOW_CONFIDENCE,
         }
     )
+
+
+def _review_focus(state: Mapping[str, Any]) -> list[dict[str, Any]] | None:
+    """``decision_slots.review_focus``, never raising into the review park."""
+    from graph import decision_slots
+
+    try:
+        return decision_slots.review_focus(state)
+    except Exception:  # noqa: BLE001 - an annotation must not stop a park
+        logger.warning("review_focus_failed", doc_id=state.get("doc_id"), exc_info=True)
+        return None
 
 
 def _review_evidence_fields(
@@ -3657,8 +3824,8 @@ def _resolved_models(state: dict) -> str:
 
 
 def _prompt_versions(state: dict) -> str:
-    """Prompt versions bound during the run (best-effort; Langfuse-managed
-    prompts link generations; vendored agents use their versioned prompts)."""
+    """Prompt versions bound during the run (best-effort; under the Langfuse
+    opt-in managed prompts link generations; vendored agents use their versioned prompts)."""
     try:
         from llm.prompts import _bound_prompt_versions
 
@@ -3741,8 +3908,15 @@ def build_graph(checkpointer=None):
     slots = decision_points.prepare_slots()
     decision_points.install_rules(slots)
 
+    # Decision-model slots (taxonomy ``decision_slots:``, every slot baseline by default):
+    # validated now; with every slot baseline no node is wrapped and no rule registered.
+    from graph import decision_slots
+
+    slot_cfg = decision_slots.get_slots()
+    decision_slots.install_rules(slot_cfg)
+
     def _dp(node: str, fn):
-        return decision_points.wrap_node(node, fn, slots)
+        return decision_slots.wrap_node(node, decision_points.wrap_node(node, fn, slots), slot_cfg)
 
     workflow = StateGraph(DocumentState)
 
@@ -3765,7 +3939,7 @@ def build_graph(checkpointer=None):
         "classification_arbiter",
         traced_node("arbitrate-classification")(_bounded(_dp("classification_arbiter", classification_arbiter_node))),
     )
-    workflow.add_node("human_review", traced_node("route-for-review")(_bounded(decision_points.wrap_human_review(human_review_node, slots))))
+    workflow.add_node("human_review", traced_node("route-for-review")(_bounded(decision_slots.wrap_human_review(decision_points.wrap_human_review(human_review_node, slots), slot_cfg))))
     workflow.add_node("boss_escalation", traced_node("adjudicate-conflict")(_bounded(_dp("boss_escalation", boss_escalation_node))))
     workflow.add_node("compile_report", traced_node("compile-report")(_bounded(_dp("compile_report", compile_report_node))))
     workflow.add_node("catalog_write", traced_node("write-catalog")(_bounded(catalog_write_node)))
@@ -3778,6 +3952,13 @@ def build_graph(checkpointer=None):
     from graph.scoring_nodes import add_scoring_nodes
 
     add_scoring_nodes(workflow, wrap=lambda span, fn: traced_node(span)(_bounded(fn)))
+
+    # Fail at runtime graph construction if a decorator drifts from the
+    # provider-neutral contract; export checks use the same assertion.
+    from graph.contract import node_row
+
+    for node_id, spec in workflow.nodes.items():
+        node_row(node_id, getattr(spec.runnable, "func", spec.runnable))
 
     # Edge topology is declared once, in graph/route_spec.py (ROUTE_SPECS / PLAIN_EDGES):
     # validated against the nodes above, then wired. Routers keep their names and logic.
@@ -4342,6 +4523,20 @@ def _execute_run(
 
     oracle_routing = oracle_routing_enabled()
     trace_metadata["oracle_routing"] = oracle_routing
+    # A/B arms of the confidence thresholds (MAILROOM_CONFIDENCE_PROFILE) must be
+    # told apart in the traces; an unknown profile name fails the run here.
+    from pipeline.config import confidence_profile_name
+
+    trace_metadata["confidence_profile"] = confidence_profile_name()
+    # Active prompt set (llm/prompt_sets/catalog.yaml), so an A/B result set says
+    # which prompts produced it.
+    from llm.prompt_sets import active_prompt_set, prompt_ids
+
+    from llm.prompts import prompt_source
+
+    trace_metadata["prompt_set"] = active_prompt_set()
+    trace_metadata["prompt_source"] = prompt_source()
+    trace_metadata["prompt_ids"] = prompt_ids()
     if oracle_routing and ground_truth:
         _warn_oracle_routing_once(run_id)
     public_gt = _public_ground_truth(ground_truth)
@@ -4626,6 +4821,7 @@ def run_pipeline(
         "retry_count": 0,
         "conflict_detected": False,
         "boss_conflict_fingerprint": None,
+        "boss_context_records": None,
         "file_path": str(file_path),
         "doc_text": "",
         "doc_pages": [],
@@ -4933,6 +5129,7 @@ def _run_human_applied_stateless(manifest, review_file: Path, payload: dict) -> 
         "retry_count": 0,
         "conflict_detected": False,
         "boss_conflict_fingerprint": None,
+        "boss_context_records": None,
         "file_path": str(review_file),
         "doc_text": "",
         "doc_pages": [],
@@ -5060,6 +5257,7 @@ def resume_from_review(
         "retry_count": 0,
         "conflict_detected": False,
         "boss_conflict_fingerprint": None,
+        "boss_context_records": None,
         "file_path": str(queued),
         "doc_text": doc_text,
         "doc_pages": doc_pages,

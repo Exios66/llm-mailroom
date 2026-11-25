@@ -98,8 +98,8 @@ def test_real_field_audit_emission_uses_canonical_support(monkeypatch):
     from observability import scores
     from observability.langfuse_field_scoring import score_and_log_extraction
     emitted=[]
-    monkeypatch.setattr(scores,'is_enabled',lambda:True)
-    monkeypatch.setattr(scores,'create_trace_score',lambda **kw:emitted.append(kw))
+    monkeypatch.setenv('OBSERVABILITY_PROVIDER','none')
+    monkeypatch.setattr(scores,'score_trace',lambda **kw:emitted.append(kw))
     result,seen = _calls(score_and_log_extraction,'trace','correspondence',
         {'sender':'name','subject_matter':'free_text'},
         {'sender':'Alice','subject_matter':'UNSUPPORTED'},

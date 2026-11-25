@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { fetchAuditDocument, fetchAuditDocuments } from "../api";
+import { failureKeys, limitFailures } from "../auditFailures";
 import type { AuditAddendum, AuditAttempt, AuditDocumentDetail, AuditDocumentList, AuditEntry } from "../types";
 
 interface AuditPanelProps {
@@ -81,6 +82,8 @@ function RecordView({ detail }: { detail: AuditDocumentDetail }) {
   const hasRow = record.state === "unified-row";
   const rowAttempts = record.attempts ?? [];
   const truncated = verification.truncated || detail.legacy.truncated;
+  const failureRows = limitFailures(verification.failures);
+  const failureKeyList = failureKeys(failureRows.visible);
 
   return (
     <div className="audit-record">
@@ -92,7 +95,7 @@ function RecordView({ detail }: { detail: AuditDocumentDetail }) {
         <dt>Schema</dt><dd>{detail.store?.schema ?? "—"}</dd>
         <dt>Record</dt><dd>{record.state}{record.status ? ` · ${record.status}` : ""}</dd>
         <dt>Checked</dt><dd>main {verification.checked.main} · attempts {verification.checked.attempts} · addenda {verification.checked.addenda} · legacy {verification.checked.legacy}</dd>
-        <dt>Failures</dt><dd>{verification.failures.length}{verification.failures.length ? ` · ${verification.failures.map((failure) => [failure.scope, failure.reason].filter(Boolean).join(": ")).join(", ")}` : ""}</dd>
+        <dt>Failures</dt><dd>{verification.failures.length}{failureRows.visible.length ? <ul className="audit-failures" aria-label="Verification failures">{failureRows.visible.map((failure, index) => <li key={failureKeyList[index]} data-failure-id={failureKeyList[index]}>{[failure.scope, failure.reason].filter(Boolean).join(": ")}{failure.id ? ` · ${failure.id}` : ""}</li>)}{failureRows.hidden ? <li className="muted">{failureRows.hidden} more {failureRows.hidden === 1 ? "failure" : "failures"} not shown</li> : null}</ul> : null}</dd>
       </dl>
       <p className="muted audit-limits">Read limits: {Object.entries(detail.limits).map(([key, value]) => `${key} ${value}`).join(" · ") || "not reported"}</p>
       {truncated ? <p className="audit-warning" role="alert">This bounded audit read was truncated. Verification is not complete.</p> : null}

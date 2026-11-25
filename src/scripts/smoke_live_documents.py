@@ -242,14 +242,18 @@ def _run_one(
 def _checks(row: dict[str, Any], result: dict[str, Any], journal: dict[str, Any]) -> dict[str, Any]:
     sequence = journal.get("node_sequence") or []
     stage = result.get("stage")
-    expected_stage = row["expected_stage"]
+    from pipeline.config import policy_expected_stage
+
+    # A class with `auto_archive: false` is right to park for a person.
+    expected_stage = policy_expected_stage(row["expected_doc_class"], row["expected_stage"])
     terminal = sequence[-1] if sequence else ""
     checks = {
         "class_ok": result.get("doc_type") == row["expected_doc_class"],
         "stage_ok": stage == expected_stage,
         "intake_first": bool(sequence) and sequence[0] == "intake",
         "classify_present": "classify" in sequence,
-        "extract_present": "extract" in sequence if expected_stage == "archived" else True,
+        # A policy park still extracts and reports, so judge by the ground-truth stage.
+        "extract_present": "extract" in sequence if row["expected_stage"] == "archived" else True,
         "terminal_node_ok": (
             terminal == "archive"
             if stage == "archived"

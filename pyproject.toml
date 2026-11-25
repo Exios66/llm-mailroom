@@ -148,11 +148,12 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["agents*", "audit*", "dojo_source*", "langchain_agents*", "graph*", "llm*", "schemas*", "pipeline*", "storage*", "api*", "observability*", "config"]
+include = ["agents*", "audit*", "dojo_source*", "langchain_agents*", "graph*", "llm*", "mailroom_contract*", "schemas*", "pipeline*", "storage*", "api*", "observability*", "config"]
 namespaces = true
 
 [tool.setuptools.package-data]
 "llm.frozen_v1" = ["lineage.json", "README.md"]
+"llm.prompt_sets" = ["catalog.yaml", "*/*.txt"]
 "config" = ["taxonomy.yaml"]
 
 [tool.pytest.ini_options]

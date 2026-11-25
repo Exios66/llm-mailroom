@@ -100,7 +100,8 @@ def test_union_output_is_exactly_the_pairwise_fold(mock_openai_client, monkeypat
         w = normalize_extraction(copy.deepcopy(w), agent.schema)
         expected = w if expected is None else _SpecialistBase._merge_extractions(expected, w)
     expected = finalize_chunked_merge(
-        expected, agent_name="contracts_specialist", n_chunks=3, failed=0
+        expected, agent_name="contracts_specialist", n_chunks=3, failed=0,
+        window_confidences=[0.8, 0.6, 0.9],  # #255: each window's own confidence
     )
     assert _run(agent) == expected
 
@@ -459,6 +460,29 @@ def test_fields_default_when_unset_or_malformed(monkeypatch):
     assert chunk_merge_settings("contracts_specialist").fields == frozenset(_DEFAULT_EVIDENCE_FIELDS)
     _config(monkeypatch, policy="evidence", min_windows=2, fields="cuad_clauses")  # not a list
     assert chunk_merge_settings("contracts_specialist").fields == frozenset(_DEFAULT_EVIDENCE_FIELDS)
+
+
+def test_unreadable_merge_config_falls_back_to_union_and_warns(monkeypatch):
+    """#275: a malformed ``chunking.merge`` keeps the union fallback but is no longer silent."""
+    import structlog
+
+    from langchain_agents.specialist_agents import (
+        _DEFAULT_EVIDENCE_FIELDS,
+        _DEFAULT_MERGE_MIN_WINDOWS,
+        chunk_merge_settings,
+    )
+
+    _config(monkeypatch, policy="evidence", by_agent=["contracts_specialist"])  # a list, not a mapping
+    with structlog.testing.capture_logs() as logs:
+        settings = chunk_merge_settings("contracts_specialist")
+    assert settings.policy == "union"
+    assert settings.min_windows == _DEFAULT_MERGE_MIN_WINDOWS
+    assert settings.fields == frozenset(_DEFAULT_EVIDENCE_FIELDS)
+    events = [e for e in logs if e["event"] == "chunk_merge_config_unreadable"]
+    assert len(events) == 1
+    assert events[0]["agent"] == "contracts_specialist"
+    assert events[0]["error_type"] == "AttributeError"
+    assert events[0]["log_level"] == "warning"
 
 
 def test_default_taxonomy_fields_are_claim_lists_only():

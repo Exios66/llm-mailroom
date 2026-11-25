@@ -63,13 +63,15 @@ The current design has two happy-path LLM generations: classification and extrac
 
 ### Current class-specific thresholds
 
-| Class              | High |  Low | Judge-band high |
-| ------------------ | ---: | ---: | --------------: |
-| `contract`         | 0.98 | 0.90 |            0.97 |
-| `merger_agreement` | 0.98 | 0.90 |            0.97 |
-| `insurance_claim`  | 0.98 | 0.90 |            0.97 |
-| `corporate_record` | 0.96 | 0.86 |            0.94 |
-| `correspondence`   | 0.95 | 0.85 |            0.92 |
+Profile `calibrated_v1` (2026-11-17; `MAILROOM_CONFIDENCE_PROFILE=legacy_v0` restores the previous values for A/B). Evidence: `docs/reports/evaluations/2026-11-17-confidence-calibration.md`.
+
+| Class              | High |  Low | Judge-band high | Notes |
+| ------------------ | ---: | ---: | --------------: | :---- |
+| `contract`         | 0.98 | 0.90 |            0.97 | |
+| `merger_agreement` | 0.98 | 0.90 |            0.90 | empty judge band; `arbiter_retry_max` 1, `judge_max_passes` 2; `auto_archive: false` (every merger goes to a person) |
+| `insurance_claim`  | 0.95 | 0.90 |            0.97 | |
+| `corporate_record` | 0.95 | 0.86 |            0.94 | |
+| `correspondence`   | 0.95 | 0.85 |            0.92 | |
 
 These values live in `src/config/taxonomy.yaml`; operators should change configuration rather than embed routing constants in code. fileciteturn9file0L2-L6
 

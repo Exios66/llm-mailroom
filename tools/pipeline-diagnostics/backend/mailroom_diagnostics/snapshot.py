@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from . import __version__
 from .provenance import workspace_hashes
 from .models import (
-    SUPPORTED_CONTRACT_MAJOR,
+    SUPPORTED_CONTRACT_MAJORS,
     DiagnosticsError,
     GraphPayload,
     Provenance,
@@ -129,11 +129,11 @@ def _require_supported(version: str) -> None:
         raise DiagnosticsError(
             "unsupported-version", f"contract_version {version!r} is not a version"
         ) from None
-    if major != SUPPORTED_CONTRACT_MAJOR:
+    if major not in SUPPORTED_CONTRACT_MAJORS:
         raise DiagnosticsError(
             "unsupported-version",
             f"contract_version {version!r} is unsupported; this tool reads "
-            f"{SUPPORTED_CONTRACT_MAJOR}.x",
+            "1.x or 2.x",
         )
 
 
@@ -211,9 +211,9 @@ def _git(repo: Path, *args: str) -> str | None:
 
 
 def _workspace_thresholds() -> Thresholds:
-    from pipeline.config import load_config
+    from pipeline.config import confidence_block
 
-    block = load_config().get("confidence", {})
+    block = confidence_block()  # the profile in force (MAILROOM_CONFIDENCE_PROFILE)
     if not isinstance(block, dict):
         raise DiagnosticsError("invalid-schema", "taxonomy confidence block must be an object")
     return Thresholds.from_confidence(block)

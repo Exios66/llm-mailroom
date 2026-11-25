@@ -423,6 +423,10 @@ def main() -> int:
             # escalate every document after the first to the Boss).
             matter_id = f"VALIDATION-{doc.stem[:40]}"
             expected_cls, expected_subtype, expected_stage = _expectation_for(doc, manifest)
+            from pipeline.config import policy_expected_stage
+
+            if expected_cls is not None:  # `auto_archive: false` classes park by design
+                expected_stage = policy_expected_stage(expected_cls, expected_stage)
             fake_holder[0] = _HintedEvalLangChainLLM(doc.name)
             try:
                 result = run_pipeline(target, matter_id)

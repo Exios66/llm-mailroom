@@ -106,6 +106,28 @@ def oracle_routing():
         yield
 
 
+# The archive checks taxonomy ``confidence`` ships off (graph/routing.py): a judge ``complete``,
+# an arbiter ``accept_with_caveats`` and a judge that saw the whole source all archive again.
+LEGACY_APPROVAL_ROUTE = {
+    "judge_complete_archives": True,
+    "arbiter_accept_archives": True,
+    "judge_clears_low_confidence": True,
+}
+
+
+@pytest.fixture
+def approvals_archive(monkeypatch):
+    """Route as before the archive checks, for tests of a mechanism that sits behind an approval."""
+    import copy
+
+    import pipeline.config as config
+
+    cfg = copy.deepcopy(config.load_config())
+    cfg.setdefault("confidence", {}).update(LEGACY_APPROVAL_ROUTE)
+    monkeypatch.setattr(config, "load_config", lambda: cfg)
+    return cfg
+
+
 @pytest.fixture
 def temp_base_dir():
     previous_base_dir = os.environ.get("MAILROOM_BASE_DIR")

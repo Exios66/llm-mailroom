@@ -44,7 +44,7 @@ def _approved_retry_run(env: dict) -> dict:
     )
 
 
-def test_first_approved_retry_dispatches_not_escalates(lab_env) -> None:
+def test_first_approved_retry_dispatches_not_escalates(lab_env, approvals_archive) -> None:
     """The composed approve -> re-extract -> re-judge path actually runs."""
     r = _approved_retry_run(lab_env)
     final = r["final"]
@@ -62,7 +62,7 @@ def test_first_approved_retry_dispatches_not_escalates(lab_env) -> None:
     assert final.get("judge_verdict") == "complete", final.get("judge_verdict")
 
 
-def test_first_approved_retry_archives_clean(lab_env) -> None:
+def test_first_approved_retry_archives_clean(lab_env, approvals_archive) -> None:
     r = _approved_retry_run(lab_env)
     final = r["final"]
 

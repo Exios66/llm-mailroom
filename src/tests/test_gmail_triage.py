@@ -876,6 +876,34 @@ def test_watcher_triage_low_confidence_routes_to_review(temp_base_dir, mocker):
     assert len(parked) == 1
 
 
+def test_watcher_triage_policy_class_routes_to_review_not_archive(temp_base_dir, mocker):
+    """A class with `auto_archive: false` (merger_agreement) never archives on the free lane,
+    however confident the triage is."""
+    from pipeline.watcher import Watcher
+
+    inbox_file = _gmail_inbox_file(temp_base_dir, name="merger_policy.txt")
+
+    fake_agent = mocker.patch("agents.gmail_triage.GmailTriageAgent")
+    fake_agent.return_value.triage.return_value = {
+        "primary_doc_class": "merger_agreement",
+        "doc_subclass": None,
+        "confidence": 0.99,
+        "gist": "Agreement and plan of merger",
+        "keywords": ["merger"],
+    }
+    mocker.patch("pipeline.watcher._notify_intake_reaction")
+    mocker.patch("pipeline.gmail_intake.dispatch_intake_echo")
+    mocker.patch("pipeline.gmail_intake.triage_enabled", return_value=True)
+    spy = mocker.patch("pipeline.watcher.run_pipeline")
+
+    Watcher()._process_existing(inbox_file)
+
+    spy.assert_not_called()
+    manifest = _terminal_manifest(temp_base_dir, inbox_file.name)
+    assert manifest["stage"] == "review"
+    assert "class_requires_review" in (manifest["escalation_reason"] or "")
+
+
 def test_watcher_triage_low_confidence_review_audit_and_echo(temp_base_dir, mocker):
     """The review terminal writes a triage_reviewed audit entry and the echo
     dispatches with the REVIEW stage (so the sender gets why/next-steps)."""
@@ -1097,9 +1125,10 @@ def test_triage_lane_llm_failure_parks_in_review(temp_base_dir, mocker):
     ],
 )
 def test_triage_lane_accepts_all_doc_types(temp_base_dir, mocker, request, fixture_name, doc_class):
-    """The free triage team can process + accept EVERY canonical doc type —
-    contracts, merger agreements, insurance claims, corporate records,
-    and correspondences — as single-document Gmail inputs."""
+    """The free triage team can process EVERY canonical doc type — contracts, merger
+    agreements, insurance claims, corporate records and correspondences — as
+    single-document Gmail inputs. It accepts all but the classes the taxonomy marks
+    `auto_archive: false` (merger_agreement), which it parks for a person instead."""
     from pipeline.bins import inbox_dir, write_inbox_meta
     from pipeline.watcher import Watcher
 
@@ -1134,7 +1163,10 @@ def test_triage_lane_accepts_all_doc_types(temp_base_dir, mocker, request, fixtu
     fake_agent.return_value.triage.assert_called_once()
     spy.assert_not_called()  # the free lane handles it; the paid pipeline is untouched
     manifest = _terminal_manifest(temp_base_dir, name)
-    assert manifest is not None and manifest["stage"] == "archived"
+    from pipeline.config import class_auto_archives
+
+    expected_stage = "archived" if class_auto_archives(doc_class) else "review"
+    assert manifest is not None and manifest["stage"] == expected_stage
     assert manifest["doc_type"] == doc_class
     assert manifest["intake"]["triage"]["primary_doc_class"] == doc_class
     assert manifest["intake"]["route"] == "triage"

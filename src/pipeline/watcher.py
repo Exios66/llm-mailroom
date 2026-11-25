@@ -41,6 +41,7 @@ from .bins import (
     list_inbox_files,
     get_worker_id,
     claim_file,
+    processing_dir,
     is_ingestion_paused,
     list_stale_processing_files,
     reconcile_stale_processing_file,
@@ -88,6 +89,12 @@ def _finalize_claimed_on_error(
 # name because `claim_file` moves the file (path changes mid-run).
 _active_files: set[str] = set()
 _active_lock = threading.Lock()
+# Claimed paths (``processing/<worker>/<name>``) of the documents this process is running
+# (#219). Admission above is by inbox name: that is one claim path per watcher, because a
+# watcher owns a single worker directory. But stale-claim reconcile looks at paths in ANY
+# worker directory, so "is this path in flight" is answered here, by the claimed path, not by
+# comparing a file name with the inbox names being processed.
+_active_claims: set[str] = set()
 # Name a pool worker has already marked active on behalf of the handler it is
 # about to call (see ``_DispatchPool._admit``); consumed by ``_mark_active``.
 _admitted = threading.local()
@@ -128,13 +135,70 @@ def _set_claims_open(value: bool) -> None:
         _claims_open = value
 
 
+def _is_claim_in_flight(claimed: Path | str) -> bool:
+    """True when this process is running the document claimed at exactly ``claimed``."""
+    with _active_lock:
+        return str(claimed) in _active_claims
+
+
+def _release_claim(claimed: Path | str | None) -> None:
+    """The run on ``claimed`` ended (success, failure or abort): the path is no longer in flight."""
+    if claimed is None:
+        return
+    with _active_lock:
+        _active_claims.discard(str(claimed))
+
+
 def _claim_if_open(path: Path, worker_id: str) -> Path | None:
-    """Claim ``path`` unless the watcher is stopping; None leaves it in the inbox."""
+    """Claim ``path`` unless the watcher is stopping; None leaves it in the inbox.
+
+    The claimed path is registered as in flight before the gate is released, so reconcile
+    never sees a running document's claim as an orphan. Callers release it with
+    ``_release_claim`` when the run ends.
+    """
     with _claim_gate:
         if not _claims_open:
             logger.info("claim_skipped_watcher_stopping", file=str(path))
             return None
-        return claim_file(path, worker_id)
+        try:
+            claimed = claim_file(path, worker_id)
+        except FileExistsError:
+            claimed = _claim_over_orphan(path, worker_id)
+            if claimed is None:
+                return None
+        with _active_lock:
+            _active_claims.add(str(claimed))
+        return claimed
+
+
+def _claim_over_orphan(path: Path, worker_id: str) -> Path | None:
+    """The claim path of ``path`` is taken: a live claim defers it, an orphan is cleared.
+
+    Called under ``_claim_gate`` after ``claim_file`` found ``processing/<worker>/<name>``
+    occupied. If this process is running a document at that path, the new file waits in the
+    inbox (never run on top of a live claim). Otherwise the occupant is an orphan, since the
+    caller holds the in-flight name and no other process shares this worker directory: it is
+    retired or re-queued the way startup reconcile would (an identical copy is dropped, a
+    different document gets a ``--stale`` name in the inbox), and the claim is retried once.
+    """
+    occupant = processing_dir(worker_id) / path.name
+    if _is_claim_in_flight(occupant):
+        logger.info("claim_skipped_live_same_name", file=str(path), claim=str(occupant))
+        return None
+    try:
+        action, dest = reconcile_stale_processing_file(occupant)
+    except FileNotFoundError:
+        # The periodic reconcile moved the orphan first: the name is free, claim again.
+        logger.info("orphan_claim_already_reconciled", file=str(path), orphan=str(occupant))
+    else:
+        logger.warning(
+            "orphan_claim_reconciled_for_new_claim",
+            file=str(path),
+            orphan=str(occupant),
+            action=action,
+            dest=str(dest),
+        )
+    return claim_file(path, worker_id)
 
 # ---------------------------------------------------------------------------
 # Manifest index cache (HUB-043 / performance fix): O(1) lookup per inbox
@@ -1046,7 +1110,7 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
     #   * confidence < the taxonomy's `low` threshold for the doc class.
     # Review-parked manifests keep the best-effort extracted entities (HUB-049
     # fallback) so the reviewer sees what the team found.
-    from pipeline.config import get_confidence_thresholds
+    from pipeline.config import class_auto_archives, get_confidence_thresholds
 
     doc_class = triage.get("primary_doc_class") or "unknown"
     conf = triage.get("confidence")
@@ -1062,6 +1126,14 @@ def _run_triage_lane(claimed: Path, matter_id: str, intake_meta: dict) -> dict:
         escalation_reason = (
             f"triage_low_confidence {conf} < {review_low} — the free triage "
             "team was not certain enough; parked for human review"
+        )
+    elif not class_auto_archives(doc_class):
+        # Same policy as graph.routing.after_report: a class with `auto_archive: false`
+        # never archives model output unseen, including on this free lane.
+        terminal_stage = PipelineStage.REVIEW
+        escalation_reason = (
+            f"class_requires_review — {doc_class} never archives without a person "
+            "(auto_archive: false); parked for human review"
         )
     else:
         terminal_stage = PipelineStage.ARCHIVED
@@ -1323,6 +1395,7 @@ class InboxHandler(FileSystemEventHandler):
                 claimed, matter_id, "watcher pipeline exception", intake_meta=intake_meta or None
             )
         finally:
+            _release_claim(claimed)
             _unmark_active(path.name)
 
     def _infer_matter_id(self, path: Path) -> str:
@@ -1359,6 +1432,14 @@ class Watcher:
         from graph.decision_points import prepare_slots
 
         prepare_slots()
+        # And a malformed ``decision_slots:`` block (DecisionSlotConfigError).
+        from graph.decision_slots import get_slots
+
+        get_slots()
+        # An unknown MAILROOM_CONFIDENCE_PROFILE would fail every run: refuse to start.
+        from pipeline.config import confidence_profile_name
+
+        confidence_profile_name()
 
         inbox = inbox_dir()
         ensure_dirs(inbox)
@@ -1442,24 +1523,30 @@ class Watcher:
         Terminal manifests (archived/failed/review) retire the copy to
         failed/ so it cannot orphan in the inbox.
 
-        Never touches a document this process is running or has queued: those
-        are in flight by definition, however old their file mtime is.
+        Never touches a claim this process is running, however old its file mtime
+        is. That is decided by the claimed path (#219): the stale file is in some
+        worker directory, so a same-named inbox file in flight says nothing about it,
+        and a dead worker's orphan is reconciled even while a same-name document runs.
         """
         stale = list_stale_processing_files(stale_minutes=STALE_CLAIM_MINUTES)
         for f in stale:
-            if _is_in_flight(f.name):
-                logger.info("stale_claim_skipped_in_flight", file=str(f))
-                continue
-            try:
-                action, dest = reconcile_stale_processing_file(f)
-                logger.warning(
-                    "stale_claim_reconciled",
-                    file=str(f),
-                    action=action,
-                    dest=str(dest),
-                )
-            except Exception:
-                logger.exception("stale_claim_requeue_failed", file=str(f))
+            # A claimant also holds this gate while replacing a same-name orphan
+            # and registering the new path. Keep the inactive check and move in
+            # one critical section so the sweep cannot move that new live claim.
+            with _claim_gate:
+                if _is_claim_in_flight(f):
+                    logger.info("stale_claim_skipped_in_flight", file=str(f))
+                    continue
+                try:
+                    action, dest = reconcile_stale_processing_file(f)
+                    logger.warning(
+                        "stale_claim_reconciled",
+                        file=str(f),
+                        action=action,
+                        dest=str(dest),
+                    )
+                except Exception:
+                    logger.exception("stale_claim_requeue_failed", file=str(f))
 
     def _rescan_loop(self):
         import time as _time
@@ -1582,6 +1669,7 @@ class Watcher:
                 claimed, matter_id, "watcher existing-file exception", intake_meta=intake_meta or None
             )
         finally:
+            _release_claim(claimed)
             _unmark_active(path.name)
 
 

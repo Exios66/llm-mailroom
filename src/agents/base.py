@@ -2,11 +2,25 @@ import json
 import structlog
 from abc import ABC, abstractmethod
 
-from llm.client import get_llm, reasoning_extra_body
+from llm import client as _llm_client
+from llm.client import reasoning_extra_body
 from llm.retry import retry_chat_completion
 from observability.tracing import langfuse_call_attrs
 
 logger = structlog.get_logger(__name__)
+
+
+def get_llm(agent_name: str):
+    """``llm.client.get_llm``, looked up when an agent is built.
+
+    Kept as this module's own name so tests and the mock pilots can still patch
+    ``agents.base.get_llm``. It is a function, not ``from llm.client import get_llm``:
+    a name-bound import made while ``llm.client.get_llm`` was patched (the mock
+    pilots patch it just before ``agents.base.get_llm``, and that second patch can
+    be the first import of this module) captured the mock and kept it for the rest
+    of the process once the patches were undone.
+    """
+    return _llm_client.get_llm(agent_name)
 
 # Reasonable default so a single agent can never run away generating tokens
 # (qwen "flash" models emit heavy reasoning output). Per-agent caps live in
@@ -55,7 +69,8 @@ class BaseAgent(ABC):
 
     def __init__(self):
         self.client, self.model = get_llm(self.agent_name)
-        # Set by system_prompt() when a Langfuse-managed prompt is active;
+        # Set by system_prompt() when a Langfuse-managed prompt is active (only under
+        # MAILROOM_PROMPT_SOURCE=langfuse; None for the default repo source);
         # passed to the LLM call as `langfuse_prompt=` so generations link to
         # the exact prompt version used.
         self._langfuse_prompt = None
@@ -305,6 +320,7 @@ class BaseAgent(ABC):
             _SpecialistBase,
             finalize_chunked_merge,
             merge_chunk_windows,
+            window_confidence,
         )
         from llm.retry import is_transient_error
 
@@ -317,6 +333,7 @@ class BaseAgent(ABC):
                 doc_text, pages=pages, handoff_context=handoff_context
             )
         windows: list[tuple[dict, str | None]] = []
+        window_confidences: list[float | None] = []
         failed = 0
         for index, chunk in enumerate(chunks, start=1):
             header = (
@@ -335,6 +352,7 @@ class BaseAgent(ABC):
                 if is_transient_error(exc):
                     raise
                 failed += 1
+                window_confidences.append(None)
                 logger.warning(
                     "chunk_call_failed",
                     agent=self.agent_name,
@@ -345,7 +363,9 @@ class BaseAgent(ABC):
                 continue
             if result.get("_parse_error"):
                 failed += 1
+                window_confidences.append(None)
                 continue
+            window_confidences.append(window_confidence(result))
             windows.append((result, chunk))
         # Merge policy (taxonomy ``chunking.merge``): ``union`` (default) or ``evidence``.
         merged = merge_chunk_windows(windows, agent_name=self.agent_name)
@@ -359,9 +379,14 @@ class BaseAgent(ABC):
                 "confidence": 0.0,
                 "_n_chunks": len(chunks),
                 "_failed_chunks": failed,
+                "_chunk_confidences": window_confidences,
             }
         return finalize_chunked_merge(
-            merged, agent_name=self.agent_name, n_chunks=len(chunks), failed=failed
+            merged,
+            agent_name=self.agent_name,
+            n_chunks=len(chunks),
+            failed=failed,
+            window_confidences=window_confidences,
         )
 
 

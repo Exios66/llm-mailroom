@@ -438,7 +438,7 @@ def _manifest(run_graph, final):
 FULL_PATH = ["intake", "classify", "extract", "judge_verify", "arbiter", "retry_extract", "judge_verify", "arbiter", "compile_report", "score_common", "score_contract", "catalog_write", "archive"]
 
 
-def test_knob_on_archives_the_better_judged_first_attempt(run_graph):
+def test_knob_on_archives_the_better_judged_first_attempt(run_graph, approvals_archive):
     order, final = run_graph(keep_best=True, second_label="incomplete")
     assert order == FULL_PATH
     assert final["selected_attempt"] == 1
@@ -456,7 +456,7 @@ def test_knob_on_archives_the_better_judged_first_attempt(run_graph):
     assert manifest["judge_verdict"] == "partial"
 
 
-def test_knob_off_keeps_the_last_attempt_and_still_records_the_history(run_graph):
+def test_knob_off_keeps_the_last_attempt_and_still_records_the_history(run_graph, approvals_archive):
     order, final = run_graph(keep_best=False, second_label="incomplete")
     assert order == FULL_PATH
     assert final["selected_attempt"] == 2
@@ -470,13 +470,13 @@ def test_knob_off_keeps_the_last_attempt_and_still_records_the_history(run_graph
     assert [h["attempt_no"] for h in manifest["extraction_attempt_history"]] == [1, 2]
 
 
-def test_knob_on_with_a_tie_keeps_the_latest_attempt(run_graph):
+def test_knob_on_with_a_tie_keeps_the_latest_attempt(run_graph, approvals_archive):
     _, final = run_graph(keep_best=True, second_label="partial", second_score=0.6, second_conf=0.95)
     assert final["selected_attempt"] == 2
     assert final["extracted_data"]["governing_law"] == "New York"
 
 
-def test_knob_on_keeps_a_better_second_attempt(run_graph):
+def test_knob_on_keeps_a_better_second_attempt(run_graph, approvals_archive):
     _, final = run_graph(keep_best=True, second_label="complete", second_score=1.0)
     assert final["selected_attempt"] == 2
     assert final["extracted_data"]["governing_law"] == "New York"

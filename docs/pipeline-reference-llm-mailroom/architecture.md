@@ -51,19 +51,21 @@ flowchart TD
     EXTRACT -- "still low confidence" --> REVIEW
     EXTRACT -. "transient error, per-node budget left" .-> EXTRACT
     RETRY_EXTRACT -- "confidence >= low, judge gate off/skip" --> REPORT
+    RETRY_EXTRACT -- "judge doubted, no re-judge due (retry_unjudged)" --> REVIEW
     RETRY_EXTRACT -- "conflict detected" --> BOSS
     RETRY_EXTRACT -- "judge gate fires (ambiguous band)" --> JUDGE
     RETRY_EXTRACT -- "still failing, attempts <= retry_max" --> RETRY_EXTRACT
     RETRY_EXTRACT -- "retry budget spent" --> REVIEW
     RETRY_EXTRACT -. "transient error, per-node budget left" .-> RETRY_EXTRACT
 
-    JUDGE -- "complete or skipped" --> REPORT
+    JUDGE -- "skipped" --> REPORT
+    JUDGE -- "complete (judge_complete_archives false)" --> REVIEW
     JUDGE -- "partial / incomplete" --> ARBITER
-    ARBITER -- "verdict stands" --> REPORT
+    ARBITER -- "accept_with_caveats (arbiter_accept_archives false)" --> REVIEW
     ARBITER -- "re-extraction ordered" --> RETRY_EXTRACT
     ARBITER -- "unresolvable" --> REVIEW
-    BOSS -- "approved" --> REPORT
-    BOSS -- "review" --> REVIEW
+    BOSS -- "approved (grounded, not a doubted retry)" --> REPORT
+    BOSS -- "review, a blind approval (boss_ungrounded)<br/>or a doubted retry (retry_unjudged)" --> REVIEW
     REVIEW -- "approved (fresh extraction)" --> EXTRACT
     REVIEW -- "approve_as_is / correct (fields)" --> REPORT
     REVIEW -- "rejected" --> FAILED --> ENDX
@@ -109,7 +111,7 @@ flowchart LR
     subgraph LLM["LLM layer (llm/)"]
         CLI["get_llm() — provider-agnostic client"]
         RETRY["retry + max_tokens caps"]
-        PROMPTS["Langfuse-managed prompts<br/>mailroom-* (with local fallback)"]
+        PROMPTS["Repo prompt sets<br/>llm/prompt_sets (Langfuse override opt-in)"]
         P["OpenRouter / Ollama / vLLM / generic"]
     end
 
@@ -160,7 +162,7 @@ flowchart LR
 * Global provider override via `DEFAULT_PROVIDER` env var
 * Every chat completion goes through `retry_chat_completion` (`llm/retry.py`): transient failures (connection errors, timeouts, 429, 5xx) are retried with exponential backoff + jitter from the `llm_retry:` config; 4xx client errors are never retried
 * Output generation is capped per agent by `max_tokens` in `taxonomy.yaml` (bounds runaway reasoning-token output)
-* Agent system prompts are **Langfuse-managed** (`llm/prompts.py`, `mailroom-<agent_name>`), fetched at runtime with the identical template shipped in code as fallback; `scripts/sync_prompts.py` pushes templates up
+* Agent system prompts **ship in the repo** (`llm/prompt_sets/`, default `deploy_v1`) and are served as is; a Langfuse `mailroom-<agent_name>` `production` prompt overrides them only under the opt-in `MAILROOM_PROMPT_SOURCE=langfuse`; `scripts/sync_prompts.py` pushes templates up
 * Structured calls (`_call_structured`) always send `response_format={"type": "json_object"}` and guarantee the literal token `json` in the messages — some providers (Qwen via Alibaba) reject requests without it
 
 ### SQLite (`storage/db.py`, `storage/catalog.py`, `storage/audit_log.py`)
@@ -202,7 +204,7 @@ LLM call: reads document text, determines `doc_type` and confidence. Live extrac
 Conditional edge routing (`graph/routing.py`, thresholds from `confidence:` in `taxonomy.yaml`):
 
 * **Unknown / retired / empty `doc_type`**: human review immediately (never extract)
-* **Confidence >= `high` (0.97 global; per-class `by_class` overrides — e.g. contract/merger/insurance 0.98, correspondence 0.95)** on a live class: straight to extraction
+* **Confidence >= `high` (0.97 global; per-class `by_class` overrides, profile `calibrated_v1`: insurance, corporate and correspondence 0.95, contract and merger 0.98)** on a live class: straight to extraction
 * **Ground-truth class miss** (oracle routing only: pilot runs with labels **and** `routing.use_ground_truth` / `MAILROOM_ORACLE_ROUTING=1`; off by default, so a run that carries `ground_truth` for scoring routes like production, #207): Lane A (`review_classify`) even at high stated confidence
 * **`low` (0.88 global) <= Confidence < `high`**: `retry_classify` (while `attempts <= retry_max`), then Lane A (`review_classify`) if still medium
 * **Confidence < `low`**: retry (`retry_classify`) while `attempts <= retry_max`, then human review
@@ -221,6 +223,7 @@ Same three-way branch as classification, plus:
 * **Schema invalid**: retry (`retry_extract`) while `attempts <= retry_max` (2), then human review
 * **Low confidence**: retry → still low → human review
 * **High confidence**: proceed to report compilation (via `judge_verify` when the judge gate fires)
+* **Archive checks** (taxonomy `confidence`; the knobs default to `false`, which keeps the checks on): a judge `complete` and an arbiter `accept_with_caveats` go to a person instead of archiving (`judge_complete_archives`, `arbiter_accept_archives`), so does an arbiter-ordered retry of an extraction the judge doubted when no re-judge is due (`retry_unjudged`), a judge never clears an extraction below `low` (`judge_clears_low_confidence`), and a Boss approval made without any archived matter record (`boss_context_records` 0) parks with cause `boss_ungrounded`
 * `retry_extract` uses the same router: it can loop on itself (transient errors or another quality retry), or go to `judge_verify`, `boss_escalation`, `compile_report` or human review
 
 ### 6. Compile Report (Reporter)
@@ -284,19 +287,23 @@ extract ─┬─ unsupported / non-taxonomy type ─▶ human_review (no retry)
          └─ otherwise ─────────────────────────▶ human_review
 
 retry_extract ─┬─ transient (budget left) ──▶ retry_extract
+               ├─ a retry the judge doubted, no re-judge due ─▶ human_review (retry_unjudged; compile_report if judge_complete_archives)
                └─ otherwise: same branches as extract (incl. another retry_extract)
 
-judge_verify ─┬─ complete or skipped ────▶ compile_report
+judge_verify ─┬─ skipped ────────────────▶ compile_report
+              ├─ complete ───────────────▶ human_review (compile_report if judge_complete_archives)
               ├─ partial / incomplete ───▶ arbiter
               └─ hard failure ───────────▶ human_review
 
 arbiter ─┬─ transient (budget left) ─▶ arbiter
-         ├─ verdict stands ─────────▶ compile_report
+         ├─ accept_with_caveats ────▶ human_review (compile_report if arbiter_accept_archives)
          ├─ re-extraction ordered ──▶ retry_extract
          └─ unresolvable ───────────▶ human_review
 
 boss_escalation ─┬─ transient (budget left) ─▶ boss_escalation
                  ├─ approved ─▶ compile_report
+                 ├─ approved blind (0 matter records) ─▶ human_review (boss_ungrounded)
+                 ├─ approved a retry the judge doubted ─▶ human_review (retry_unjudged)
                  └─ review ───▶ human_review
 
 human_review ─┬─ interrupt() pause (file parked in review/)

@@ -176,10 +176,11 @@ def select_split(records: Sequence[RunRecord], split: str) -> tuple[list[RunReco
 
 
 def current_policy() -> dict[str, Any]:
-    """The ``confidence:`` block in force right now (taxonomy, or an active override)."""
+    """The ``confidence:`` block in force right now (the selected profile, or an active override)."""
     import pipeline.config as cfg
 
-    return copy.deepcopy(dict(cfg.load_config().get("confidence") or {}))
+    block = cfg.confidence_block()
+    return copy.deepcopy(block if isinstance(block, dict) else {})
 
 
 def merge_policy(base: Mapping[str, Any], overlay: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -240,9 +241,15 @@ def policy_override(policy: Mapping[str, Any] | None) -> Iterator[dict[str, Any]
 
     _load_config.cache_clear = lambda: None  # type: ignore[attr-defined]
     cfg.load_config = _load_config  # type: ignore[assignment]
+    # The candidate replaces the `confidence` block, so no named profile may shadow it.
+    import os
+
+    saved_profile = os.environ.pop(cfg.CONFIDENCE_PROFILE_ENV, None)
     try:
         yield effective
     finally:
+        if saved_profile is not None:
+            os.environ[cfg.CONFIDENCE_PROFILE_ENV] = saved_profile
         cfg.load_config = original  # type: ignore[assignment]
         cfg.clear_config_cache()
 
@@ -649,6 +656,9 @@ def _replay_walk(record: RunRecord, oracle: bool) -> ReplayOutcome:
     judge_passes = 0
     arbiter_retries = 0
     judge_verified = False  # judge_source_verified persists in state across attempts
+    # So do the last judge verdict and arbiter decision: a retry is routed with them until the
+    # judge runs again (``retry_unjudged`` reads both).
+    carried: dict[str, Any] = {}
     while True:
         att = _att(_for_class(record.extraction, cls), k)
         if att is None:
@@ -679,6 +689,7 @@ def _replay_walk(record: RunRecord, oracle: bool) -> ReplayOutcome:
             "judge_source_verified": judge_verified,
             "judge_pass_count": judge_passes,
             "arbiter_retry_count": arbiter_retries,
+            **carried,
             **w.gt(),
         }
         gated = routing.after_extraction_gated if k == 1 else routing.after_retry_extraction_gated
@@ -698,6 +709,7 @@ def _replay_walk(record: RunRecord, oracle: bool) -> ReplayOutcome:
                 judge_source_verified=judge_verified,
                 judge_pass_count=judge_passes,
             )
+            carried["judge_verdict"] = j.verdict
             dest = routing.after_judge(ex_state)
             if dest == "arbiter":
                 arb = _arbiter_for(record, k, cls)
@@ -707,6 +719,7 @@ def _replay_walk(record: RunRecord, oracle: bool) -> ReplayOutcome:
                 if arb.decision == "retry_extraction":
                     arbiter_retries += 1  # arbiter_node counts approvals, not rulings
                 ex_state.update(arbiter_decision=arb.decision, arbiter_retry_count=arbiter_retries)
+                carried["arbiter_decision"] = arb.decision
                 dest = routing.after_arbiter(ex_state)
                 if dest == "retry_extract":
                     k += 1

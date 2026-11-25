@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import math
 import os
 import re
 import sqlite3
@@ -64,6 +65,12 @@ MAX_FOREIGN_ATTEMPTS = 50
 MAX_ADDENDA = 200
 MAX_DECISION_FIELDS = 40
 MAX_FIELD_NAME = 64
+# Seconds a single statement waits on a locked or slow store (SQLite connect +
+# busy timeout, Postgres connect + statement timeout). It bounds each wait, not
+# the whole request: a lookup or listing issues several statements, and a slow
+# unlocked SQLite scan has no interrupt. When it fires the reader reports reason
+# ``timeout`` and ``unverified``; it never reports a verdict it could not reach.
+LOOKUP_TIMEOUT_SECONDS = 2.0
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,127}$")
 _STAGE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -161,14 +168,14 @@ def _sqlite_creator(path: Path):
     uri = path.resolve().as_uri() + "?mode=ro"
 
     def connect() -> sqlite3.Connection:
-        conn = sqlite3.connect(uri, uri=True, timeout=5)
+        conn = sqlite3.connect(uri, uri=True, timeout=LOOKUP_TIMEOUT_SECONDS)
         # Autocommit: this module issues its own BEGIN (see _connection) so one
         # snapshot spans every SELECT. pysqlite's legacy mode never begins a
         # transaction for SELECTs, which would let a writer commit between the
         # main-row and addenda reads and look like a broken chain.
         conn.isolation_level = None
         conn.execute("PRAGMA query_only=ON")
-        conn.execute("PRAGMA busy_timeout=3000")
+        conn.execute(f"PRAGMA busy_timeout={int(LOOKUP_TIMEOUT_SECONDS * 1000)}")
         return conn
 
     return connect
@@ -233,7 +240,13 @@ def _connection() -> Iterator[Connection]:
             store.url,
             poolclass=NullPool,
             isolation_level="REPEATABLE READ",
-            connect_args={"options": "-c default_transaction_read_only=on"},
+            connect_args={
+                "connect_timeout": max(1, math.ceil(LOOKUP_TIMEOUT_SECONDS)),
+                "options": (
+                    "-c default_transaction_read_only=on "
+                    f"-c statement_timeout={int(LOOKUP_TIMEOUT_SECONDS * 1000)}"
+                ),
+            },
         )
     try:
         with engine.connect() as conn:
@@ -245,6 +258,50 @@ def _connection() -> Iterator[Connection]:
                 _end_snapshot(conn, tx, store.engine)
     finally:
         engine.dispose()
+
+
+_TIMEOUT_MARKERS = (
+    "database is locked",
+    "database table is locked",
+    "database schema is locked",
+    "statement timeout",
+    "canceling statement",
+    "timeout expired",
+    "timed out",
+)
+
+
+def _is_timeout(exc: BaseException) -> bool:
+    """True when a driver error means the store was locked or too slow to answer."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, TimeoutError):
+            return True
+        message = str(current).lower()
+        if any(marker in message for marker in _TIMEOUT_MARKERS):
+            return True
+        current = getattr(current, "orig", None) or current.__cause__ or current.__context__
+    return False
+
+
+def _timeout_note() -> str:
+    return (
+        f"the audit store did not answer within {LOOKUP_TIMEOUT_SECONDS:g}s "
+        "(locked or slow); nothing was verified"
+    )
+
+
+def _timeout_store() -> dict[str, Any]:
+    return {
+        "state": "unavailable",
+        "reason": "timeout",
+        "engine": None,
+        "schema": None,
+        "tables": [],
+        "migration": None,
+    }
 
 
 def valid_doc_id(doc_id: str) -> bool:
@@ -410,7 +467,9 @@ def _schema_mode(
         for index in inspector.get_indexes("audit_log"):
             if index.get("unique") and list(index.get("column_names") or []) == ["doc_id"]:
                 return "unified-row"
-    except Exception:
+    except Exception as exc:
+        if _is_timeout(exc):
+            raise  # do not read a store we could not inspect as an event chain
         return "event-chain"
     return "event-chain"
 
@@ -515,7 +574,9 @@ def _migration_info(conn: Connection, tables: set[str]) -> dict[str, Any] | None
         row = conn.execute(
             text("SELECT value FROM audit_meta WHERE key = :key"), {"key": "migration"}
         ).first()
-    except Exception:
+    except Exception as exc:
+        if _is_timeout(exc):
+            raise  # a locked or slow store is a timeout, not an unreadable marker
         return {
             "migrated": None,
             "legacy_rows": None,
@@ -834,8 +895,8 @@ def _verify_attempts(
             continue
         # The foundation verifier rejects a stage/trigger its writer never
         # emits; a valid hash does not excuse one, so these run before (and
-        # without) the hasher. The parent-reference check below is stricter than
-        # the foundation verifier: the writer always copies the sub-row's stage
+        # without) the hasher. The parent-reference check below matches the
+        # foundation verifier (``reference_envelope_mismatch``): the writer always copies the sub-row's stage
         # and int attempt_no into the reference, so any disagreement (including
         # a type change such as "1" for 1) means the rows were not written
         # together. Values are compared raw, never through the display trimming.
@@ -951,7 +1012,10 @@ def _verify_unified(
         else "hash recomputation: schemas.audit.compute_audit_hash (attempt sub-rows unverified)"
     )
 
+    # ``row_id`` is the display id (failure rows); ``row_key`` is the identity the
+    # attempts' ``parent_id`` is compared with, exactly as stored.
     row_id = _as_str(row.get("entry_id")) if row is not None else None
+    row_key = _text(row.get("entry_id")) if row is not None else None
     if row is None:
         # No terminal row: only the migrated legacy event chain can be verified.
         pass
@@ -983,10 +1047,10 @@ def _verify_unified(
         )
 
     parents: list[dict[str, Any]] = []
-    if row is not None and row_id:
+    if row is not None and row_key:
         parents.append(
             {
-                "parent_id": row_id,
+                "parent_id": row_key,
                 "doc_id": row.get("doc_id"),
                 "matter_id": matter_id if matter_id is not None else row.get("matter_id"),
                 "actor": row.get("actor"),
@@ -999,7 +1063,7 @@ def _verify_unified(
     allowed_kinds = _addendum_kinds()
     for addendum in addenda:
         checked["addenda"] += 1
-        addendum_id = _as_str(addendum.get("addendum_id"))
+        addendum_id = _as_str(addendum.get("addendum_id"))  # display only
         # The foundation verifier rejects a kind its writer never emits; a
         # correctly rehashed row with another kind must not verify here either.
         if addendum.get("kind") not in allowed_kinds:
@@ -1018,7 +1082,7 @@ def _verify_unified(
         previous = data.get("entry_hash")
         parents.append(
             {
-                "parent_id": addendum_id,
+                "parent_id": _text(addendum.get("addendum_id")),
                 "doc_id": addendum.get("doc_id"),
                 "matter_id": matter_id,
                 "actor": addendum.get("actor"),
@@ -1336,7 +1400,11 @@ def list_documents(limit: int = DEFAULT_LIST_LIMIT, offset: int = 0) -> dict[str
             "migration": None,
         }
         return payload
-    except Exception:
+    except Exception as exc:
+        if _is_timeout(exc):
+            payload["store"] = _timeout_store()
+            payload["notes"].append(_timeout_note())
+            return payload
         payload["store"] = {
             "state": "unavailable",
             "reason": "query-failed",
@@ -1431,7 +1499,13 @@ def document_audit(doc_id: str) -> dict[str, Any]:
         payload["record"] = {"state": "unavailable", "reason": exc.code}
         payload["verification"]["notes"].append("the audit store is unavailable")
         return payload
-    except Exception:
+    except Exception as exc:
+        if _is_timeout(exc):
+            payload["store"] = _timeout_store()
+            payload["record"] = {"state": "unavailable", "reason": "timeout"}
+            payload["verification"]["status"] = "unverified"
+            payload["verification"]["notes"].append(_timeout_note())
+            return payload
         payload["store"] = {
             "state": "unavailable",
             "reason": "query-failed",
@@ -1522,6 +1596,10 @@ def _read_event_chain(
         "started_at": events[0]["timestamp"] if events else None,
         "updated_at": last["timestamp"] if last else None,
         "events": events,
+        # last_event/status/updated_at describe the last event READ; when the
+        # cap cut the chain that is not the document's last event.
+        "truncated": truncated,
+        "events_shown": len(events),
     }
     legacy_truncated = legacy_total > len(legacy_rows)
     legacy_failures: list[dict[str, Any]] = []
@@ -1540,6 +1618,16 @@ def _read_event_chain(
             "truncated": True,
             "notes": ["a bounded read was truncated; nothing is reported as verified"],
         }
+        if truncated:
+            message = (
+                f"event chain capped by MAX_EVENTS: {len(rows)} of {total} events read; "
+                "the chain is not verified and last_event/status/updated_at describe "
+                "the last event read, not the document's last event"
+            )
+            verification["notes"].append(message)
+            payload["notes"].append(message)
+        if legacy_truncated:
+            verification["notes"].append("legacy section exceeds the bounded read; it is not verified")
     else:
         failures = _verify_legacy_chain(rows, scope="events")
         failures.extend(legacy_failures)
@@ -1754,10 +1842,15 @@ def _read_unified(
     # MAX_FOREIGN_ATTEMPTS rows of other documents naming this record (the rest
     # are counted in a note); the projection shows only this document's own,
     # never another document's content.
-    attempt_projection = [
-        _project_attempt(item) for item in attempts if item.get("doc_id") == doc_id
-    ]
-    parent_of = {_as_str(item.get("attempt_id")): _as_str(item.get("parent_id")) for item in attempts}
+    own_attempts = [item for item in attempts if item.get("doc_id") == doc_id]
+
+    def _children(parent_key: Any) -> list[dict[str, Any]]:
+        # Which sub-rows belong to a parent is an identity question: compare the
+        # stored ids exactly (type-equal, untrimmed), never their display form.
+        if not isinstance(parent_key, str) or not parent_key:
+            return []
+        return [_project_attempt(item) for item in own_attempts if item.get("parent_id") == parent_key]
+
     row_id = _as_str(data.get("entry_id"))
     event = _as_str(data.get("event"), limit=64)
     payload["record"] = {
@@ -1773,23 +1866,13 @@ def _read_unified(
         "status": _TERMINAL_STATUS.get(event or "", "recorded"),
         "terminal": event in _TERMINAL_STATUS,
         "decision_fields": _decision_fields(data.get("detail")),
-        "attempts": [item for item in attempt_projection if parent_of.get(item["attempt_id"]) == row_id],
-        "attempts_total": len(
-            [
-                item
-                for item in attempts
-                if item.get("doc_id") == doc_id and _as_str(item.get("parent_id")) == row_id
-            ]
-        ),
+        "attempts": _children(data.get("entry_id")),
+        "attempts_total": len(_children(data.get("entry_id"))),
         "addenda": [],
     }
     for addendum in addenda:
-        addendum_id = _as_str(addendum.get("addendum_id"))
         payload["record"]["addenda"].append(
-            _project_addendum(
-                addendum,
-                [item for item in attempt_projection if parent_of.get(item["attempt_id"]) == addendum_id],
-            )
+            _project_addendum(addendum, _children(addendum.get("addendum_id")))
         )
     payload["verification"] = _verify_unified(
         row=data,

@@ -355,10 +355,11 @@ def test_score_trace_defaults_config_id(monkeypatch):
     monkeypatch.setattr(scores, "_config_ids", {"class_correct": "cfg-1"})
     scores.score_trace("class_correct", 1, data_type="BOOLEAN")
     scores.score_trace("class_correct", 1, config_id="explicit")
-    scores.score_trace("unknown_metric", 1)
+    with pytest.raises(ValueError, match="unknown Mailroom score"):
+        scores.score_trace("unknown_metric", 1)
     assert client.calls[0][1]["config_id"] == "cfg-1"
     assert client.calls[1][1]["config_id"] == "explicit"
-    assert client.calls[2][1]["config_id"] is None
+    assert len(client.calls) == 2
 
 
 def test_create_trace_score_defaults_config_id_via_wire_alias(monkeypatch):
@@ -423,7 +424,7 @@ def test_ensure_score_configs_does_not_cache_after_failure(monkeypatch):
     assert first in returned
     failed = scores.langfuse_score_name(scores.SCORE_CONFIGS[1]["name"])
     assert failed not in returned
-    assert len(attempts) == len(scores.SCORE_CONFIGS)
+    assert len(attempts) == len(scores.ALL_SCORE_CONFIGS)
 
 
 def _flaky_config_client(scores, fail_names):
@@ -462,20 +463,20 @@ def test_ensure_score_configs_retries_only_the_failed_spec(monkeypatch):
 
     first = scores.ensure_score_configs()
     assert failed_spec not in first
-    assert len(first) == len(scores.SCORE_CONFIGS) - 1  # the later specs succeeded
+    assert len(first) == len(scores.ALL_SCORE_CONFIGS) - 1  # the later specs succeeded
     assert failed_wire not in scores._config_ids
-    assert len(attempts) == len(scores.SCORE_CONFIGS)
+    assert len(attempts) == len(scores.ALL_SCORE_CONFIGS)
 
     second = scores.ensure_score_configs()
     # Only the missing spec was retried; the successful ones were not re-created.
-    assert attempts[len(scores.SCORE_CONFIGS):] == [failed_wire]
+    assert attempts[len(scores.ALL_SCORE_CONFIGS):] == [failed_wire]
     assert failed_spec in second
-    assert len(second) == len(scores.SCORE_CONFIGS)
+    assert len(second) == len(scores.ALL_SCORE_CONFIGS)
     assert scores._config_ids[failed_wire] == "new-" + failed_wire
 
     # Everything is cached now: a third call makes no Langfuse request.
     scores.ensure_score_configs()
-    assert len(attempts) == len(scores.SCORE_CONFIGS) + 1
+    assert len(attempts) == len(scores.ALL_SCORE_CONFIGS) + 1
 
 
 def test_warmup_retries_a_partially_registered_config_set(monkeypatch):
@@ -494,7 +495,7 @@ def test_warmup_retries_a_partially_registered_config_set(monkeypatch):
     # a later warmup (past the sticky backoff) must not be short-circuited by the partial cache
     monkeypatch.setattr(scores, "_last_warmup_attempt", float("-inf"))
     scores.warmup_score_configs(blocking=True)
-    assert attempts[len(scores.SCORE_CONFIGS):] == [failed_wire]
+    assert attempts[len(scores.ALL_SCORE_CONFIGS):] == [failed_wire]
     assert failed_spec in scores._configs_ensured
 
 

@@ -16,11 +16,9 @@ Design / alignment
   so every LLM call lands as a
   nested span with model, token usage, latency and response — identical to
   what the Langfuse backend captures, but stored locally for free.
-- The node-level structured spans (``pipeline_trace`` / ``observation``)
-  are Langfuse-only in the facade. When only Phoenix is active, LLM
-  generations still trace (via the OpenAI instrumentor) and ``flush()``
-  force-exports them; the Langfuse-only helpers no-op, so the pipeline runs
-  identically.
+- ``pipeline_trace`` and ``observation`` open structured OpenTelemetry root
+  and node spans using this same provider; the OpenAI instrumentor nests LLM
+  calls beneath the active node span.
 - Graceful degradation: the module is a no-op when ``PHOENIX_TRACING`` is
   disabled or provider initialisation failed — runs continue exactly as if
   observability were off. ``flush()`` force-flushes the batch processor
@@ -37,6 +35,8 @@ from __future__ import annotations
 
 import logging
 import os
+import json
+from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,19 @@ _TRUE_VALUES = {"1", "true", "enabled", "yes", "on"}
 
 _provider = None
 _instrumented = False
+_NATIVE_KINDS = {
+    "chain": "CHAIN", "span": "CHAIN", "agent": "AGENT",
+    "generation": "LLM", "evaluator": "EVALUATOR", "retriever": "RETRIEVER",
+}
+
+
+def _span_attributes(semantic_type):
+    from openinference.semconv.trace import SpanAttributes
+
+    return {
+        SpanAttributes.OPENINFERENCE_SPAN_KIND: _NATIVE_KINDS[semantic_type],
+        "mailroom.semantic_type": semantic_type,
+    }
 
 
 def phoenix_enabled() -> bool:
@@ -51,7 +64,7 @@ def phoenix_enabled() -> bool:
     return os.environ.get("PHOENIX_TRACING", "enabled").strip().lower() in _TRUE_VALUES
 
 
-def _instrument_openai() -> None:
+def _instrument_openai(provider) -> None:
     """Best-effort OpenInference instrumentation of the OpenAI SDK."""
     global _instrumented
     if _instrumented:
@@ -60,7 +73,7 @@ def _instrument_openai() -> None:
         from openinference.instrumentation import TraceConfig
         from openinference.instrumentation.openai import OpenAIInstrumentor
 
-        OpenAIInstrumentor().instrument(config=TraceConfig(hide_input_text=True))
+        OpenAIInstrumentor().instrument(config=TraceConfig(hide_input_text=True), tracer_provider=provider)
         _instrumented = True
         logger.info("phoenix_openai_instrumented")
     except Exception:  # noqa: BLE001 - observability must never break the run
@@ -100,7 +113,7 @@ def _init_opentelemetry():
             "phoenix_tracing_initialized",
             extra={"endpoint": endpoint, "service": service_name, "project": project},
         )
-        _instrument_openai()
+        _instrument_openai(provider)
         return provider
     except Exception:  # noqa: BLE001
         logger.warning("phoenix_tracing_init_failed", exc_info=True)
@@ -130,3 +143,54 @@ def flush_phoenix() -> None:
 
 def is_configured() -> bool:
     return phoenix_enabled()
+
+
+class _PhoenixSpan:
+    def __init__(self, span):
+        self._span = span
+
+    @property
+    def id(self):
+        return f"{self._span.get_span_context().span_id:016x}"
+
+    def update(self, **fields):
+        from openinference.semconv.trace import SpanAttributes
+
+        for key, value in fields.items():
+            if value is not None:
+                encoded = value if isinstance(value, (str, int, float, bool)) else json.dumps(value, default=str)
+                self._span.set_attribute(f"mailroom.{key}", encoded)
+                if key == "input":
+                    self._span.set_attribute(SpanAttributes.INPUT_VALUE, encoded)
+                elif key == "output":
+                    self._span.set_attribute(SpanAttributes.OUTPUT_VALUE, encoded)
+        return self
+
+
+@contextmanager
+def pipeline_trace(*, seed=None, session_id=None, name="document-pipeline", input=None,
+                   metadata=None, tags=None, environment=None, user_id=None, as_type="chain"):
+    """Open a Phoenix/OTel root using the existing provider and exporter."""
+    provider = _init_opentelemetry()
+    if provider is None:
+        yield None
+        return
+    tracer = provider.get_tracer("mailroom.pipeline")
+    with tracer.start_as_current_span(name, attributes=_span_attributes(as_type)) as raw:
+        span = _PhoenixSpan(raw)
+        span.update(input=input, metadata={**(metadata or {}), "session_id": session_id, "seed": seed,
+                                           "environment": environment, "user_id": user_id}, tags=tags)
+        yield span
+
+
+@contextmanager
+def observation(name, *, as_type="span", input=None, metadata=None, model=None):
+    provider = _init_opentelemetry()
+    if provider is None:
+        yield None
+        return
+    tracer = provider.get_tracer("mailroom.pipeline")
+    with tracer.start_as_current_span(name, attributes=_span_attributes(as_type)) as raw:
+        span = _PhoenixSpan(raw)
+        span.update(input=input, metadata=metadata, model=model)
+        yield span

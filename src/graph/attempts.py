@@ -45,6 +45,7 @@ _RESTORED_FIELDS = (
     "judge_score",
     "judge_findings",
     "judge_source_verified",
+    "judge_coverage",
 )
 
 
@@ -98,6 +99,7 @@ def record_attempt(
         "judge_score": None,
         "judge_findings": None,
         "judge_source_verified": None,
+        "judge_coverage": None,
     }
     if gate is not None:
         entry["extraction_gate"] = deepcopy(dict(gate))
@@ -112,6 +114,7 @@ def record_verdict(
     score: float | None,
     findings: list[str] | None,
     source_verified: bool,
+    coverage: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]] | None:
     """The history with the latest attempt's judge verdict filled in, or None when there is none.
 
@@ -126,6 +129,7 @@ def record_verdict(
         judge_score=score,
         judge_findings=list(findings or []),
         judge_source_verified=bool(source_verified),
+        judge_coverage=dict(coverage) if coverage else None,
     )
     return history
 

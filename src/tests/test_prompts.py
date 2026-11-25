@@ -28,7 +28,7 @@ class TestPromptTemplates:
         from llm.prompts import prompt_templates
 
         templates = prompt_templates()
-        assert len(templates) == 18  # 16 agents + judge-classification/correctness + relations (HUB-040)
+        assert len(templates) == 25  # 15 agents + judge-classification/correctness + relations (HUB-040) + 7 prompt-set files
         for agent in (
             "sorter",
             "sorter_reviewer",
@@ -90,6 +90,7 @@ def _wire(monkeypatch, client, clock=None):
     monkeypatch.setattr("llm.prompts._prompt_cache", {})
     monkeypatch.setattr("llm.prompts._miss_cache", {})
     monkeypatch.setattr("llm.prompts._client", lambda: client)
+    monkeypatch.setenv("MAILROOM_PROMPT_SOURCE", "langfuse")  # these tests exercise the opt-in fetch
     if clock is not None:
         monkeypatch.setattr("llm.prompts._now", clock)
 

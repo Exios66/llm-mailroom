@@ -111,6 +111,7 @@ flowchart TD
     N_RETRY_EXTRACT -- "conflict_detected" --> N_BOSS
     N_RETRY_EXTRACT -- "judge gate engaged, or an earlier attempt was judged<br/>(judge_rejudge_retry on, passes left)" --> N_JUDGE
     N_RETRY_EXTRACT -- "confidence at or above low,<br/>judge gate not engaged, no re-judge due" --> N_REPORT
+    N_RETRY_EXTRACT -- "an arbiter-ordered retry the judge doubted,<br/>no re-judge due (retry_unjudged)" --> N_HUMAN
     N_RETRY_EXTRACT -- "unsupported, or retry budget spent" --> N_HUMAN
 
     %% ---------------- Quality and escalation ----------------
@@ -122,18 +123,20 @@ flowchart TD
     end
 
     N_JUDGE -. "transient" .-> N_JUDGE
-    N_JUDGE -- "complete, skipped, or no verdict" --> N_REPORT
+    N_JUDGE -- "skipped or no verdict<br/>(complete only with judge_complete_archives)" --> N_REPORT
+    N_JUDGE -- "complete (default)" --> N_HUMAN
     N_JUDGE -- "partial or incomplete,<br/>judge_pass_count below judge_max_passes" --> N_ARBITER
     N_JUDGE -- "judge_error, or partial/incomplete<br/>with judge_max_passes reached" --> N_HUMAN
 
     N_ARBITER -. "transient" .-> N_ARBITER
-    N_ARBITER -- "accept_with_caveats" --> N_REPORT
+    N_ARBITER -- "accept_with_caveats<br/>(only with arbiter_accept_archives)" --> N_REPORT
+    N_ARBITER -- "accept_with_caveats (default)" --> N_HUMAN
     N_ARBITER -- "retry_extraction and<br/>arbiter_retry_count within arbiter_retry_max" --> N_RETRY_EXTRACT
     N_ARBITER -- "human_review, arbiter failure,<br/>or retry bound exceeded" --> N_HUMAN
 
     N_BOSS -. "transient" .-> N_BOSS
-    N_BOSS -- "review_decision = approved" --> N_REPORT
-    N_BOSS -- "any other decision" --> N_HUMAN
+    N_BOSS -- "review_decision = approved,<br/>grounded, not a doubted retry" --> N_REPORT
+    N_BOSS -- "any other decision, a blind approval<br/>(boss_ungrounded) or a doubted retry (retry_unjudged)" --> N_HUMAN
 
     %% ---------------- Human review ----------------
     subgraph HITL["Human review"]
@@ -154,6 +157,7 @@ flowchart TD
     end
 
     N_REPORT -- "_report assembled" --> N_CATALOG
+    N_REPORT -- "auto_archive false (merger_agreement), no human-applied fields" --> N_HUMAN
     N_REPORT -- "report_error or no _report" --> N_HUMAN
     N_CATALOG --> N_ARCHIVE
     N_ARCHIVE --> END_OK
@@ -188,26 +192,27 @@ flowchart TD
 
 ### Things the chart compresses
 
-- **Router priority.** Each router checks its conditions in a fixed order and the first match wins. For `extract` and `retry_extract` the order in `after_extraction` is: transient error, unsupported type, conflict, schema invalid, hollow payload, ground-truth coverage below floor, then confidence. Only then does `after_extraction_gated` swap a `compile_report` result for `judge_verify` when `judge_gate` is true. `after_retry_extraction_gated` also swaps it when `retry_rejudge_due` holds: an earlier attempt was judged, `judge_pass_count` is below `judge_max_passes` and `judge_rejudge_retry` is on (#241; off by default).
+- **Router priority.** Each router checks its conditions in a fixed order and the first match wins. For `extract` and `retry_extract` the order in `after_extraction` is: transient error, unsupported type, conflict, schema invalid, hollow payload, lost chunk, a closed-label value off its vocabulary (straight to `human_review`, no retry; #285), ground-truth coverage below floor, then confidence. Only then does `after_extraction_gated` swap a `compile_report` result for `judge_verify` when `judge_gate` is true. `after_retry_extraction_gated` also swaps it when `retry_rejudge_due` holds: an earlier attempt was judged, `judge_pass_count` is below `judge_max_passes` and `judge_rejudge_retry` is on (#241; off by default).
 - **`classify` medium band.** Since change L-9 in `routing.py`, a confidence in the band from `low` up to `high` goes to `retry_classify` first (while attempts are within `retry_max`), and only then to `review_classify`. Below `low` also goes to `retry_classify` while budget remains.
 - **Empty text.** If the document text is empty, `classify_node` sets `doc_type = unknown` and pushes `classification_attempts` past `retry_max`, so `after_classify` sends it straight to `human_review`.
-- **`judge_verify` can skip itself.** The node re-checks `judge_should_run` (`judge_gate`, `retry_rejudge_due`, or an unsure extraction whose retries are spent). When none holds it returns `judge_verdict = skipped`, which routes to `compile_report`. An arbiter-approved re-extraction that comes back with high confidence is judged again while passes remain only when `judge_rejudge_retry` is on; by default it archives unjudged.
+- **`judge_verify` can skip itself.** The node re-checks `judge_should_run` (`judge_gate`, `retry_rejudge_due`, or an unsure extraction whose retries are spent). When none holds it returns `judge_verdict = skipped`, which routes to `compile_report`. An arbiter-approved re-extraction that comes back with high confidence is judged again while passes remain only when `judge_rejudge_retry` is on; otherwise it goes to a person (`retry_unjudged`) unless the class sets `judge_complete_archives`, which lets it archive unjudged as before.
 - **Interrupt pause.** `human_review` calls LangGraph `interrupt()`. The run stops there and `_execute_run` records it as a review park, not a failure. The approved/rejected edges only fire when someone resumes the paused thread (see [Human review resolve](#human-review-resolve)).
 - **Audit entries.** Besides the three drawn above, `_emit_stage_audit` writes `ingested` (in `intake`), `classified` (in `classify`), `extracted` (in `extract`), `arbiter_decided` (in `arbiter`) and `boss_adjudicated` (in `boss_escalation`). Every entry links to the previous one for the same `doc_id` by hash.
 - **Every node is bounded.** `_bounded` wraps each node, checks the run deadline and token budget, and touches a heartbeat on the catalog row before the node runs.
 
 ## Thresholds used by the routers
 
-Values from the `confidence:` block of `src/config/taxonomy.yaml`. The per-class rows override `high`, `low` and `judge_band_high` once `doc_type` is known (`pipeline/config.py:get_confidence_thresholds`). Retry budgets stay global.
+Values from the `confidence:` block of `src/config/taxonomy.yaml` (profile `calibrated_v1`, 2026-11-17; `MAILROOM_CONFIDENCE_PROFILE=legacy_v0` selects the previous values). The per-class rows override the globals once `doc_type` is known (`pipeline/config.py:get_confidence_thresholds`). Budgets stay global unless a class sets them.
 
 | Key | Global | contract | merger_agreement | insurance_claim | corporate_record | correspondence |
 |---|---|---|---|---|---|---|
-| `high` | 0.97 | 0.98 | 0.98 | 0.98 | 0.96 | 0.95 |
+| `high` | 0.97 | 0.98 | 0.98 | 0.95 | 0.95 | 0.95 |
 | `low` | 0.88 | 0.90 | 0.90 | 0.90 | 0.86 | 0.85 |
-| `judge_band_high` | 0.95 | 0.97 | 0.97 | 0.97 | 0.94 | 0.92 |
+| `judge_band_high` | 0.95 | 0.97 | 0.90 (empty band) | 0.97 | 0.94 | 0.92 |
 | `retry_max` | 2 | global | global | global | global | global |
-| `arbiter_retry_max` | 2 | global | global | global | global | global |
-| `judge_max_passes` | 3 | global | global | global | global | global |
+| `arbiter_retry_max` | 2 | global | 1 | global | global | global |
+| `judge_max_passes` | 3 | global | 2 | global | global | global |
+| `auto_archive` | true | global | false (always a person; no judge/arbiter loop; Gmail triage lane parks it) | global | global | global |
 | `judge_rejudge_retry` | false | global | global | global | global | global |
 | `keep_best_attempt` | false | global | global | global | global | global |
 
@@ -232,9 +237,9 @@ One row per LangGraph node, in the order they are registered in `build_graph()`.
 | `retry_extract` | `retry_extract_node`; same specialist | Re-extracts with a bounded summary of what went wrong (guardrail issues, judge findings when they judged the extraction being retried, the names of the fields left empty; never the previous values, #253), recent agent memory and, after an arbiter decision, the arbiter's `fields_to_fix` in the prompt. Appends the attempt to `extraction_attempt_history`. | `after_retry_extraction_gated`: `retry_extract` (transient or another quality retry), `judge_verify`, `compile_report`, `boss_escalation`, `human_review`. |
 | `judge_verify` | `judge_verify_node`; [`agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py) (`CompletenessJudge`) | Lane B (KANBAN-063). Scores completeness of the extraction against the document. Increments `judge_pass_count` and fills the verdict into the latest entry of `extraction_attempt_history`. Returns `skipped` if `judge_gate` is false, `judge_error` on a hard failure. | `after_judge`: `judge_verify` (transient), `compile_report`, `arbiter`, `human_review`. |
 | `arbiter` | `arbiter_node`; [`agents/arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py) (`ArbiterAgent`) | Decides on a partial or incomplete judge verdict: `accept_with_caveats`, `retry_extraction` (with a fix-list; increments `arbiter_retry_count`) or `human_review`. Writes the `arbiter_decided` audit entry. | `after_arbiter`: `arbiter` (transient), `compile_report`, `retry_extract`, `human_review`. |
-| `human_review` | `human_review_node`; `pipeline/bins.park_for_review`, `pipeline/reconsideration.collect_review_causes` | Parks the file in the review bin with a `pending_review` manifest and the review causes, upserts the catalog, writes `routed_to_review` (first park only), fires the Gmail echo and relations scan, then pauses with `interrupt()`. On rejection it moves the file to the failed bin. On `approve_as_is` or `correct` **with parked fields** it applies the reviewer's fields (`extraction_source: "human"`, `review_decision: "human_applied"`); `approve_as_is` with no parked fields (a sorter-stage park) is a class confirmation and re-extracts. If an approved resume for `correct` or `approve_as_is` carries fields that fail the class schema, the node does not route: it interrupts again with action `human_review_invalid` and the problem in `detail`, and the document stays in review. | `after_human_review`: `compile_report` (human fields applied, no LLM call in the graph), `extract` (approved, or field-less `approve_as_is`) or END (rejected). |
+| `human_review` | `human_review_node`; `pipeline/bins.park_for_review`, `pipeline/reconsideration.collect_review_causes` | Parks the file in the review bin with a `pending_review` manifest and the review causes, writes the causes to the Langfuse trace metadata as `review_causes` (a JSON list, on the `route-for-review` observation and its trace; #217), upserts the catalog, writes `routed_to_review` (first park only), fires the Gmail echo and relations scan, then pauses with `interrupt()`. On rejection it moves the file to the failed bin. On `approve_as_is` or `correct` **with parked fields** it applies the reviewer's fields (`extraction_source: "human"`, `review_decision: "human_applied"`); `approve_as_is` with no parked fields (a sorter-stage park) is a class confirmation and re-extracts. If an approved resume for `correct` or `approve_as_is` carries fields that fail the class schema, the node does not route: it interrupts again with action `human_review_invalid` and the problem in `detail`, and the document stays in review. | `after_human_review`: `compile_report` (human fields applied, no LLM call in the graph), `extract` (approved, or field-less `approve_as_is`) or END (rejected). |
 | `boss_escalation` | `boss_escalation_node`; [`agents/boss.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/boss.py) (`BossAgent`) | Adjudicates a field conflict with archived matter records, using the matter context from `_fetch_matter_context`. A non-transient failure defaults to `review`. Writes `boss_adjudicated`. | `after_boss`: `boss_escalation` (transient), `compile_report`, `human_review`. |
-| `compile_report` | `compile_report_node`; [`agents/reporter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/reporter.py) (`compile_matter_record`) | Builds the structured matter record procedurally (the reporter LLM is retired) and stores it as `extracted_data._report`. A crash produces a fallback report with `error: True`. Reports the selected attempt: the latest, or with `keep_best_attempt` on the best-judged one, with archive fallback to the latest if the earlier payload is unsure or below the coverage floor (#254; `selected_attempt`, `selected_attempt_reason`). | `after_report`: `catalog_write` or `human_review`. Entered from `judge_verify`, `arbiter`, `extract`, `retry_extract`, `boss_escalation`, from `human_review` when the reviewer's fields were applied, and from START when such a resolution is replayed after a restart. |
+| `compile_report` | `compile_report_node`; [`agents/reporter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/reporter.py) (`compile_matter_record`) | Builds the structured matter record procedurally (the reporter LLM is retired) and stores it as `extracted_data._report`. A crash produces a fallback report with `error: True`. Reports the selected attempt: the latest, or with `keep_best_attempt` on the best-judged one, with archive fallback to the latest if the earlier payload is unsure or below the coverage floor (`earlier_attempt_requires_review`); an unjudged latest retry that passed the gate is kept over any judged earlier attempt, even a `complete` one (`latest_unjudged`) (#254; `selected_attempt`, `selected_attempt_reason`). | `after_report`: `catalog_write` or `human_review`. Entered from `judge_verify`, `arbiter`, `extract`, `retry_extract`, `boss_escalation`, from `human_review` when the reviewer's fields were applied, and from START when such a resolution is replayed after a restart. |
 | `catalog_write` | `catalog_write_node`; `storage/catalog` | Upserts the document and matter rows with final type, confidences and extraction. | Always `archive` (plain edge). |
 | `archive` | `archive_node`; [`agents/archivist.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/archivist.py) (`archive_document`) | Moves the file to `archive/<matter_id>/<doc_type>/`, writes the manifest and a JSON sidecar, hashes the file, appends the `archived` audit entry, sets the catalog row to archived, fires the Gmail echo and relations scan, and exports to the warehouse if enabled. | Always END (plain edge). |
 
@@ -339,7 +344,7 @@ flowchart TD
     RFR -- "no (process restarted)" --> FRESH
 ```
 
-`record` and `requeue` work at any stage. Only the human-field completion (`complete`, and `correct` or `approve_as_is` with parked fields) makes no LLM call in the graph: it runs `compile_report`, `catalog_write` and `archive` on the reviewer's fields. A plain approved `resume`, `reclassify` and a field-less `approve_as_is` re-extract, and extraction can call an LLM, so those paths cost model calls and send the document text to the provider. The post-archive relations scan can also call an LLM when `relations.llm` is on. `complete` and `resume` need the document to be in the review stage (400 otherwise; a second resolve while one is in flight gets 409). Every `resume` and `complete` resolution is stored on the manifest as `human_label`, with a snapshot of the model's output taken before the override; `record` and `requeue` write only an audit entry and create no label. A classification override (`doc_type` or `override_doc_type`) can be written onto the manifest before a resume.
+`record` and `requeue` work at any stage. Only the human-field completion (`complete`, and `correct` or `approve_as_is` with parked fields) makes no LLM call in the graph: it runs `compile_report`, `catalog_write` and `archive` on the reviewer's fields. A plain approved `resume` (refused with 400 for a class with `auto_archive: false` that has parked fields, since it would only park again; use `approve_as_is`, `correct`, `complete`, or `requeue` to re-run from intake), `reclassify` and a field-less `approve_as_is` re-extract, and extraction can call an LLM, so those paths cost model calls and send the document text to the provider. The post-archive relations scan can also call an LLM when `relations.llm` is on. `complete` and `resume` need the document to be in the review stage (400 otherwise; a second resolve while one is in flight gets 409). Every `resume` and `complete` resolution is stored on the manifest as `human_label`, with a snapshot of the model's output taken before the override; `record` and `requeue` write only an audit entry and create no label. A classification override (`doc_type` or `override_doc_type`) can be written onto the manifest before a resume.
 
 ## Sources
 

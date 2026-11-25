@@ -65,7 +65,7 @@ Details: [Data and corpora](data-and-corpora.md). Full dataset section: [Mailroo
 1. Prompt versions are tested one at a time across models and every run is logged to an append-only experiment log (historically in the standalone `llm-entity-extraction` repo, which left the core constellation in DMR-079).
 2. When a prompt wins, it is **vendored** into llm-mailroom (`langchain_agents/`) along with its full version lineage, so evaluations can pin the exact version.
 3. **eval-environment** holds the frozen v1 prompt lineage (`mailroom-evals-v1`) and the GEPA mutation loop that proposes new candidates; mailroom-issues keeps the frozen v1 reference copies.
-4. In production, each agent's prompt is managed in Langfuse as `mailroom-<agent_name>` with a `production` label, and every LLM call links the prompt version it used.
+4. In production, each agent serves the prompt shipped in llm-mailroom (`src/llm/prompt_sets/`, default set `deploy_v1`); runs record the prompt set and per-agent prompt ids. Langfuse prompt management (`mailroom-<agent_name>`, `production` label, with per-call prompt linking) is an explicit opt-in (`MAILROOM_PROMPT_SOURCE=langfuse`).
 
 ### Scoring: one definition of "correct"
 

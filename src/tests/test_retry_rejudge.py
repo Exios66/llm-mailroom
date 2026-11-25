@@ -109,7 +109,7 @@ def test_absent_knob_defaults_to_off(monkeypatch):
 
 
 def test_shipped_taxonomy_keeps_the_rejudge_off():
-    """Until #242 calibrates the judge, a confident retry archives unjudged as before."""
+    """Until #242 calibrates the judge, the re-judge stays off (a retry the judge doubted parks instead, see test_routing)."""
     state = _retry_state()
     assert retry_rejudge_due(state) is False
     assert judge_should_run(state) is False
@@ -180,6 +180,6 @@ def test_judge_verify_node_runs_for_a_confident_retry(monkeypatch):
     assert updates["judge_pass_count"] == 2
     assert calls
 
-    # Passes spent: the node skips, as the router archives.
+    # Passes spent: the node skips (the router then parks a retry the judge doubted, or archives).
     skipped = judge_verify_node(_retry_state(doc_text="Dear Sir", judge_pass_count=3))
     assert skipped["judge_verdict"] == "skipped"

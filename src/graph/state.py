@@ -25,7 +25,8 @@ class DocumentState(TypedDict, total=False):
     extraction_attempts: int
     # Advisory extraction-gate answer (agents.extraction_gate), present only when
     # a gate is registered: the sorter subclass sent, verdict, key_field_score,
-    # field_support, or ``error`` / ``skipped``. Routing does not read it.
+    # field_support, or ``error`` / ``skipped``, and the ``attempt`` it judged. Routing
+    # reads it only through an enforcing decision slot (graph/decision_slots.py).
     extraction_gate: dict[str, Any] | None
     trace_id: str | None
     escalation_reason: str | None
@@ -46,6 +47,8 @@ class DocumentState(TypedDict, total=False):
     # resets). Routing treats a conflict as adjudicated only when it matches.
     # Absent on pre-existing checkpoints, which keep the legacy behaviour.
     boss_conflict_fingerprint: str | None
+    # Archived matter records the boss saw for its ruling; an approval with 0 parks.
+    boss_context_records: int | None
     extraction_guardrail: list[str]
     classification_guardrail: list[str]
     file_path: str
@@ -129,6 +132,11 @@ class DocumentState(TypedDict, total=False):
     judge_score: float | None
     judge_findings: list[str]
     judge_source_verified: bool
+    # Windows of the source the judge / arbiters read and what it cost (#277):
+    # {windows_total, windows_checked, calls, prompt_tokens, completion_tokens}.
+    judge_coverage: dict[str, Any] | None
+    arbiter_coverage: dict[str, Any] | None
+    classification_arbiter_coverage: dict[str, Any] | None
     arbiter_decision: str | None
     arbiter_reasoning: str | None
     arbiter_handoff: str | None
@@ -166,6 +174,15 @@ class DocumentState(TypedDict, total=False):
     # count), so a slot's ``max_overrides`` budget holds across loops. Written only by the
     # slot's node wrapper; never reset within a run (a human resume keeps it).
     decision_override_counts: dict[str, int]
+    # Decision-model slots (graph/decision_slots.py, taxonomy ``decision_slots:``): slot ->
+    # its latest decision (node, attempt, proposal, action, route, cause, gate numbers), the
+    # ``seen:/park:/release:<slot>`` marks that count a document once against the slot's
+    # rate caps, the closed-field resolver's picks, and who gave the judge verdict
+    # (``llm`` or ``extraction_gate``). Absent while every slot is baseline.
+    decision_slot_outcomes: dict[str, dict[str, Any]]
+    decision_slot_marks: list[str]
+    closed_field_resolutions: list[dict[str, Any]]
+    judge_source: str | None
     # Classified abort reason (llm_timeout / llm_auth / io_error / …).
     failure_class: str | None
     messages: Annotated[list, add_messages]

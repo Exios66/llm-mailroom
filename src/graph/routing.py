@@ -2,6 +2,7 @@ import structlog
 from typing import Any, Literal, Mapping
 
 from pipeline.config import (
+    class_auto_archives,
     get_confidence_thresholds,
     get_review_mode,
     is_extractable_doc_type,
@@ -56,6 +57,50 @@ def _thresholds_for(state: Mapping[str, Any] | dict) -> dict:
     """Class-aware confidence / Lane B budgets from taxonomy severity tiers."""
     doc_type = state.get("doc_type") or state.get("reviewer_doc_type")
     return get_confidence_thresholds(doc_type if isinstance(doc_type, str) else None)
+
+
+def judge_complete_archives(state: Mapping[str, Any]) -> bool:
+    """Whether a judge ``complete`` may archive on its own (taxonomy ``confidence``; default False).
+
+    A document reaches the judge because the pipeline doubted it, and the judge has not earned
+    that trust: in the sandbox slice-100 r2 audit it passed 5 of r2's 6 wrong archives, and
+    judged contracts archived wrong 10 of 12 times (#242, #278). So by default a judge
+    ``complete`` goes to a person (cause ``judge_complete_unconfirmed``). Per-class overridable
+    under ``by_class``; true restores the old route.
+    """
+    return bool(_thresholds_for(state).get("judge_complete_archives", False))
+
+
+def arbiter_accept_archives(state: Mapping[str, Any]) -> bool:
+    """Whether an arbiter ``accept_with_caveats`` may archive (taxonomy ``confidence``; default False).
+
+    The arbiter overrules a judge that found problems; every such accept seen in past runs
+    archived a wrong extraction (3 of 3). By default it goes to a person (cause
+    ``arbiter_accept_unconfirmed``); ``retry_extraction`` still re-extracts. Per-class overridable.
+    """
+    return bool(_thresholds_for(state).get("arbiter_accept_archives", False))
+
+
+def judge_clears_low_confidence(state: Mapping[str, Any]) -> bool:
+    """Whether a judge that saw the whole source clears an extraction below ``low`` (default False).
+
+    The extracting model itself was unsure after its retries; a judge verdict is not evidence
+    enough to archive that (see ``judge_complete_archives``). Per-class overridable.
+    """
+    return bool(_thresholds_for(state).get("judge_clears_low_confidence", False))
+
+
+def retry_after_judge_doubt(state: Mapping[str, Any]) -> bool:
+    """True for a retry the arbiter ordered after the judge found the extraction lacking.
+
+    Such a retry reaches ``compile_report`` on its own self-reported confidence only, which
+    does not predict its score (#241). Unless the class lets a judge verdict archive on its
+    own (``judge_complete_archives``), it goes to a person instead of archiving unjudged
+    (cause ``retry_unjudged``); ``judge_rejudge_retry`` re-judges it first while passes remain.
+    """
+    from pipeline.reconsideration import retry_unjudged
+
+    return retry_unjudged(state, _thresholds_for(state))
 
 
 def _after_confident_sorter(state: dict) -> Literal["review_classify", "extract"]:
@@ -255,6 +300,11 @@ def _judge_can_review(state: dict) -> bool:
     if _chunks_lost(state):
         return False
 
+    # A class that never auto-archives is parked for a person whatever the judge says:
+    # a judge/arbiter loop would only spend tokens before the same park.
+    if not class_auto_archives(state.get("doc_type")):
+        return False
+
     if os.environ.get("MAILROOM_JUDGE_VERIFY", "on").lower() in ("off", "false", "0", "no"):
         return False
     return bool(state.get("extracted_data")) and not state.get("extraction_guardrail")
@@ -307,7 +357,7 @@ def _extraction_still_unsure(state: Mapping[str, Any]) -> bool:
     """
     if _chunks_lost(state):
         return True  # no verdict clears missing windows
-    if state.get("judge_source_verified"):
+    if state.get("judge_source_verified") and judge_clears_low_confidence(state):
         return False
     confidence = state.get("extraction_confidence")
     return confidence is None or confidence < _thresholds_for(state).get("low", 0.70)
@@ -397,6 +447,21 @@ def after_extraction(state: dict) -> Literal[
             attempts=attempts,
         )
         return "human_review"
+
+    # Closed labels (#285): a value off its taxonomy vocabulary is scored wrong and the judge
+    # does not reliably catch it, so it is a deterministic review, never an archive. No retry:
+    # a fresh pass has no reason to pick a different token, and a person can name the right one.
+    if isinstance(extracted, dict) and extracted:
+        from pipeline.label_vocab import out_of_vocabulary_fields
+
+        off_list = out_of_vocabulary_fields(state.get("doc_type"), extracted)
+        if off_list:
+            logger.info(
+                "extraction_out_of_vocabulary_review",
+                doc_id=state.get("doc_id"),
+                fields=sorted(off_list),
+            )
+            return "human_review"
 
     # Oracle routing only (#207): off by default, so a run that carries
     # `ground_truth` for scoring still routes on observed confidence alone.
@@ -494,8 +559,9 @@ def retry_rejudge_due(state: Mapping[str, Any]) -> bool:
     (``judge_pass_count >= 1``) and the pass budget (``judge_max_passes``) is not
     spent. Off by default until the judge is calibrated (#242): opt in with
     ``judge_rejudge_retry: true`` (taxonomy, per class overridable).
-    The judge lane's own limits apply: the ``MAILROOM_JUDGE_VERIFY`` kill switch, a guardrail failure or an empty extraction. When the passes are
-    spent the retry archives as before; it does not escalate.
+    The judge lane's own limits apply: the ``MAILROOM_JUDGE_VERIFY`` kill switch, a guardrail failure or an empty extraction. When no
+    re-judge is due, a retry the judge doubted goes to a person (``retry_after_judge_doubt``)
+    unless ``judge_complete_archives`` lets it archive as before.
     """
     thresholds = _thresholds_for(state)
     if not thresholds.get("judge_rejudge_retry", False):
@@ -573,6 +639,14 @@ def after_retry_extraction_gated(state: dict) -> Literal[
                 judge_pass_count=state.get("judge_pass_count"),
             )
             return "judge_verify"
+        if retry_after_judge_doubt(state):
+            logger.info(
+                "retry_unjudged_needs_review",
+                doc_id=state.get("doc_id"),
+                judge_verdict=state.get("judge_verdict"),
+                extraction_attempts=state.get("extraction_attempts"),
+            )
+            return "human_review"
     return dest
 
 
@@ -587,8 +661,38 @@ def after_boss(state: dict) -> Literal["boss_escalation", "compile_report", "hum
         return "human_review"
     decision = state.get("review_decision")
     if decision == "approved":
+        if not boss_ruling_grounded(state):
+            # The boss ruled on a matter conflict without seeing any matter record (the
+            # catalog read failed or returned nothing): its approval is not evidence.
+            logger.info("boss_approval_ungrounded", doc_id=state.get("doc_id"))
+            return "human_review"
+        if retry_after_judge_doubt(state):
+            # A retry the judge doubted that then found a matter conflict reaches the Boss
+            # before any re-judge; the Boss rules on the conflict, not on completeness.
+            logger.info(
+                "retry_unjudged_needs_review",
+                doc_id=state.get("doc_id"),
+                judge_verdict=state.get("judge_verdict"),
+                extraction_attempts=state.get("extraction_attempts"),
+            )
+            return "human_review"
         return "compile_report"
     return "human_review"
+
+
+def boss_ruling_grounded(state: Mapping[str, Any]) -> bool:
+    """True when the boss saw at least one archived matter record for its ruling.
+
+    ``boss_escalation_node`` writes ``boss_context_records``; a missing value (a state written
+    before it existed) counts as grounded, so only a ruling known to be blind parks.
+    """
+    records = state.get("boss_context_records")
+    if records is None:
+        return True
+    try:
+        return int(records) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 # review_decision token set by ``human_review_node`` when a reviewer's own
@@ -814,6 +918,9 @@ def after_judge(state: dict) -> Literal["judge_verify", "compile_report", "arbit
     if verdict in (None, "", "skipped", "complete"):
         if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
             return "human_review"
+        if verdict == "complete" and not judge_complete_archives(state):
+            logger.info("judge_complete_needs_review", doc_id=state.get("doc_id"))
+            return "human_review"
         return "compile_report"
     max_passes = _judge_max_passes(_thresholds_for(state))
     passes = int(state.get("judge_pass_count") or 0)
@@ -854,6 +961,9 @@ def after_arbiter(state: dict) -> Literal[
     if decision == "accept_with_caveats":
         if _extraction_still_unsure(state) or _unadjudicated_conflict(state):
             return "human_review"
+        if not arbiter_accept_archives(state):
+            logger.info("arbiter_accept_needs_review", doc_id=state.get("doc_id"))
+            return "human_review"
         return "compile_report"
     thresholds = _thresholds_for(state)
     raw_retry_max = thresholds.get("arbiter_retry_max")
@@ -890,6 +1000,15 @@ def after_report(state: dict) -> Literal["catalog_write", "human_review"]:
         logger.info(
             "report_failed_withhold_catalog",
             doc_id=state.get("doc_id"),
+        )
+        return "human_review"
+    # A class with ``auto_archive: false`` never archives model output unseen: the
+    # compiled draft goes to a person. Only fields a person applied archive directly.
+    if not human_fields_applied(state) and not class_auto_archives(state.get("doc_type")):
+        logger.info(
+            "class_requires_review",
+            doc_id=state.get("doc_id"),
+            doc_type=state.get("doc_type"),
         )
         return "human_review"
     return "catalog_write"

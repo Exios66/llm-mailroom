@@ -37,7 +37,7 @@ Corporate field scores and merger routing expectations therefore differ from run
 
 `document_id`, `content_sha256`, `normalized_text_sha256`, `source_corpus`, `source_document_id`, `source_filename`, `source_revision`, plus `annotation_*` (source, method, model, prompt version, confidence, reviewer, timestamp).
 
-The pipeline loader checks `content_sha256` against the bytes of `doc_text` at load time.
+The pipeline loader checks `content_sha256` against the bytes of `doc_text` at load time. A mismatch sets `content_verified` to false and is listed in the loader's `integrity` provenance; it does not drop the row unless `strict=True` is passed.
 
 ### Classification gold
 

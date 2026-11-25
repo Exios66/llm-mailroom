@@ -40,11 +40,12 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 |:---|:---|
 | `src/graph/` | `build_graph.py` (22 nodes, including `classification_arbiter` and `audit_failed`; `run_pipeline`, tracing wrappers), `scoring_nodes.py` (`score_common` + one `score_<type>` per dojo scorer), `routing.py` (conditional edges) |
 | `src/agents/` | LLM agents (`BaseAgent` subclasses: sorter, specialists, judge, boss, relations, triage) and procedural ones (reporter, archivist, pdf_transcriber, image_extractor, intake clerk) |
-| `src/llm/` | `client.py:get_llm`, `providers.py`, `retry.py`, `prompts.py` (Langfuse-managed prompts + fallbacks), `vision.py` |
+| `src/llm/` | `client.py:get_llm`, `providers.py`, `retry.py`, `prompts.py` (repo prompts by default; Langfuse override only on opt-in), `prompt_sets/` (versioned prompt sets), `vision.py` |
 | `src/pipeline/` | watcher, bins, guards, Gmail intake, relations, ops monitor, pager, env/logging/config |
 | `src/schemas/` | Pydantic document and manifest models, `EXTRACTION_SCHEMAS` |
 | `src/storage/` | SQLite/Postgres catalog, audit log, relations tables |
 | `src/observability/` | tracing backends, scores, field-scoring adapters to the Dojo |
+| `src/mailroom_contract/` | SDK-free node/span/type bindings and emitted score definitions; runtime and adapters validate against it |
 | `src/api/` | FastAPI app (`main.py`), embeds the watcher |
 | `src/config/taxonomy.yaml` | **Single source of truth**: classes, thresholds, agent → model, token caps |
 | `src/scripts/` | operator and maintenance CLIs (pilots, gates, sync, release, bumps) |
@@ -53,7 +54,7 @@ Cross-repo constellation docs live in `docs/constellation/` (GitBook root is `do
 | `tools/gt-label-workbook/` | builds the editable ground-truth label workbook (`.xlsx`) from the pinned corpus; tests in `src/tests/test_gt_label_workbook.py` |
 | `src/legalbench/` | LegalBench evaluation submodule |
 | `deploy/` | compose files, LiteLLM gateway, Modal vLLM, HF Space payload |
-| `contract/` | generated display contract (`export_contract.py --write`) |
+| `contract/` | generated provider-neutral contract (`export_contract.py --write`, schema 2.0.0) |
 | `docs/` | GitBook site and reports (`docs/reports/<kind>/`); `docs/changelog/` is generated |
 | `landing/`, `notebooks/` | landing page (JS tested by `test_landing.py`); notebooks 00–14 |
 | `vendor/llm-dojo-scoring/` | fallback Dojo snapshot. **Never patch it.** |
@@ -129,7 +130,8 @@ lint or type cleanliness.
   mapping). Nothing is hardcoded in code.
 - Files move **only** through `pipeline/bins.py` helpers — never `os.rename` or
   `shutil.move` in node/agent code. Use `review_file_path(manifest)` for review bins.
-- Agent prompts are Langfuse-managed with an identical in-code fallback. A new or changed
+- Agent prompts ship in the repo (`llm/prompt_sets/`, default `deploy_v1`) and production
+  serves them; Langfuse overrides them only under `MAILROOM_PROMPT_SOURCE=langfuse`. A new or changed
   prompt must be registered in `llm/prompts.py:prompt_templates()`. Leave the `json_object`
   boilerplate in `agents/base.py:_call_structured` alone (Qwen rejects requests without the
   literal token `json`).

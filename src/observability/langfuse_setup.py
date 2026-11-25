@@ -300,6 +300,32 @@ def observation(name, *, as_type="span", input=None, metadata=None, model=None):
         yield span
 
 
+def set_current_trace_metadata(metadata: dict) -> None:
+    """Add ``metadata`` to the trace of the active observation (fail-soft; no-op when disabled).
+
+    Langfuse 4 takes trace metadata from per-key span attributes, which
+    ``propagate_attributes`` only sets on observations opened inside its block. A value
+    learned mid-run (a review cause) is written on the active span instead, under the
+    trace key and the observation key, so both the trace view and the span carry it.
+    Non-string values are stored as JSON, the way the SDK serializes observation metadata.
+    """
+    client = get_langfuse_client()
+    if isinstance(client, _NoopLangfuse):
+        return
+    import json
+
+    from langfuse._client.attributes import LangfuseOtelSpanAttributes as attrs
+    from opentelemetry import trace as otel_trace
+
+    span = otel_trace.get_current_span()
+    if not span.is_recording():
+        return
+    for key, value in (metadata or {}).items():
+        text = value if isinstance(value, str) else json.dumps(value, default=str)
+        span.set_attribute(f"{attrs.TRACE_METADATA}.{key}", text)
+        span.set_attribute(f"{attrs.OBSERVATION_METADATA}.{key}", text)
+
+
 def get_trace_id():
     client = get_langfuse_client()
     try:

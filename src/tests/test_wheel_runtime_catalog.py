@@ -11,7 +11,7 @@ import pytest
 
 
 def test_built_wheel_contains_and_loads_its_runtime_prompt_catalog(tmp_path):
-    """An isolated wheel must resolve its taxonomy and all 18 frozen templates."""
+    """An isolated wheel must resolve its taxonomy and all 25 templates (18 agent prompts + 7 prompt-set files)."""
     root = Path(__file__).resolve().parents[2]
     dist = tmp_path / "dist"
     # Build with this interpreter's own setuptools/wheel (both in the ``dev`` extra), so the
@@ -31,6 +31,8 @@ def test_built_wheel_contains_and_loads_its_runtime_prompt_catalog(tmp_path):
     with zipfile.ZipFile(wheel) as archive:
         names = archive.namelist()
         assert "config/taxonomy.yaml" in names
+        assert "mailroom_contract/__init__.py" in names
+        assert "mailroom_contract/scores.py" in names
         assert archive.read("config/taxonomy.yaml") == (root / "src/config/taxonomy.yaml").read_bytes()
         assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)
         # Checkout-only trees: shipped code must not need them at runtime.
@@ -49,10 +51,13 @@ def offline(event, args):
         raise RuntimeError("external I/O forbidden in wheel smoke")
 sys.addaudithook(offline)
 from pipeline import config
+from mailroom_contract import NODE_BINDINGS, validate_score
 from llm.prompts import prompt_templates
+assert len(NODE_BINDINGS) == 22
+assert validate_score("deterministic_verdict", "PARTIAL")["data_type"] == "CATEGORICAL"
 assert config.CONFIG_PATH.resolve().is_relative_to(pathlib.Path(wheel).resolve())
 templates = prompt_templates()
-assert len(templates) == 18
+assert len(templates) == 25
 assert "corporate_records_specialist" in templates
 assert set(config.get_all_doc_types()) == {"contract", "corporate_record", "correspondence", "insurance_claim", "merger_agreement"}
 assert not any("editable" in repr(finder).lower() for finder in sys.meta_path)
@@ -67,4 +72,4 @@ print(json.dumps({"templates": len(templates), "config": str(config.CONFIG_PATH)
         cwd=tmp_path, env=environment, text=True, capture_output=True, timeout=45,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert json.loads(result.stdout.splitlines()[-1])["templates"] == 18
+    assert json.loads(result.stdout.splitlines()[-1])["templates"] == 25

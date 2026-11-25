@@ -1,3 +1,5 @@
+import pytest
+
 from graph.routing import (
     after_classify,
     after_extraction,
@@ -8,7 +10,9 @@ from graph.routing import (
     after_review_classify,
     after_arbiter,
     after_judge,
+    after_retry_extraction_gated,
 )
+from pipeline.reconsideration import collect_review_causes
 
 
 class TestRoutingLogic:
@@ -410,7 +414,12 @@ class TestOnlyConfidenceClearsAnUnsureExtraction:
         state = {"doc_type": "contract", "extraction_confidence": None, "arbiter_decision": "accept_with_caveats"}
         assert after_arbiter(state) == "human_review"
 
-    def test_a_judge_that_verified_the_whole_source_clears_it(self):
+    def test_a_judge_that_verified_the_whole_source_no_longer_clears_it(self):
+        state = {"doc_type": "contract", "extraction_confidence": None, "judge_verdict": "complete",
+                 "judge_source_verified": True}
+        assert after_judge(state) == "human_review"
+
+    def test_judge_clears_low_confidence_restores_the_old_route(self, approvals_archive):
         state = {"doc_type": "contract", "extraction_confidence": None, "judge_verdict": "complete",
                  "judge_source_verified": True}
         assert after_judge(state) == "compile_report"
@@ -420,11 +429,121 @@ class TestOnlyConfidenceClearsAnUnsureExtraction:
                  "arbiter_retry_count": 1}
         assert after_arbiter(state) == "retry_extract"
 
-    def test_a_confident_extraction_still_passes(self):
+    def test_a_confident_extraction_passes_only_with_the_old_route(self, approvals_archive):
         state = {"doc_type": "contract", "extraction_confidence": 0.97, "judge_verdict": "complete",
                  "arbiter_decision": "accept_with_caveats"}
         assert after_judge(state) == "compile_report"
         assert after_arbiter(state) == "compile_report"
+
+
+class TestArchiveChecks:
+    """A judge, arbiter or boss approval is not evidence enough to archive on its own (defaults)."""
+
+    def test_a_judge_complete_goes_to_a_person(self):
+        state = {"doc_type": "contract", "extraction_confidence": 0.97, "judge_verdict": "complete"}
+        assert after_judge(state) == "human_review"
+        assert "judge_complete_unconfirmed" in collect_review_causes(state)
+
+    def test_a_skipped_judge_still_follows_confidence(self):
+        for verdict in ("skipped", None, ""):
+            assert after_judge({"doc_type": "contract", "extraction_confidence": 0.97,
+                                "judge_verdict": verdict}) == "compile_report"
+
+    def test_an_accept_with_caveats_goes_to_a_person(self):
+        state = {"doc_type": "contract", "extraction_confidence": 0.97, "judge_verdict": "partial",
+                 "arbiter_decision": "accept_with_caveats"}
+        assert after_arbiter(state) == "human_review"
+        assert "arbiter_accept_unconfirmed" in collect_review_causes(state)
+
+    _RETRY = {"doc_type": "contract", "extraction_confidence": 0.99, "extraction_attempts": 2,
+              "judge_pass_count": 1, "arbiter_decision": "retry_extraction", "arbiter_retry_count": 1,
+              "gate_ok": True, "schema_valid": True}
+
+    def test_a_retry_the_judge_doubted_never_archives_unjudged(self):
+        """#241 hole: the arbiter orders a retry after incomplete/partial and the retry says 0.99."""
+        for verdict in ("incomplete", "partial"):
+            state = {**self._RETRY, "judge_verdict": verdict}
+            assert after_retry_extraction_gated(state) == "human_review"
+            assert "retry_unjudged" in collect_review_causes(state)
+
+    def test_the_old_route_is_one_flag_away(self, approvals_archive):
+        assert after_retry_extraction_gated({**self._RETRY, "judge_verdict": "incomplete"}) == "compile_report"
+
+    @pytest.mark.parametrize("extra", [
+        {"arbiter_retry_count": 3},                                 # arbiter past its cap: no retry ran
+        {"arbiter_retry_count": 0},                                 # a review resume resets the count
+        {"extraction_attempts": 1},                                 # no retry yet
+        {"conflict_detected": True, "review_decision": None},       # parked for the matter conflict
+        {"extraction_confidence": 0.2, "extraction_attempts": 3},   # parked for low confidence
+    ])
+    def test_retry_unjudged_names_only_a_retry_that_would_have_archived(self, extra):
+        state = {**self._RETRY, "judge_verdict": "incomplete", **extra}
+        assert "retry_unjudged" not in collect_review_causes(state)
+
+    def test_a_retry_the_judge_judged_again_is_not_unjudged(self):
+        """The latest attempt carries its own verdict: a re-judged partial is not retry_unjudged."""
+        judged = {**self._RETRY, "judge_verdict": "partial", "extraction_attempts": 3, "arbiter_retry_count": 2,
+                  "extraction_attempt_history": [{"attempt_no": n, "judge_verdict": "partial"} for n in (1, 2, 3)]}
+        assert "retry_unjudged" not in collect_review_causes(judged)
+        unjudged = {**judged, "extraction_attempt_history": [
+            {"attempt_no": 1, "judge_verdict": "partial"}, {"attempt_no": 2, "judge_verdict": "partial"},
+            {"attempt_no": 3, "judge_verdict": None}]}
+        assert "retry_unjudged" in collect_review_causes(unjudged)
+        assert after_retry_extraction_gated(unjudged) == "human_review"
+
+    def test_a_slot_park_from_an_earlier_attempt_is_not_a_cause(self):
+        """A gate park another rule overrode (a retry followed) does not follow the document."""
+        stale = {"archive_gate": {"node": "extract", "attempt": 1, "route": "human_review",
+                                  "cause": "archive_gate_unsupported"}}
+        state = {"doc_type": "contract", "extraction_confidence": 0.99, "extraction_attempts": 2,
+                 "decision_slot_outcomes": stale}
+        assert "archive_gate_unsupported" not in collect_review_causes(state)
+        assert "archive_gate_unsupported" in collect_review_causes({**state, "extraction_attempts": 1})
+
+    def test_a_boss_approval_does_not_judge_a_doubted_retry(self):
+        """A doubted retry that finds a matter conflict goes to the Boss, not the judge."""
+        from graph.routing import after_boss
+
+        state = {**self._RETRY, "judge_verdict": "incomplete", "conflict_detected": True,
+                 "review_decision": "approved", "boss_context_records": 2}
+        assert after_boss(state) == "human_review"
+        assert "retry_unjudged" in collect_review_causes(state)
+        assert after_boss({**state, "arbiter_retry_count": 0}) == "compile_report"  # a review resume
+
+    def test_a_boss_approval_of_a_doubted_retry_archives_when_opted_back_in(self, approvals_archive):
+        from graph.routing import after_boss
+
+        state = {**self._RETRY, "judge_verdict": "incomplete", "conflict_detected": True,
+                 "review_decision": "approved", "boss_context_records": 2}
+        assert after_boss(state) == "compile_report"
+
+    def test_a_retry_with_no_judge_doubt_still_archives(self):
+        state = {"doc_type": "contract", "extraction_confidence": 0.99, "extraction_attempts": 2,
+                 "gate_ok": True, "schema_valid": True}
+        assert after_retry_extraction_gated(state) == "compile_report"
+
+    def test_a_class_can_opt_back_in(self, monkeypatch):
+        import copy
+
+        import pipeline.config as config
+
+        cfg = copy.deepcopy(config.load_config())
+        cfg["confidence"]["by_class"]["insurance_claim"]["judge_complete_archives"] = True
+        monkeypatch.setattr(config, "load_config", lambda: cfg)
+        claim = {"doc_type": "insurance_claim", "extraction_confidence": 0.97, "judge_verdict": "complete"}
+        assert after_judge(claim) == "compile_report"
+        assert after_judge({**claim, "doc_type": "contract"}) == "human_review"
+
+    def test_a_blind_boss_approval_goes_to_a_person(self):
+        from graph.routing import after_boss
+
+        state = {"doc_type": "contract", "review_decision": "approved", "conflict_detected": True,
+                 "boss_context_records": 0}
+        assert after_boss(state) == "human_review"
+        assert "boss_ungrounded" in collect_review_causes(state)
+        assert after_boss({**state, "boss_context_records": 2}) == "compile_report"
+        legacy = {k: v for k, v in state.items() if k != "boss_context_records"}
+        assert after_boss(legacy) == "compile_report"  # a state from before the count was kept
 
 
 def test_every_specialist_schema_asks_for_confidence():
@@ -466,11 +585,11 @@ def test_a_complete_but_inaccurate_extraction_is_not_complete(monkeypatch):
     assert "wrong date" in result["judge_findings"]
 
 
-def test_a_judge_that_saw_part_of_the_document_verifies_nothing(monkeypatch):
-    from agents.judge import JUDGE_SOURCE_CHARS
-
-    result, _ = _judged(monkeypatch, "accurate", text="x" * (JUDGE_SOURCE_CHARS + 1))
+def test_a_judge_that_reports_no_coverage_verifies_nothing(monkeypatch):
+    """The fake judge reads no windows, so even a clean verdict does not clear a long document."""
+    result, _ = _judged(monkeypatch, "accurate", text="x" * 50_000)
     assert result["judge_verdict"] == "complete" and result["judge_source_verified"] is False
+    assert result["judge_coverage"]["windows_checked"] == 0
 
 
 def test_the_arbiter_is_shown_the_source(monkeypatch):

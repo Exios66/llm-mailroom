@@ -32,6 +32,9 @@ POLICY = {
     "judge_max_passes": 3,
     "by_class": {},
 }
+# The archive checks off: a judge "complete" and an arbiter accept_with_caveats archive again.
+LEGACY = {**POLICY, "judge_complete_archives": True, "arbiter_accept_archives": True,
+          "judge_clears_low_confidence": True}
 
 
 def sorter(conf, attempt=1, doc_type="contract", cost=0.0):
@@ -174,30 +177,41 @@ def test_spent_retries_with_low_confidence_park_for_a_person():
     assert out.reasons == ["arbiter_not_observed_on_attempt_3"]
 
 
+def test_judge_complete_and_accept_with_caveats_park_by_default():
+    base = dict(sorters=[sorter(0.97)], extractions=[extract(0.85)])
+    ok = pr.replay(record(**base, judges=[judge("complete")]), POLICY)
+    assert ok.outcome == pr.HUMAN and "judge_verify" in ok.path
+    caveats = record(**base, judges=[judge("partial")], arbiters=[arbiter("accept_with_caveats")])
+    assert pr.replay(caveats, POLICY).outcome == pr.HUMAN
+
+
 def test_judge_complete_archives_and_partial_follows_the_arbiter():
     base = dict(sorters=[sorter(0.97)], extractions=[extract(0.85)])
-    ok = pr.replay(record(**base, judges=[judge("complete", cost=0.015)]), POLICY)
+    ok = pr.replay(record(**base, judges=[judge("complete", cost=0.015)]), LEGACY)
     assert ok.outcome == pr.AUTO and "judge_verify" in ok.path
     assert ok.llm_cost_usd == pytest.approx(0.015)
     caveats = record(**base, judges=[judge("partial")], arbiters=[arbiter("accept_with_caveats")])
-    assert pr.replay(caveats, POLICY).outcome == pr.AUTO
+    assert pr.replay(caveats, LEGACY).outcome == pr.AUTO
     giveup = record(**base, judges=[judge("incomplete")], arbiters=[arbiter("human_review")])
-    assert pr.replay(giveup, POLICY).outcome == pr.HUMAN
+    assert pr.replay(giveup, LEGACY).outcome == pr.HUMAN
     retry = record(
         sorters=[sorter(0.97)],
         extractions=[extract(0.85), extract(0.95, attempt=2)],
         judges=[judge("partial")],
         arbiters=[arbiter("retry_extraction")],
     )
-    out = pr.replay(retry, POLICY)
+    out = pr.replay(retry, LEGACY)
     assert out.outcome == pr.AUTO
     assert out.path.count("retry_extract") == 1 and "arbiter" in out.path
     assert out.path.count("judge_verify") == 1  # judge_rejudge_retry is off by default
+    # By default the unjudged retry parks (retry_unjudged), as the live graph does: replay
+    # carries the judge verdict and arbiter decision into the retry attempt.
+    assert pr.replay(retry, POLICY).outcome == pr.HUMAN
 
 
 def test_opt_in_rejudge_replays_the_second_verdict():
     """#241 opt-in: with judge_rejudge_retry on, the confident retry needs its own verdict."""
-    policy = {**POLICY, "judge_rejudge_retry": True}
+    policy = {**LEGACY, "judge_rejudge_retry": True}
     retry = record(
         sorters=[sorter(0.97)],
         extractions=[extract(0.85), extract(0.95, attempt=2)],
@@ -573,11 +587,11 @@ def test_lost_chunks_are_not_cleared_by_a_complete_judge_verdict():
     an intact payload: a recorded complete, source-verified verdict may not archive a partial
     extraction the live graph retried."""
     judged = _three_low_attempts(1, judges=[judge("complete", attempt=3, verified=True)])
-    out = pr.replay(judged, POLICY)
+    out = pr.replay(judged, LEGACY)  # LEGACY: the default judge-complete park would mask a lost window
     assert out.outcome == pr.HUMAN and out.path[-1] == "human_review"
     # the same route with the windows intact is exactly what the judge verdict is worth
     assert pr.replay(_three_low_attempts(0, judges=[judge("complete", attempt=3, verified=True)]),
-                     POLICY).outcome == pr.AUTO
+                     LEGACY).outcome == pr.AUTO
 
 
 def test_lost_chunks_on_the_last_attempt_park_not_unobserved():
@@ -973,23 +987,23 @@ def test_arbiter_ruling_of_another_class_is_not_used():
         ArbiterObservation(ran=True, on_attempt=1, decision="human_review", doc_type="correspondence"),
         ArbiterObservation(ran=True, on_attempt=1, decision="accept_with_caveats", doc_type="contract"),
     ]
-    out = pr.replay(record(**base, arbiters=other_first), POLICY)
+    out = pr.replay(record(**base, arbiters=other_first), LEGACY)
     assert out.outcome == pr.AUTO  # the contract ruling, not the first one in the list
     only_other = [other_first[0]]
-    out = pr.replay(record(**base, arbiters=only_other), POLICY)
+    out = pr.replay(record(**base, arbiters=only_other), LEGACY)
     assert out.outcome == pr.UNOBSERVED and out.reasons == ["arbiter_not_observed_on_attempt_1"]
 
 
 def test_untyped_arbiter_rulings_are_used_only_when_unambiguous():
     base = _arbiter_cases([extract(0.85)])
     one = [arbiter("accept_with_caveats")]
-    assert pr.replay(record(**base, arbiters=one), POLICY).outcome == pr.AUTO  # unchanged for old records
+    assert pr.replay(record(**base, arbiters=one), LEGACY).outcome == pr.AUTO  # unchanged for old records
     two = [arbiter("human_review"), arbiter("accept_with_caveats")]
-    out = pr.replay(record(**base, arbiters=two), POLICY)
+    out = pr.replay(record(**base, arbiters=two), LEGACY)
     assert out.outcome == pr.UNOBSERVED and out.reasons == ["arbiter_not_observed_on_attempt_1"]
     mixed = [ArbiterObservation(ran=True, on_attempt=1, decision="human_review", doc_type="correspondence"),
              arbiter("accept_with_caveats")]
-    assert pr.replay(record(**base, arbiters=mixed), POLICY).outcome == pr.UNOBSERVED
+    assert pr.replay(record(**base, arbiters=mixed), LEGACY).outcome == pr.UNOBSERVED
 
 
 @pytest.mark.parametrize("params", [

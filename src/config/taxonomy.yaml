@@ -247,6 +247,14 @@ cost_models:
     output_per_million: 0.0
 
 confidence:
+  # Profile `calibrated_v1` (2026-11-17), the active default. Fitted from runs already
+  # made, not from a new sweep: docs/reports/evaluations/2026-11-17-confidence-calibration.md
+  # has the data, the per-class reliability tables and how solid each value is.
+  # The pre-calibration values are kept verbatim as `confidence_profiles.legacy_v0`;
+  # MAILROOM_CONFIDENCE_PROFILE=legacy_v0 selects them for an A/B arm (recorded as
+  # `confidence_profile` in trace metadata). Refit once new prompts or models land:
+  # self-reported confidence moves with both.
+  #
   # Global fallbacks (used before doc_type is known). Per-class severity overrides
   # live under by_class and win once classification is set — see
   # pipeline/config.py:get_confidence_thresholds.
@@ -272,36 +280,122 @@ confidence:
   # attempt is always recorded in extraction_attempt_history; this only decides
   # which one compile_report and the review handoff use: ranked complete >
   # partial > incomplete, then extraction confidence, ties keep the latest, and
-  # only judged attempts that passed the schema/quality gate compete. Off by
-  # default for the same reason as judge_rejudge_retry (the ranking trusts the
+  # only judged attempts that passed the schema/quality gate compete. An
+  # unjudged latest retry that passed the gate is kept over any judged earlier
+  # attempt (latest_unjudged), and archiving keeps the latest when the selected
+  # earlier attempt is still unsure or below the coverage floor
+  # (earlier_attempt_requires_review). Off by default for the same reason as judge_rejudge_retry (the ranking trusts the
   # uncalibrated judge, #242). Per-class overridable under by_class. Routing
   # never reads it.
   keep_best_attempt: false
+  # Archive checks (graph/routing.py). A document reaches the judge or the arbiter because
+  # the pipeline doubted it, and neither has earned the trust to archive it alone: in the
+  # slice-100 r2 judge audit the judge passed 5 of r2's 6 wrong archives, judged contracts
+  # archived wrong 10 of 12 times, and every arbiter accept_with_caveats seen archived a
+  # wrong extraction (#242, #278). false (default): they go to a person instead
+  # (judge_complete_unconfirmed, arbiter_accept_unconfirmed); an enforcing decision slot
+  # (decision_slots.archive_gate release) may still archive a capped share the gate backs.
+  # judge_clears_low_confidence false: a judge never clears an extraction below `low`.
+  # judge_complete_archives false also parks an arbiter-ordered retry of an extraction the
+  # judge found lacking when no re-judge is due (retry_unjudged), instead of archiving it
+  # on its own confidence.
+  # Per-class overridable under by_class; true restores the old route.
+  judge_complete_archives: false
+  arbiter_accept_archives: false
+  judge_clears_low_confidence: false
   # Unused routing knob (kept for config-file compatibility). Matter conflicts
   # escalate via deterministic same-class field comparison in
   # graph/build_graph.py:_detect_conflict — not an extraction-confidence gap.
   conflict_threshold: 0.3
+  # `auto_archive` (per class, default true): false sends every document of the
+  # class that would archive to a person instead (review cause
+  # `class_requires_review`), after the report is compiled so the reviewer gets the
+  # draft. Fields a person applies or corrects archive; a class approval with no
+  # parked fields re-extracts, so the new draft parks again for review
+  # (graph/routing.py:after_report). A legacy approve+resume on parked fields is
+  # refused (pipeline/review_resolve.py:plan_resolution).
   by_class:
     contract:
+      # Sorter `high` stays 0.98 on purpose. The sorter answers 0.95 on ~80% of contracts
+      # and 18% of those are indentures / rights instruments (wrong class), so 0.98 sends
+      # them through retry_classify and Lane A, which costs about a third of correct
+      # contracts a person. On the 323-document held-out test, 0.95 would triple wrong-class
+      # archives (3 -> 9); the prompt fix (sorter_condensed_v5) is not yet measured on
+      # held-out data. Revisit after a test-split sorter run on v5.
       high: 0.98
       low: 0.90
       judge_band_high: 0.97
     merger_agreement:
       high: 0.98
       low: 0.90
-      judge_band_high: 0.97
+      # No merger extraction has met the quality bar in any study run (MAUD
+      # accuracy ~0.10-0.15), so an archive is always a wrong archive. Park every
+      # merger for a person and skip the judge loop (judge_band_high == low: empty
+      # band), which spent about a third (22-50% by round) of a merger run's tokens without changing the outcome.
+      judge_band_high: 0.90
+      arbiter_retry_max: 1
+      judge_max_passes: 2
+      auto_archive: false
     insurance_claim:
-      high: 0.98
+      # Sorter `high` 0.98 -> 0.95: 0 class errors in 1,100 insurance predictions
+      # (266 of them at 0.95). Solid.
+      high: 0.95
       low: 0.90
       judge_band_high: 0.97
     corporate_record:
-      high: 0.96
+      # Sorter `high` 0.96 -> 0.95: 0 class errors in 353 corporate predictions
+      # (208 at 0.95). Solid. Judge band unchanged on purpose: judging every
+      # corporate record (E2) added cost and review, not quality.
+      high: 0.95
       low: 0.86
       judge_band_high: 0.94
     correspondence:
       high: 0.95
       low: 0.85
       judge_band_high: 0.92
+
+# Named alternative `confidence` blocks for A/B runs. Each is a complete block
+# (same keys as `confidence`, not a patch). Select one with
+# MAILROOM_CONFIDENCE_PROFILE=<name>; unset, empty or `calibrated_v1` uses the
+# `confidence` block above. An unknown name is an error, never a silent fallback.
+confidence_profiles:
+  # The values in force before the 2026-11-17 calibration, verbatim.
+  legacy_v0:
+    high: 0.97
+    low: 0.88
+    retry_max: 2
+    judge_band_high: 0.95
+    arbiter_retry_max: 2
+    judge_max_passes: 3
+    judge_rejudge_retry: false
+    keep_best_attempt: false
+    # Archive checks are not part of the calibration A/B. false (same as the active
+    # profile, and the same as a missing key) still parks a doubted approval.
+    judge_complete_archives: false
+    arbiter_accept_archives: false
+    judge_clears_low_confidence: false
+    conflict_threshold: 0.3
+    by_class:
+      contract:
+        high: 0.98
+        low: 0.90
+        judge_band_high: 0.97
+      merger_agreement:
+        high: 0.98
+        low: 0.90
+        judge_band_high: 0.97
+      insurance_claim:
+        high: 0.98
+        low: 0.90
+        judge_band_high: 0.97
+      corporate_record:
+        high: 0.96
+        low: 0.86
+        judge_band_high: 0.94
+      correspondence:
+        high: 0.95
+        low: 0.85
+        judge_band_high: 0.92
 
 # Routing inputs beyond the observed run (pipeline/config.py:oracle_routing_enabled).
 routing:
@@ -313,6 +407,22 @@ routing:
   # transfer to production. MAILROOM_ORACLE_ROUTING=1|0 overrides this for one run.
   # Cause labelling (class_miss, subclass_miss) and scoring read GT either way.
   use_ground_truth: false
+
+# Prompt source: `repo` (default) serves the prompts shipped in this repository (the active
+# prompt set below) and never consults Langfuse. `langfuse` is an explicit opt-in where a
+# Langfuse prompt labelled `production` overrides the repo text. MAILROOM_PROMPT_SOURCE
+# overrides this for one process.
+prompt_source: repo
+
+# Prompt sets (llm/prompt_sets/catalog.yaml): which versioned system prompt each agent
+# serves. deploy_v1 = the condensed front-runners plus the label-guide fixes; frozen_v1 =
+# every agent's code default (the A/B baseline); deploy_v1_examples = deploy_v1 plus
+# synthetic correspondence examples. MAILROOM_PROMPT_SET overrides `active` for one process.
+# by_agent pins single agents to another set for a per-agent A/B arm
+# (e.g. {correspondence_specialist: frozen_v1}); the env var, when set, wins over it.
+prompt_set:
+  active: deploy_v1
+  by_agent: {}
 
 # Lane A reviewer mode (see pipeline/decision_review.py). Every class keeps
 # the LLM sorter_reviewer unless its by_class entry sets `mode: decision_only`
@@ -369,6 +479,59 @@ reviewer:
 # stops the watcher and the API at startup, and build_graph() checks it again.
 decision_points: {}
 
+# Decision-model slots (graph/decision_slots.py; the decision-model experiments, Sets A-F).
+# Every slot ships `mode: baseline`, which is the pipeline without this block: no node is
+# wrapped, no route rule is registered, no model is called. The decision models themselves
+# are registered by the host (the sandbox runs them on the OpenRouter Decisions API):
+# agents.decision_backend (sorter reviewer), agents.extraction_gate (gate) and
+# agents.closed_field_resolver (resolver). Modes are words, never YAML booleans.
+# Caps are shares of the documents a slot has seen in this process; a capped decision
+# follows the baseline route and is recorded as `capped`. Edits need a watcher/API restart.
+decision_slots:
+  gate_support_min: 0.5        # a gate field_support below this = "not supported by the source"
+  cap_warmup: 20               # caps are computed over max(seen, cap_warmup) documents
+  # The fields the gate must answer per class (the mailroom's list, never the plug-in's): an
+  # unanswered key field is support 0. A release or a judge replacement needs the class here.
+  # These are the key fields of the sandbox gate question set extraction_gate_v1.3.0.
+  gate_key_fields:
+    contract: [document_name, parties, effective_date, governing_law, term_length, renewal_terms, cuad_clauses]
+    corporate_record: [record_type, entity_name, jurisdiction, effective_date, filing_number, signatories, intent]
+    correspondence: [intent, communication_type, sender, recipient, communication_date]
+    insurance_claim: [claim_number, policy_number, insured_party, insurer, date_of_loss, date_filed,
+                      claimed_amount, claim_type, coverage_determination]
+    merger_agreement: [document_name, parties, effective_date, effective_time, governing_law, merger_consideration]
+  sorter_reviewer:             # Set A. The `reviewer:` block picks decision_only classes.
+    park_cap: null             # null = no cap; e.g. 0.10: past it the chat reviewer reviews
+  archive_gate:                # Set B. Verdict derived in code from per-field support.
+    mode: baseline             # baseline (gate answer recorded only) | enforce
+    park_cap: 0.10             # max share the gate may park instead of archive
+    release: false             # true: may archive a soft park (never incomplete / hard causes)
+    release_support_min: 0.9   # every gate_key_fields field at or above this to release
+    release_cap: 0.03          # max share released from review
+  judge_replacement:
+    mode: baseline             # baseline (LLM judge) | gate (gate answer is the verdict)
+  arbiter_veto:
+    mode: baseline             # baseline | enforce (gate disagrees with accept_with_caveats: park)
+    park_cap: null             # a veto only parks, never releases
+    on_unverified: baseline    # baseline | park (the gate cannot confirm the accept: park too)
+  closed_field_resolver:       # Set B2. Off-list closed labels park (#285) under baseline.
+    mode: baseline             # baseline | suggest (record the pick) | resolve (apply it)
+    min_probability: 0.9       # every off-list field needs an on-list pick at or above this
+    release_cap: 0.03
+  field_review:                # exploratory (reserve until Set B reads out)
+    mode: baseline             # baseline | annotate (parked review block names the fields)
+    max_fields: 3              # more doubtful fields than this: review the whole document
+  # Approval checks: the gate must back an approval before it archives. Experiments so far:
+  # a judge "complete" was wrong 6 of 7 times, an arbiter accept_with_caveats 3 of 3.
+  judge_check:
+    mode: baseline             # baseline | enforce (gate disagrees with a judge "complete": park)
+    park_cap: 0.10
+    on_unverified: baseline    # baseline | park (the gate cannot confirm "complete": park too)
+  boss_check:
+    mode: baseline             # baseline | enforce (gate disagrees with a boss "approved": park)
+    park_cap: 0.10
+    on_unverified: baseline    # baseline | park
+
 review_queue:
   # Order of the human review tray (pipeline/review_priority.py). Score =
   # severity * class weight * (1 + age term); the tray sorts by score, then oldest.
@@ -395,6 +558,20 @@ review_queue:
     sorter_low_confidence: 1.2
     reviewer_low_confidence: 1.2
     reporting_incomplete: 1.2
+    out_of_vocabulary: 3.0         # a closed label the Dojo scores wrong: deterministic, like schema_invalid
+    judge_complete_unconfirmed: 1.2  # a doubted extraction the judge called complete (judge_complete_archives false)
+    arbiter_accept_unconfirmed: 1.5  # accept_with_caveats over a judge that found problems
+    boss_ungrounded: 3.0           # the boss approved a conflict without seeing the matter record
+    retry_unjudged: 2.0            # a retry the judge doubted would have archived unjudged (#241)
+    archive_gate_unsupported: 2.0  # decision slot: the gate found values the source does not support
+    arbiter_veto_gate: 2.0         # decision slot: the gate disagreed with accept_with_caveats
+    gate_incomplete: 2.0           # decision slot: the arbiter accepted a gate "incomplete"
+    arbiter_accept_unverified: 1.5 # decision slot: the gate could not confirm accept_with_caveats
+    judge_check_unsupported: 2.0   # decision slot: the gate disagreed with a judge "complete"
+    judge_complete_unverified: 1.5 # decision slot: the gate could not confirm a judge "complete"
+    boss_check_unsupported: 2.5    # decision slot: the gate disagreed with a boss approval
+    boss_approval_unverified: 1.5  # decision slot: the gate could not confirm a boss approval
+    class_requires_review: 1.0     # policy park (auto_archive: false), not a failure
   class_tier_weight:               # cost of a wrong answer per class
     contract: 1.3
     merger_agreement: 1.4
@@ -511,6 +688,17 @@ doc_classes:
       territory: free_text
       cuad_family: label
       cuad_clauses: entity_list:free_text
+    # Closed-label vocabularies (#285). Single source of truth: each `label` field below
+    # that names a closed set lists its values here. After extraction a value off its list
+    # (as the Dojo's canonical_label folds it) routes the document to review with cause
+    # `out_of_vocabulary`; absence is valid. Values match the Dojo's scored vocabulary
+    # (llm_dojo_scoring.schemas.scored_enums.SCORED_ENUM_FIELDS; a test pins the match).
+    label_vocabularies:
+      cuad_family: [affiliate, agency, collaboration, co_branding, consulting, development,
+                    distributor, endorsement, franchise, hosting, ip, joint_venture, license,
+                    maintenance, manufacturing, marketing, non_compete_no_solicit, outsourcing,
+                    promotion, reseller, service, sponsorship, strategic_alliance, supply,
+                    transportation, other]
 
   - key: merger_agreement
     label: "Merger Agreement"
@@ -539,6 +727,9 @@ doc_classes:
       intent: label
       subject_matter: free_text
       keywords: entity_list:name
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      merger_consideration: [all_cash, all_stock, mixed_cash_stock, mixed_cash_stock_election, other]
+      intent: [effect_merger, amend_merger, other]
 
   - key: corporate_record
     label: "Corporate Record"
@@ -555,6 +746,9 @@ doc_classes:
       intent: label
       subject_matter: free_text
       keywords: entity_list:name
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      intent: [governance_rules, corporate_action_approval, entity_formation, authority_delegation,
+               investor_rights, other]
 
   - key: correspondence
     label: "Correspondence"
@@ -573,6 +767,12 @@ doc_classes:
       intent: label
       subject_matter: free_text
       keywords: entity_list:name
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      communication_type: [email, letter, memo, notice, demand, attorney_demand, press_release,
+                           meeting_request, other]
+      urgency: [routine, time-sensitive, urgent, critical]
+      intent: [payment_demand, notice, analysis, request, update, meeting_invite,
+               press_communication, other]
 
   - key: insurance_claim
     label: "Insurance Claim"
@@ -597,6 +797,12 @@ doc_classes:
       subject_matter: free_text
       keywords: entity_list:name
       claim_checklist: entity_list:free_text
+    label_vocabularies:  # closed labels, see the contract class (#285)
+      # Product lines only. A CMS table token (pde, inpatient, outpatient, carrier) is not a
+      # product line: #280 folds it onto `health`, and one that reaches the check is off-list.
+      claim_type: [auto, property, liability, health, life, workers_comp, other]
+      coverage_determination: [approved, denied, partial, pending]
+      intent: [claim_filing, coverage_determination, loss_report, claim_data_record, other]
 
 file_extensions:
   - .txt
@@ -724,6 +930,8 @@ agents:
 
   # KANBAN-063 (Lane B): judgment arbitration on failed judge verdicts.
   # Sees the specialist extraction + judge findings; bounded decisions only.
+  # max_input_chars is the window size: a longer document is read in overlapping windows
+  # (#277), human_review from any window wins, and the read stops at the first one.
   arbiter:
     provider: openrouter
     model: qwen/qwen3.7-flash
@@ -821,7 +1029,9 @@ agents:
     max_input_chars: 20000
     reasoning_effort: none
 
-  # Offline LLM-as-a-judge used by scripts/run_quality_judges.py.
+  # LLM-as-a-judge: in-pipeline (judge_verify) and offline (scripts/run_quality_judges.py).
+  # max_input_chars is the window size: the judge reads a longer document in overlapping
+  # windows (overlap: chunking.overlap_chars), one call per window, never an excerpt (#277).
   judge:
     provider: openrouter
     model: qwen/qwen3.7-flash

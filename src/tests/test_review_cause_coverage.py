@@ -247,7 +247,7 @@ def test_chunk_failed_reads_failed_chunks(value):
     assert rc.CHUNK_FAILED not in collect_review_causes(clean)
 
 
-def test_clean_archive_path_state_gets_no_new_causes():
+def test_clean_archive_path_state_gets_no_new_causes(approvals_archive):
     """A confident, conflict-free run is not 'reconsidered' by the new causes."""
     state = {
         "doc_type": "contract",

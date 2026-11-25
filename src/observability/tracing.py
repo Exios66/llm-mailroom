@@ -20,17 +20,18 @@ Two integration points:
 - `instrument_openai_client` wraps the OpenAI client built in
   `llm/client.py:get_llm`, so every LLM call becomes a traced generation.
 - `pipeline_trace` / `traced_node` add structured, nested observations around
-  document runs and graph nodes (Langfuse-only structured spans; the
-  Phoenix/Braintrust backends still trace LLM calls). All helpers no-op safely
-  when tracing is disabled.
+  document runs and graph nodes on every available backend. Local audit visits
+  are independent of tracing and remain available when tracing is disabled.
 """
 
 import contextvars
 import functools
 import os
+import sys
 from datetime import datetime, timezone
 import structlog
 from contextlib import contextmanager
+from mailroom_contract import OBSERVATION_BINDINGS, TRACE_NAME, validate_observation
 
 logger = structlog.get_logger(__name__)
 
@@ -118,44 +119,77 @@ def instrument_openai_client(client):
 def pipeline_trace(*args, **kwargs):
     """Root chain observation for one document run (one trace per document).
 
-    See `observability/langfuse_setup.pipeline_trace` for parameters. No-ops
-    (yields None) unless Langfuse or Braintrust is the active backend.
+    See `observability/langfuse_setup.pipeline_trace` for parameters. Yields
+    None when tracing is disabled or unavailable.
     Default ``as_type`` is ``chain``.
     """
+    name = kwargs.get("name", TRACE_NAME)
+    kwargs["as_type"] = validate_observation(name, kwargs.get("as_type", "chain"))
     provider = resolve_provider_name()
-    if provider == "langfuse":
-        from .langfuse_setup import pipeline_trace as _langfuse_pipeline_trace
-
-        with _langfuse_pipeline_trace(*args, **kwargs) as root:
-            yield root
-    elif provider == "braintrust":
-        from .braintrust_setup import braintrust_pipeline_trace as _braintrust_pipeline_trace
-
-        with _braintrust_pipeline_trace(*args, **kwargs) as root:
-            yield root
-    else:
-        yield None
-        return
+    try:
+        if provider == "langfuse":
+            from .langfuse_setup import pipeline_trace as factory
+        elif provider == "braintrust":
+            from .braintrust_setup import braintrust_pipeline_trace as factory
+        elif provider == "phoenix":
+            from .phoenix_setup import pipeline_trace as factory
+        else:
+            factory = None
+        cm = factory(*args, **kwargs) if factory else None
+    except Exception:
+        logger.warning("pipeline_trace_setup_failed", provider=provider, exc_info=True)
+        cm = None
+    with _safe_backend_context(cm, provider) as root:
+        yield root
 
 
 @contextmanager
 def observation(name, **kwargs):
-    """Child observation under the active span. No-ops when Langfuse or
-    Braintrust is inactive."""
+    """Child observation under the active span on the selected backend."""
+    kwargs["as_type"] = validate_observation(name, kwargs.get("as_type"))
     provider = resolve_provider_name()
-    if provider == "langfuse":
-        from .langfuse_setup import observation as _langfuse_observation
+    try:
+        if provider == "langfuse":
+            from .langfuse_setup import observation as factory
+        elif provider == "braintrust":
+            from .braintrust_setup import braintrust_observation as factory
+        elif provider == "phoenix":
+            from .phoenix_setup import observation as factory
+        else:
+            factory = None
+        cm = factory(name, **kwargs) if factory else None
+    except Exception:
+        logger.warning("observation_setup_failed", provider=provider, name=name, exc_info=True)
+        cm = None
+    with _safe_backend_context(cm, provider) as span:
+        yield span
 
-        with _langfuse_observation(name, **kwargs) as span:
-            yield span
-    elif provider == "braintrust":
-        from .braintrust_setup import braintrust_observation as _braintrust_observation
 
-        with _braintrust_observation(name, **kwargs) as span:
-            yield span
+@contextmanager
+def _safe_backend_context(cm, provider):
+    """Only backend entry/exit may fail soft; the caller body runs exactly once."""
+    span = None
+    if cm is not None:
+        try:
+            span = cm.__enter__()
+        except Exception:
+            logger.warning("observation_enter_failed", provider=provider, exc_info=True)
+            cm = None
+    try:
+        yield span
+    except BaseException:
+        if cm is not None:
+            try:
+                cm.__exit__(*sys.exc_info())
+            except Exception:
+                logger.warning("observation_exit_failed", provider=provider, exc_info=True)
+        raise
     else:
-        yield None
-        return
+        if cm is not None:
+            try:
+                cm.__exit__(None, None, None)
+            except Exception:
+                logger.warning("observation_exit_failed", provider=provider, exc_info=True)
 
 
 def _state_summary(state: dict) -> dict:
@@ -202,38 +236,11 @@ def _result_summary(result: dict, state: dict | None = None):
 # generations = LLM calls (auto via langfuse.openai); agents = specialist
 # orchestration; evaluators = quality judges; retrievers = document reads;
 # chain = the pipeline as a whole; span = remaining units of work.
-NODE_OBSERVATION_TYPES = {
-    "document-pipeline": "chain",
-    "intake-document": "span",
-    "normalize-intake": "span",
-    "intake-ml-triage": "span",
-    "extract-image-text": "retriever",
-    "transcribe-pdf": "retriever",
-    "classify-document": "agent",
-    "extract-fields": "agent",
-    "judge-verify": "evaluator",
-    "arbitrate-verdict": "agent",
-    "arbitrate-classification": "agent",
-    "route-for-review": "span",
-    "adjudicate-conflict": "agent",
-    "compile-report": "agent",
-    "score-common": "evaluator",
-    "score-contract": "evaluator",
-    "score-corporate-record": "evaluator",
-    "score-correspondence": "evaluator",
-    "score-insurance-claim": "evaluator",
-    "score-merger-agreement": "evaluator",
-    "score-generic": "evaluator",
-    "write-catalog": "span",
-    "archive-document": "span",
-    "audit-failed": "span",
-    "pipeline-result": "generation",
-    "answer-question": "generation",
-}
+NODE_OBSERVATION_TYPES = OBSERVATION_BINDINGS
 
 
 def observation_type_for(name: str, default: str = "span") -> str:
-    return NODE_OBSERVATION_TYPES.get(name, default)
+    return NODE_OBSERVATION_TYPES[name] if name in NODE_OBSERVATION_TYPES else validate_observation(name, default)
 
 
 def _unapplied_status(exc: BaseException) -> str | None:
@@ -270,7 +277,7 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
     :func:`collect_unapplied_visits` block instead.
     """
 
-    obs_type = as_type or observation_type_for(name)
+    obs_type = validate_observation(name, as_type)
 
     def deco(fn):
         """Wrap ``fn`` with the observation and audit-visit capture."""
@@ -356,28 +363,26 @@ def traced_node(name, *, summarize_input=None, summarize_output=None, as_type=No
         @functools.wraps(fn)
         def wrapper(state):
             """Run the node inside its span, append its audit visit, then flush for the live floor."""
-            provider = resolve_provider_name()
-            if provider != "langfuse":
-                result, visit = run(state)
-                if provider != "none":
-                    flush()
-                return with_visit(state, result, visit)
-
-            from .langfuse_setup import observation
-
-            inp = summarize_input(state) if summarize_input else _state_summary(state)
+            try:
+                inp = summarize_input(state) if summarize_input else _state_summary(state)
+            except Exception:
+                logger.warning("observation_summary_failed", name=name, exc_info=True)
+                inp = None
             with observation(name, as_type=obs_type, input=inp) as span:
                 result, visit = run(state)
                 if span is not None:
-                    if summarize_output:
-                        out = summarize_output(result)
-                        if isinstance(out, dict) and "stage" not in out:
-                            filled = _result_summary(result, state)
-                            if filled and filled.get("stage"):
-                                out = {**out, "stage": filled["stage"]}
-                    else:
-                        out = _result_summary(result, state)
-                    span.update(output=out)
+                    try:
+                        if summarize_output:
+                            out = summarize_output(result)
+                            if isinstance(out, dict) and "stage" not in out:
+                                filled = _result_summary(result, state)
+                                if filled and filled.get("stage"):
+                                    out = {**out, "stage": filled["stage"]}
+                        else:
+                            out = _result_summary(result, state)
+                        span.update(output=out)
+                    except Exception:
+                        logger.warning("observation_update_failed", name=name, exc_info=True)
                 flush()
                 return with_visit(state, result, visit, span)
 
@@ -462,6 +467,22 @@ def install_on_dropped() -> None:
         _install()
     except Exception:
         logger.warning("on_dropped_install_failed")
+
+
+def set_trace_metadata(metadata: dict) -> None:
+    """Add key/value metadata to the active trace (Langfuse only; a no-op elsewhere).
+
+    Called from inside a node, so it lands on that node's observation and the trace it
+    belongs to. Never raises: tracing must not change what a document run does.
+    """
+    if resolve_provider_name() != "langfuse":
+        return
+    try:
+        from .langfuse_setup import set_current_trace_metadata
+
+        set_current_trace_metadata(metadata)
+    except Exception:
+        logger.warning("trace_metadata_failed", exc_info=True)
 
 
 def get_trace_id():

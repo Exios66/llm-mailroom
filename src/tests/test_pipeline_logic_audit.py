@@ -17,7 +17,7 @@ class TestStickyTransientErrorClearedOnSuccess:
     transient_error=False, a previous True sticks and the router self-loops
     forever (counter never increments on success)."""
 
-    def test_judge_success_clears_flag_so_router_does_not_loop(self, monkeypatch):
+    def test_judge_success_clears_flag_so_router_does_not_loop(self, monkeypatch, approvals_archive):
         class FakeJudge:
             def __init__(self):
                 pass

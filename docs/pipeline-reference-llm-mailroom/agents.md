@@ -24,7 +24,7 @@ class BaseAgent(ABC):
 Key design points:
 
 * `self.client` and `self.model` are resolved from `config/taxonomy.yaml` → `llm/providers.py` → `llm/client.py`
-* `system_prompt()` fetches the **Langfuse-managed prompt** (`mailroom-<agent_name>`, production label) via `llm/prompts.py:get_managed_prompt`, falling back to the identical template shipped in code when Langfuse is unavailable — behavior never depends on the observability backend being up. Sync templates with `scripts/sync_prompts.py`.
+* `system_prompt()` serves the **prompt shipped in the repo** (the active prompt set in `llm/prompt_sets/catalog.yaml`, else the agent's code default) via `llm/prompts.py:get_managed_prompt`. Langfuse is never consulted unless `MAILROOM_PROMPT_SOURCE=langfuse` (or taxonomy `prompt_source: langfuse`) opts in; then a `mailroom-<agent_name>` prompt labelled `production` overrides the repo text — behavior never depends on the observability backend. Sync templates with `scripts/sync_prompts.py`.
 * `_call_structured()` uses `response_format={"type": "json_object"}` and appends boilerplate that guarantees the literal token `json` in the messages (some providers reject requests without it) and embeds the JSON schema in the prompt.
 * Every LLM call goes through `llm/retry.py:retry_chat_completion` (transient failures only: connection errors, timeouts, 429, 5xx) and a `max_tokens` cap from the agent's `taxonomy.yaml` entry.
 * When a managed prompt is active, it's passed to the OpenAI call as `langfuse_prompt=`, linking each generation to its exact prompt version in the trace UI.
@@ -94,7 +94,7 @@ For `decision_only` classes the node asks a registered decision backend instead 
 | `cuad_family`    | `str \| None` | CUAD agreement family                              |
 | `cuad_clauses`   | `list[str]`   | Present CUAD categories as `"<label>: <evidence>"` |
 
-The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): production prompt is the sandbox / eval-environment **frozen v1** stem (`llm/frozen_v1/contracts_specialist.txt`, Langfuse `mailroom-contracts_specialist`), not entity-extraction `contracts_specialist_v33`. `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It extracts CUAD `contract` only. MAUD `merger_agreement` has its own specialist and `MergerAgreementExtraction` schema — the two labels are not interchangeable. It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. Every live specialist accepts the same optional `handoff_context` parameter.
+The Contracts Specialist is also a **vendored LangChain agent** (`agents/contracts_specialist.py` re-exports `langchain_agents.specialist_agents.ContractsSpecialist`): production prompt is the sandbox / eval-environment **frozen v1** stem (`llm/frozen_v1/contracts_specialist.txt`), served as the `deploy_v1` prompt-set file `llm/prompt_sets/deploy_v1/contracts_specialist.txt`, not entity-extraction `contracts_specialist_v33`. `normalize_extraction` guarantees every schema field is present, and a missing `confidence` is derived from the share of fields actually found. It extracts CUAD `contract` only. MAUD `merger_agreement` has its own specialist and `MergerAgreementExtraction` schema — the two labels are not interchangeable. It accepts a **`handoff_context`** — the chained-eval pattern: the graph passes the sorter's classification (`doc_type` + `contract_subtype` + confidence) into the extraction call so the specialist extracts with the expected clause set of that agreement family in mind. Every live specialist accepts the same optional `handoff_context` parameter.
 
 ***
 
@@ -240,7 +240,7 @@ Retired from the live pipeline in v0.5.0 / PR #21. The sorter emits `unknown` (h
 | Attribute       | Value                                                                         |
 | --------------- | ----------------------------------------------------------------------------- |
 | **Node**        | `compile_report`                                                              |
-| **Trigger**     | Extraction complete, confidence sufficient (or arbiter `accept_with_caveats`) |
+| **Trigger**     | Extraction confident enough (a judge `complete` or arbiter `accept_with_caveats` only where the class sets `judge_complete_archives` / `arbiter_accept_archives`, or a judge `complete` an enforcing `archive_gate` releases within its cap) |
 | **Input**       | Specialist extraction + optional arbiter caveats                              |
 | **Output**      | Deterministic `_report` string on `extracted_data`                            |
 | **Personality** | none — procedural                                                             |
@@ -298,7 +298,7 @@ The deterministic clerk (dojo `llm_dojo_scoring.intake` gold, re-exported byte-c
 | **Node**        | `boss_escalation`                            |
 | **Trigger**     | Data conflict or repeated low confidence     |
 | **Input**       | Manifest + conflicting matter context        |
-| **Output**      | Decision: approved or review                 |
+| **Output**      | Decision: approved or review; `boss_context_records` (an approval with 0 parks, `boss_ungrounded`) |
 | **Personality** | Calm under pressure, makes the judgment call |
 
 **Two implementation paths, one personality:**
@@ -334,7 +334,7 @@ A hybrid agent: text-based PDFs are transcribed **directly** from `pdfplumber`/`
 | **Output**      | Visible text + confidence + method (`vision`)                 |
 | **Personality** | Faithful transcription of visible text — no interpretation    |
 
-A vision LLM agent with its own `taxonomy.yaml` entry and Langfuse-managed prompt (`mailroom-image_extractor`). Transient provider failures retry through `retry_chat_completion`; persistent failure raises so the intake node can route the document to review rather than silently substituting a fallback marker.
+A vision LLM agent with its own `taxonomy.yaml` entry and repo prompt (Langfuse `mailroom-image_extractor` only under the opt-in). Transient provider failures retry through `retry_chat_completion`; persistent failure raises so the intake node can route the document to review rather than silently substituting a fallback marker.
 
 ***
 

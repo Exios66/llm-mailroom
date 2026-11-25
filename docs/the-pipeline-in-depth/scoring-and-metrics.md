@@ -178,7 +178,7 @@ Source: [`observability/classification_scoring.py`](https://github.com/Exios66/l
 
 There are three layers of LLM judging. None of them use numeric thresholds computed in code except where stated.
 
-**1. In-pipeline completeness judge (Lane B).** `CompletenessJudge.judge_completeness` in [`agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py), run by the `judge_verify` node. It sees the schema field list, the extraction and up to 16,000 characters of source text, at temperature 0. It returns:
+**1. In-pipeline completeness judge (Lane B).** `CompletenessJudge.judge_completeness` in [`agents/judge.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/judge.py), run by the `judge_verify` node. It sees the schema field list, the extraction and the source text, at temperature 0. The source is read whole: a document that fits the judge's `max_input_chars` (`agents.judge` in `taxonomy.yaml`) is one call, a longer one is read in overlapping windows of that size (overlap `chunking.overlap_chars`), one call per window, and the verdicts are combined with the worst window winning (lowest score, worst label, every non-complete window's reasoning kept). A second, accuracy pass (`judge_extraction_correctness`) runs the same way when the completeness verdict is `complete`. Each window returns:
 
 | Output | Values |
 |---|---|
@@ -186,7 +186,11 @@ There are three layers of LLM judging. None of them use numeric thresholds compu
 | `completeness_label` | `complete` (score at least 0.95), `partial` (at least 0.5), else `incomplete` |
 | `reasoning` | gaps or fabrications found |
 
-The label thresholds are part of the prompt; the code trusts the label the model returns. A parse failure becomes `0.0` / `incomplete`.
+The label thresholds are part of the prompt; the code trusts the label the model returns. A parse failure becomes `0.0` / `incomplete` for that window and, in the pipeline, the document cannot archive: `judge_verify_node` records `judge_error` and routes it to human review. A provider error in any window is handled the same way: a transient one retries the node first, and the retry re-runs only the windows that did not finish (finished window results are kept in process for the retry and dropped when the node returns anything else); any other error goes to human review. Each pass stops at the first window whose verdict is the worst label (`incomplete`, `inaccurate`) or did not parse, because no later window can improve it; the windows after it stay unchecked and the document is not source-verified.
+
+**Known risk, not verified with a real model.** The correctness system prompt (rule 4) lets a model call a value wrong when the visible source gives it "no reasonable support". In a window that never mentions a field the model may do that and return `partial`, although the window note tells it a value the window does not mention is not wrong. The managed prompt is deliberately unchanged, and no real-model run was made, so the rate of such window verdicts on long documents is unknown. The effect is conservative: a spurious `partial` or `inaccurate` makes the aggregate non-`complete`, so the document goes to the arbiter (or, with its retries spent, to a person) and is never archived on that verdict. It costs review volume and extra calls, not correctness. The same limit runs the other way: a value that no window mentions (for example a fabricated one) is not flagged in a multi-window document, because the judge returns one verdict for the extraction, not one per field.
+
+`judge_source_verified`, the only thing that clears an unsure extraction (`extraction_confidence` missing or below `low`), is true only when the verdict is `complete` and `accurate` and every window was checked in both passes. The windows read and the calls and tokens spent are recorded as `judge_coverage` (`windows_total`, `windows_checked`, `calls`, `prompt_tokens`, `completion_tokens`) on the document state and manifest. A judge that reports no coverage verifies nothing. A document of 450,000 characters is about nine windows at the default 60,000-character budget (overlap 7,500), so about 18 judge calls when it comes back clean and fewer when the first pass already finds a gap.
 
 **2. Offline per-dimension judges.** [`scripts/run_quality_judges.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/scripts/run_quality_judges.py) runs the same judge class over a pilot report on three dimensions and writes per-class means:
 
@@ -203,7 +207,7 @@ The label thresholds are part of the prompt; the code trusts the label the model
 
 On grounded runs the deterministic scorer runs first. If no field is in the ambiguous band, the `pipeline-result` generation is not emitted, so the hosted judges do not run (a class mismatch always forces the judge). The pipeline also writes a `deterministic_verdict` score: `MISS` on class mismatch, `PARTIAL` when a field is ambiguous or there is no score, `CORRECT` when `overall_score >= 0.85`, `MISS` when `overall_score <= 0.5`, otherwise `PARTIAL`.
 
-**Arbiter.** When the in-pipeline judge returns `partial` or `incomplete`, the arbiter ([`agents/arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py)) picks exactly one of `accept_with_caveats`, `retry_extraction` or `human_review`. Any other answer is forced to `human_review`.
+**Arbiter.** When the in-pipeline judge returns `partial` or `incomplete`, the arbiter ([`agents/arbiter.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/arbiter.py)) picks exactly one of `accept_with_caveats`, `retry_extraction` or `human_review`. Any other answer is forced to `human_review`. It reads the whole document too, in windows of its own `max_input_chars` (100,000 characters by default, so most documents are one call). Across windows `human_review` from any window wins, then `retry_extraction` (the fix-lists are unioned), and only when every window accepts does it accept; the read stops at the first `human_review`. A transient provider error in any window retries the node first (the retry re-runs only unfinished windows), and any other error escalates to human review. Its windows, calls and tokens are recorded as `arbiter_coverage`. The classification arbiter (a parked decision review) reads the same windows and accepts a class only when every window accepts the same answer; its coverage is `classification_arbiter_coverage`.
 
 **Sorter reviewer (Lane A).** A blind second classification ([`agents/sorter_reviewer.py`](https://github.com/Exios66/llm-mailroom/blob/main/src/agents/sorter_reviewer.py)). Agreement is computed in code, not by the model.
 
@@ -215,12 +219,12 @@ The sorter and specialists report their own confidence (0 to 1). Thresholds come
 |---|---:|---:|---:|
 | Global fallback | 0.97 | 0.88 | 0.95 |
 | `contract` | 0.98 | 0.90 | 0.97 |
-| `merger_agreement` | 0.98 | 0.90 | 0.97 |
-| `insurance_claim` | 0.98 | 0.90 | 0.97 |
-| `corporate_record` | 0.96 | 0.86 | 0.94 |
+| `merger_agreement` | 0.98 | 0.90 | 0.90 |
+| `insurance_claim` | 0.95 | 0.90 | 0.97 |
+| `corporate_record` | 0.95 | 0.86 | 0.94 |
 | `correspondence` | 0.95 | 0.85 | 0.92 |
 
-Other knobs: `retry_max: 2`, `arbiter_retry_max: 2`, `judge_max_passes: 3`.
+Profile `calibrated_v1` (2026-11-17; `legacy_v0` keeps the previous values for A/B). Other knobs: `retry_max: 2`, `arbiter_retry_max: 2`, `judge_max_passes: 3`; mergers use 1 and 2 and `auto_archive: false`, so every merger goes to a person.
 
 ```mermaid
 flowchart TD
@@ -378,6 +382,8 @@ From `emit_pipeline_scores` and `compute_run_metrics` in [`observability/scores.
 | Intake clerk | `intake_prep_completeness`, `intake_changed_rate`, `intake_messy_rate`, `intake_hyphen_unwraps`, `intake_collapsed_blanks` |
 | Offline judges | `classification_quality`, `classification_correct`, `extraction_correctness`, `extraction_correctness_label` |
 | LegalBench | `legalbench_accuracy`, `legalbench_macro_f1`, `legalbench_calibration_error`, `legalbench_n_questions`, `legalbench_task` |
+
+One LegalBench score name can be filled by different metrics, so the score carries which one (#257). `legalbench_macro_f1` is `macro_f1` for multi-class tasks, `macro_category_accuracy` for category tasks and `yes_f1` for binary tasks (first present wins); the score's `comment` is `metric=<name>` and its metadata `{"metric": "<name>"}`. Do not average the score across tasks without grouping by that metadata. `legalbench_n_questions` likewise records `count=n_questions` or `count=n_documents`.
 
 At import, every name in `SCORE_CONFIGS` is checked against the llm-dojo-scoring metric registry; an unregistered name stops the import.
 
